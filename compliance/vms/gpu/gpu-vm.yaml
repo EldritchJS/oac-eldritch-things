@@ -1,0 +1,122 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: gpu-passthrough-vm
+  annotations:
+    description: >-
+      A VM with one NVIDIA GPU attached by PCI passthrough. This is the
+      hand-driven counterpart to test-gpu-vm.sh, which builds an equivalent VM
+      and checks it automatically — use this one to get a GPU guest you can sit
+      in and poke at.
+
+      GPU_RESOURCE must be the resource name the NVIDIA sandbox device plugin
+      advertises on the node, NOT nvidia.com/gpu. Find it with:
+        oc get node <node> -o jsonpath='{.status.allocatable}' | tr ',' '\n' | grep nvidia
+      It looks like nvidia.com/GH100_H100_SXM5_80GB. The same name must appear
+      in HyperConverged .spec.permittedHostDevices.pciHostDevices or the
+      KubeVirt webhook rejects this VM — setup-passthrough.sh does that part.
+parameters:
+  - name: NAME
+    description: VM name
+    value: gpu-vm
+  - name: NAMESPACE
+    description: Namespace to create the VM in
+    value: mm-test
+  - name: GPU_RESOURCE
+    description: Resource name advertised by the NVIDIA sandbox device plugin
+    required: true
+  - name: ROOTDISK_PVC
+    description: Name of an existing PVC holding the guest root disk
+    required: true
+  - name: SSH_PUBKEY
+    description: Public key to install for the guest user
+    required: true
+  - name: GUEST_USER
+    description: Guest username cloud-init creates
+    value: ubuntu
+  - name: MEMORY
+    description: >-
+      Guest memory. All of it is locked by the host for the lifetime of the VM,
+      because VFIO DMA needs every guest page pinned and present — this is real
+      reserved RAM, not an overcommittable request.
+    value: 16Gi
+  - name: CPU_CORES
+    value: "8"
+objects:
+  - apiVersion: kubevirt.io/v1
+    kind: VirtualMachine
+    metadata:
+      name: ${NAME}
+      namespace: ${NAMESPACE}
+    spec:
+      runStrategy: Always
+      template:
+        metadata:
+          labels:
+            kubevirt.io/vm: ${NAME}
+        spec:
+          # NOT LiveMigrate. A VM holding a host device cannot live migrate —
+          # there is no way to move the device's state to another host — so
+          # KubeVirt reports LiveMigratable=False and an eviction request has
+          # nothing to fall back on. evictionStrategy: None makes that explicit
+          # rather than leaving a drain to block forever on a migration that
+          # can never be scheduled. The consequence is real: draining this node
+          # kills this guest.
+          evictionStrategy: None
+          # GPU nodes are tainted to keep non-GPU work off them. Exists rather
+          # than Equal so this tolerates the taint whatever product value it
+          # carries, and so it stays harmless on an untainted node.
+          tolerations:
+            - key: nvidia.com/gpu.product
+              operator: Exists
+              effect: NoSchedule
+            - key: nvidia.com/gpu
+              operator: Exists
+              effect: NoSchedule
+          domain:
+            # q35 rather than the i440fx default: PCIe passthrough needs a PCIe
+            # root complex, and i440fx only offers legacy PCI.
+            machine:
+              type: q35
+            cpu:
+              cores: ${{CPU_CORES}}
+            memory:
+              guest: ${MEMORY}
+            devices:
+              gpus:
+                - deviceName: ${GPU_RESOURCE}
+                  name: gpu0
+              disks:
+                - disk:
+                    bus: virtio
+                  name: rootdisk
+                - disk:
+                    bus: virtio
+                  name: cloudinitdisk
+              interfaces:
+                # Deliberately no `ports:` list — listing ports makes KubeVirt
+                # forward only those and silently blocks SSH on 22.
+                - name: default
+                  masquerade: {}
+              rng: {}
+            resources:
+              requests:
+                memory: ${MEMORY}
+          networks:
+            - name: default
+              pod: {}
+          volumes:
+            - name: rootdisk
+              persistentVolumeClaim:
+                claimName: ${ROOTDISK_PVC}
+            - name: cloudinitdisk
+              cloudInitNoCloud:
+                userData: |
+                  #cloud-config
+                  users:
+                    - name: ${GUEST_USER}
+                      sudo: ALL=(ALL) NOPASSWD:ALL
+                      shell: /bin/bash
+                      ssh_authorized_keys:
+                        - ${SSH_PUBKEY}
+                  ssh_pwauth: false

@@ -1,0 +1,8 @@
+ocp4-cis 8
+ocp4-cis-node-master 0
+ocp4-cis-node-worker 0
+ocp4-moderate 21
+ocp4-moderate-node-master 1
+ocp4-moderate-node-worker 1
+rhcos4-moderate-master 4
+rhcos4-moderate-worker 4

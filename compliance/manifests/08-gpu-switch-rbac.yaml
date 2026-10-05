@@ -1,0 +1,191 @@
+# Delegated permission to switch a node between GPU modalities.
+#
+# THE PROBLEM
+# Flipping `nvidia.com/gpu.workload.config` is a node label write. Kubernetes
+# RBAC has no field-level granularity, so the smallest RBAC grant that permits
+# it — `patch` on `nodes` — ALSO permits:
+#   - cordoning the node (spec.unschedulable)
+#   - adding or removing taints
+#   - rewriting any other label, including node-role.kubernetes.io/*
+# On a cluster hosting RHACS Central and GPU workloads that is a large grant to
+# hand out, and under 800-171 3.1.5 (least privilege) / HIPAA §164.312(a) it is
+# not a defensible one.
+#
+# THE FIX
+# Two layers:
+#   1. RBAC narrows WHO and WHICH NODES   (ClusterRole + resourceNames)
+#   2. A ValidatingAdmissionPolicy narrows WHAT MAY CHANGE (CEL)
+# Neither is sufficient alone. RBAC cannot express "only this label"; the
+# policy cannot grant anything. Together they produce an actual capability:
+# "flip GPU modality on the GPU nodes, and nothing else."
+#
+# Plain YAML rather than an OpenShift Template (unlike vms/migrate-rbac.yaml)
+# because everything here is cluster-scoped and the node list is fixed — and
+# because Template ${} substitution inside CEL expressions is a trap.
+#
+# ---------------------------------------------------------------------------
+# STATUS: the policy ships in Warn+Audit mode, NOT Deny. See the binding at the
+# bottom. It cannot block anything until you change that, deliberately.
+#
+# Why: there is no identity provider on this cluster yet (an open compliance
+# finding), so there are no real human users to grant this to. Enforcing a node
+# admission policy before you can even tell users apart is how you lock
+# yourself out. Observe first, enforce once an IdP exists.
+# ---------------------------------------------------------------------------
+#
+# Usage once an IdP exists:
+#   oc apply -f 08-gpu-switch-rbac.yaml
+#   oc adm groups new gpu-switchers
+#   oc adm groups add-users gpu-switchers <user>
+#   # then flip validationActions to [Deny] and re-apply
+#
+# ---------------------------------------------------------------------------
+# VERIFIED 2026-10-02 (applied; RBAC live, policy in Warn+Audit)
+#
+# RBAC layer, via SubjectAccessReview as user gpu-tester / group gpu-switchers:
+#   patch nodes/moc-r4pcc02u15 .......... ALLOWED
+#   patch nodes/moc-r4pcc02u16 .......... ALLOWED
+#   get   nodes ......................... ALLOWED
+#   patch nodes/moc-r4pac08u31-s1a ...... denied   (master, not in resourceNames)
+#   update nodes/moc-r4pac08u35-s3d ..... denied
+#   delete nodes ........................ denied
+#   create pods ......................... denied
+#
+# Policy layer, impersonated + --dry-run=server (nothing mutated):
+#   modality -> vm-passthrough .......... clean, no warning
+#   modality -> bogus ................... WARN "must be one of container, ..."
+#   foo=bar ............................. WARN "may only change the ... label"
+#   spec.unschedulable=true (cordon) .... WARN "may not modify node spec"
+#
+# Note: `oc auth can-i --as/--as-group` returns misleading "no" answers here.
+# Use SubjectAccessReview to check this role; it is authoritative.
+# Note: `oc patch --dry-run=server` does not print a "(server dry run)" suffix
+# the way `oc label` does. It IS a dry run — verified the node stayed
+# uncordoned — but the output looks alarmingly like a real write.
+# ---------------------------------------------------------------------------
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gpu-modality-switcher
+rules:
+  # Read node state: required to see current modality and confirm the switch.
+  # Cannot be scoped by resourceNames — list/watch are collection verbs.
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  # Write, restricted to the GPU-bearing workers. resourceNames is the only
+  # narrowing RBAC offers here; the admission policy below does the rest.
+  # UPDATE THIS LIST if GPU nodes are added or replaced.
+  - apiGroups: [""]
+    resources: ["nodes"]
+    resourceNames:
+      - moc-r4pcc02u15
+      - moc-r4pcc02u16
+    verbs: ["patch", "update"]
+  # Observe the GPU Operator reconciling the switch, so the holder can tell
+  # when it has finished rather than guessing.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gpu-modality-switcher
+subjects:
+  - kind: Group
+    apiGroup: rbac.authorization.k8s.io
+    name: gpu-switchers
+roleRef:
+  kind: ClusterRole
+  apiGroup: rbac.authorization.k8s.io
+  name: gpu-modality-switcher
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: gpu-modality-switch-guard
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["nodes"]
+  matchConditions:
+    # CRITICAL: only constrain real human users.
+    #
+    # Node objects are patched constantly by the control plane — kubelet,
+    # MachineConfig Operator, node lifecycle controllers, the GPU Operator's
+    # own service account. Constraining those would break the cluster, so every
+    # system: principal is exempt.
+    - name: exclude-system-principals
+      expression: "!request.userInfo.username.startsWith('system:')"
+    # Break-glass admins stay unconstrained, or fixing a bad policy becomes
+    # impossible. Covers both system:masters (certificate admin, e.g.
+    # system:admin) and system:cluster-admins (kubeadmin).
+    - name: exclude-cluster-admins
+      expression: >-
+        !('system:masters' in request.userInfo.groups) &&
+        !('system:cluster-admins' in request.userInfo.groups)
+  variables:
+    - name: key
+      expression: "'nvidia.com/gpu.workload.config'"
+    - name: oldLabels
+      expression: "has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}"
+    - name: newLabels
+      expression: "has(object.metadata.labels) ? object.metadata.labels : {}"
+  validations:
+    # 1. spec is off limits. This is what blocks cordoning and taint edits —
+    #    the main escalation risk in granting `patch nodes`.
+    - expression: "object.spec == oldObject.spec"
+      message: >-
+        gpu-modality-switcher may not modify node spec (this includes
+        cordoning and taints). Only the GPU workload-config label may change.
+      reason: Forbidden
+    # 2. No label other than the modality key may be added or altered.
+    - expression: >-
+        variables.newLabels.all(k,
+          k == variables.key ||
+          (k in variables.oldLabels && variables.newLabels[k] == variables.oldLabels[k]))
+      message: >-
+        gpu-modality-switcher may only change the
+        nvidia.com/gpu.workload.config label; another label was added or modified.
+      reason: Forbidden
+    # 3. No label other than the modality key may be removed. Needed as well as
+    #    (2): an all() over the new map cannot see deletions.
+    - expression: >-
+        variables.oldLabels.all(k,
+          k == variables.key || k in variables.newLabels)
+      message: >-
+        gpu-modality-switcher may not remove node labels other than
+        nvidia.com/gpu.workload.config.
+      reason: Forbidden
+    # 4. Constrain the value. Stops a typo silently parking the node in a mode
+    #    the GPU Operator does not recognise, which strands the GPUs.
+    - expression: >-
+        !(variables.key in variables.newLabels) ||
+        variables.newLabels[variables.key] in ['container', 'vm-passthrough', 'vm-vgpu']
+      message: >-
+        nvidia.com/gpu.workload.config must be one of
+        container, vm-passthrough, vm-vgpu.
+      reason: Invalid
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: gpu-modality-switch-guard
+spec:
+  policyName: gpu-modality-switch-guard
+  # Warn+Audit = observe without blocking. Change to [Deny] to enforce, once an
+  # identity provider exists and you have confirmed nothing legitimate trips it
+  # (check the audit log for admission annotations from this policy).
+  validationActions: ["Warn", "Audit"]
+  matchResources:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["nodes"]

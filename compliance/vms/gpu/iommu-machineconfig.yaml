@@ -1,0 +1,88 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: gpu-passthrough-iommu
+  annotations:
+    description: >-
+      Kernel arguments for enabling the IOMMU before an NVIDIA GPU can be
+      handed to a VM. vfio-pci cannot claim a device unless the IOMMU is
+      enabled and the device sits in its own IOMMU group, and iommu=pt keeps
+      the host's own DMA on the passthrough path so enabling the IOMMU does not
+      cost non-VM workloads anything measurable.
+
+      APPLIES TO STANDALONE OPENSHIFT ONLY. A hosted control plane (HyperShift)
+      cluster has no MachineConfig or MachineConfigPool API — kernel arguments
+      come from the NodePool object in the management cluster. oac-dev-workload0
+      is such a cluster (controlPlaneTopology=External), so this file cannot be
+      applied there. setup-passthrough.sh detects which case it is and prints
+      the right instructions.
+
+      CONFIRMED UNNECESSARY ON THE AMD H100 NODES WE HAVE. CONFIG_AMD_IOMMU=y
+      means the driver is built into the kernel, and on AMD it initialises
+      from the firmware IVRS table by default — amd_iommu=on is the default
+      rather than an opt-in. Checked directly on the jetty H100 workers
+      (2026-10-01): 103 IOMMU groups present, and /proc/cmdline carries no
+      amd_iommu= or iommu= argument at all. So do not apply this file
+      reflexively. Verify first:
+        oc debug node/<node> -- chroot /host ls /sys/kernel/iommu_groups | wc -l
+      and only reach for this if that is zero. The remaining value here is
+      iommu=pt and the Intel case.
+
+      Applied through a DEDICATED MachineConfigPool, not the worker pool. A
+      MachineConfig change reboots every node in its pool serially, and these
+      arguments are only needed on the handful of nodes that will ever host VM
+      GPUs — putting them on `worker` would roll the entire fleet.
+
+      Moving a node into the new pool is itself a reboot, and applying the
+      kernel arguments is a second one. Budget two reboots per node for the
+      initial setup. This is a ONE-TIME cost: once a node carries these
+      arguments it can be flipped between container and VM GPU use by a label
+      change alone, with no further reboots.
+parameters:
+  - name: MCP_NAME
+    description: Name of the MachineConfigPool and of the node role it selects
+    value: gpu-virt
+  - name: IOMMU_ARG
+    description: >-
+      Vendor IOMMU kernel argument. amd_iommu=on for AMD (the oac-prod H100
+      nodes are AMD EPYC 9754); intel_iommu=on for Intel.
+    value: amd_iommu=on
+objects:
+  # Nodes join this pool by being labelled:
+  #   oc label node <node> node-role.kubernetes.io/${MCP_NAME}=
+  # and leave it by having that label removed. Leaving the pool reverts the
+  # node to the plain worker rendered config, which is another reboot.
+  - apiVersion: machineconfiguration.openshift.io/v1
+    kind: MachineConfigPool
+    metadata:
+      name: ${MCP_NAME}
+    spec:
+      # Nodes in this pool get the worker rendered config plus anything
+      # labelled for this role on top.
+      machineConfigSelector:
+        matchExpressions:
+          - key: machineconfiguration.openshift.io/role
+            operator: In
+            values:
+              - worker
+              - ${MCP_NAME}
+      nodeSelector:
+        matchLabels:
+          node-role.kubernetes.io/${MCP_NAME}: ""
+
+  - apiVersion: machineconfiguration.openshift.io/v1
+    kind: MachineConfig
+    metadata:
+      name: 100-${MCP_NAME}-iommu
+      labels:
+        machineconfiguration.openshift.io/role: ${MCP_NAME}
+    spec:
+      config:
+        ignition:
+          version: 3.2.0
+      kernelArguments:
+        - ${IOMMU_ARG}
+        # Passthrough mode for the host's own devices: the IOMMU is only used
+        # for devices actually assigned to a guest, so host DMA keeps using
+        # direct physical addressing and does not pay IOMMU translation.
+        - iommu=pt

@@ -1,0 +1,54 @@
+---
+# Minimal CirrOS VM for the manual walkthrough in README.md. test-vm.sh builds
+# an equivalent VM with a cloud-init payload and checks it automatically; this
+# file is the hand-driven version, for poking at a guest over the console.
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: net-test-vm
+spec:
+  # runStrategy rather than the deprecated `running: true`, to match the VMs
+  # the test scripts create.
+  runStrategy: Always
+  template:
+    metadata:
+      labels:
+        kubevirt.io/vm: net-test-vm
+    spec:
+      domain:
+        devices:
+          disks:
+          - disk:
+              bus: virtio
+            name: containerdisk
+          interfaces:
+          # Deliberately no `ports:` list. Listing ports makes KubeVirt forward
+          # only those, which silently blocks SSH on 22.
+          - masquerade: {}
+            name: default
+        resources:
+          requests:
+            memory: 128Mi
+      networks:
+      - name: default
+        pod: {}
+      volumes:
+      - containerDisk:
+          image: quay.io/kubevirt/cirros-container-disk-demo
+        name: containerdisk
+---
+# The Service the inbound-connectivity step port-forwards to. It selects the
+# virt-launcher pod by the label the VM template stamps on it, so it follows the
+# VM across restarts.
+apiVersion: v1
+kind: Service
+metadata:
+  name: net-test-ssh
+spec:
+  selector:
+    kubevirt.io/vm: net-test-vm
+  ports:
+  - name: ssh
+    protocol: TCP
+    port: 22
+    targetPort: 22

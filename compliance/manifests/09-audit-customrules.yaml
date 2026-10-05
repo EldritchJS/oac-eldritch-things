@@ -1,0 +1,104 @@
+# Audit volume reduction — platform service accounts to metadata-only.
+#
+# WHY
+# ---
+# Stage 1 set spec.audit.profile=WriteRequestBodies (NIST AU-3). Measured
+# consequence on 2026-10-02: kube-apiserver wrote ~1.28 GB/hour PER MASTER
+# (~92 GB/day cluster-wide). The kube-apiserver audit directory is capped at
+# 10 x 200MB rotations, so the ENTIRE retained audit history was 94 minutes:
+#
+#     oldest  2026-10-02T22:04:36Z
+#     newest  2026-10-02T23:38:19Z
+#
+# A security event discovered the next morning had already lost its evidence.
+# The rotation cap is not exposed as a supported tunable, so the only lever
+# that works without new infrastructure is reducing what gets written.
+#
+# WHAT THE VOLUME ACTUALLY IS
+# ---------------------------
+# Measured over one complete 200MB rotation, bytes attributed by caller:
+#
+#     96.3%  service accounts
+#      3.7%  everything else (ALL humans, nodes, anonymous)
+#
+#     71.4%  openshift-operator-lifecycle-manager   <- single biggest source
+#      9.7%  openshift-cnv
+#      2.3%  openshift-network-operator
+#      1.9%  portworx
+#      1.7%  openshift-machine-config-operator
+#      1.0%  openshift-apiserver-operator
+#      0.9%  openshift-monitoring
+#      0.9%  openshift-console-operator
+#      0.7%  openshift-cloud-controller-manager-operator
+#      0.7%  openshift-cluster-olm-operator
+#                                        cumulative: ~91%
+#
+# By BYTES, OLM dominates because WriteRequestBodies captures full request and
+# response payloads and OLM rewrites large CSV/catalog objects continuously.
+# (By EVENT COUNT the ranking is different and misleading -- size is what
+# consumes the retention window, so size is what we target.)
+#
+# WHY THIS IS DEFENSIBLE UNDER 800-171 / HIPAA
+# --------------------------------------------
+# `Default` does NOT stop auditing these callers. It drops request/response
+# BODIES and still records metadata: identity, timestamp, source IP, verb,
+# target object, and outcome. That is the full content set AU-3 asks for. What
+# is lost is the payload diff of a platform operator reconciling its own CRs --
+# machine traffic with no user accountability value.
+#
+# Human users, application service accounts, and anything not listed below stay
+# at full WriteRequestBodies fidelity. Note that `stackrox` (0.5%) is
+# deliberately NOT excluded -- it is the security tooling and is cheap to keep.
+#
+# EFFECT ON COMPLIANCE SCANS
+# --------------------------
+# The ocp4-cis / ocp4-moderate `audit-profile-set` rules read the top-level
+# .spec.audit.profile, which remains WriteRequestBodies. Re-scan after applying
+# to confirm -- do not assume.
+#
+# APPLYING
+# --------
+# Do NOT `oc apply` this file. `apiserver/cluster` is a pre-existing singleton
+# config object that was not created by apply, so a three-way merge can drop
+# fields managed elsewhere (notably spec.encryption.type=aesgcm from stage 1).
+# This file is the tracked record of intent; apply it as an explicit merge
+# patch of the audit stanza only:
+#
+#   oc patch apiserver cluster --type=merge -p "$(python3 -c '
+#   import yaml,json,sys
+#   d=yaml.safe_load(open("manifests/09-audit-customrules.yaml"))
+#   print(json.dumps({"spec":{"audit":d["spec"]["audit"]}}))')"
+#
+# Triggers a kube-apiserver rollout across all 3 masters (~20 min, brief API
+# blips). No node reboots. Fully reversible: remove customRules to restore
+# uniform WriteRequestBodies.
+apiVersion: config.openshift.io/v1
+kind: APIServer
+metadata:
+  name: cluster
+spec:
+  audit:
+    # Baseline for everyone not matched below, including all human users.
+    profile: WriteRequestBodies
+    # Evaluated top to bottom; first match wins.
+    customRules:
+      - group: system:serviceaccounts:openshift-operator-lifecycle-manager
+        profile: Default
+      - group: system:serviceaccounts:openshift-cnv
+        profile: Default
+      - group: system:serviceaccounts:openshift-network-operator
+        profile: Default
+      - group: system:serviceaccounts:portworx
+        profile: Default
+      - group: system:serviceaccounts:openshift-machine-config-operator
+        profile: Default
+      - group: system:serviceaccounts:openshift-apiserver-operator
+        profile: Default
+      - group: system:serviceaccounts:openshift-monitoring
+        profile: Default
+      - group: system:serviceaccounts:openshift-console-operator
+        profile: Default
+      - group: system:serviceaccounts:openshift-cloud-controller-manager-operator
+        profile: Default
+      - group: system:serviceaccounts:openshift-cluster-olm-operator
+        profile: Default

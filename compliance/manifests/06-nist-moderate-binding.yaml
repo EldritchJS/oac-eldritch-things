@@ -1,0 +1,37 @@
+# NIST 800-171 coverage via the 800-53 Moderate baseline.
+#
+# WHY THIS PROFILE: the Compliance Operator ships no `800-171` profile, and
+# none is coming — 800-171 is not a configuration standard in its own right.
+# It is a tailored subset of NIST 800-53 for protecting CUI in nonfederal
+# systems, and 800-171 Appendix D maps every requirement back to its 800-53
+# control. So the 800-53 Moderate baseline is the correct technical proxy, and
+# it is the mapping an assessor will recognise.
+#
+# HIPAA is NOT covered here. There is no HIPAA profile in the Compliance
+# Operator; HIPAA 164 lives in ACS (workload-centric). See PLAN.md §8.
+#
+# Three profiles paired deliberately:
+#   ocp4-moderate       - control plane / cluster API configuration
+#   ocp4-moderate-node  - node-level OpenShift configuration
+#   rhcos4-moderate     - the RHCOS operating system itself
+# Binding only the platform profile would leave the OS and nodes unassessed.
+---
+apiVersion: compliance.openshift.io/v1alpha1
+kind: ScanSettingBinding
+metadata:
+  name: nist-moderate
+  namespace: openshift-compliance
+profiles:
+  - apiGroup: compliance.openshift.io/v1alpha1
+    kind: Profile
+    name: ocp4-moderate
+  - apiGroup: compliance.openshift.io/v1alpha1
+    kind: Profile
+    name: ocp4-moderate-node
+  - apiGroup: compliance.openshift.io/v1alpha1
+    kind: Profile
+    name: rhcos4-moderate
+settingsRef:
+  apiGroup: compliance.openshift.io/v1alpha1
+  kind: ScanSetting
+  name: jetty-default

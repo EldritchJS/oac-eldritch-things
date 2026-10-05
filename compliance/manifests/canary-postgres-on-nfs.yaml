@@ -1,0 +1,94 @@
+# Canary: can the real ACS central-db image run PostgreSQL on the
+# pure-fb-nfsv4 (FlashBlade NFSv4.1) StorageClass?
+#
+# This is the test that decides the ACS Central DB strategy: FlashBlade is
+# file/object only and there is no FlashArray, so NFS is the only option. If
+# Postgres is unhealthy here the fallbacks are hostPath or an external DB.
+#
+# v2: forces logging_collector=off so startup errors land on stderr (and thus
+# in `oc logs`) instead of disappearing into $PGDATA/log/ behind 0700 perms.
+#
+# Run:   oc apply -f canary-postgres-on-nfs.yaml
+#        oc logs -n acs-storage-canary job/pg-canary
+# Clean: oc delete ns acs-storage-canary
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: acs-storage-canary
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: canary-db2
+  namespace: acs-storage-canary
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: pure-fb-nfsv4
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pg-canary
+  namespace: acs-storage-canary
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: pg
+          image: registry.redhat.io/advanced-cluster-security/rhacs-central-db-rhel9@sha256:14a3fb374beca8f28ac9bc9f477571c82e4889af9a3d827c3a79aa2d510481f1
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set +e
+              D=/var/lib/postgresql/data/pgdata
+              echo "### identity"; id
+              echo "### mount opts"; mount | grep postgresql
+              echo "### initdb"
+              mkdir -p "$D" && chmod 700 "$D"
+              # -U postgres: the pod runs as a random OpenShift UID with no
+              # passwd entry, so without this initdb names the superuser after
+              # that UID and every later psql call fails on "role does not exist".
+              initdb -D "$D" -U postgres > /tmp/initdb.log 2>&1 \
+                && echo "INITDB_OK" || { echo "INITDB_FAIL"; tail -20 /tmp/initdb.log; exit 1; }
+
+              echo "### start postgres (logging to stderr)"
+              postgres -D "$D" -c logging_collector=off -c listen_addresses='' \
+                       -k /tmp > /tmp/pg.out 2>&1 &
+              PGPID=$!
+
+              for i in $(seq 1 30); do
+                pg_isready -h /tmp -q && break
+                sleep 2
+              done
+
+              if pg_isready -h /tmp -q; then
+                echo "PGSTART_OK"
+                psql -h /tmp -U postgres -d postgres -v ON_ERROR_STOP=1 -c \
+                  "create table t(i int); insert into t select generate_series(1,1000); select count(*) from t;" \
+                  && echo "SQL_OK" || echo "SQL_FAIL"
+                echo "### durability / fsync check"
+                psql -h /tmp -U postgres -d postgres -tAc "show fsync; show wal_sync_method;"
+                echo "### checkpoint (forces fsync to NFS)"
+                psql -h /tmp -U postgres -d postgres -c "checkpoint;" && echo "CHECKPOINT_OK" || echo "CHECKPOINT_FAIL"
+                kill -INT $PGPID; wait $PGPID 2>/dev/null
+                echo "CANARY_RESULT=PASS"
+              else
+                echo "PGSTART_FAIL"
+                echo "--- postgres stderr ---"
+                cat /tmp/pg.out
+                echo "CANARY_RESULT=FAIL"
+              fi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: canary-db2

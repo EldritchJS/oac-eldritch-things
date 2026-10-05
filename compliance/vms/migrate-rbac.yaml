@@ -1,0 +1,52 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: vm-migrate-rbac
+  annotations:
+    description: >-
+      Grants a user permission to live migrate VMs in one namespace. KubeVirt
+      ships no built-in role for this — neither kubevirt.io:edit nor
+      kubevirt.io:admin includes the migrate subresource or create on
+      VirtualMachineInstanceMigration, so migration is cluster-admin-only by
+      default and has to be delegated explicitly.
+parameters:
+  - name: NAMESPACE
+    description: Namespace the permission applies to
+    value: mm-test
+  - name: USER_NAME
+    description: User to grant migration rights to (as shown by `oc whoami`)
+    required: true
+  - name: ROLE_NAME
+    description: Name of the Role and RoleBinding created
+    value: vm-live-migrator
+objects:
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      name: ${ROLE_NAME}
+      namespace: ${NAMESPACE}
+    rules:
+      # `virtctl migrate` calls this subresource. Without it virtctl fails with
+      #: cannot update resource "virtualmachines/migrate"
+      - apiGroups: ["subresources.kubevirt.io"]
+        resources: ["virtualmachines/migrate"]
+        verbs: ["update"]
+      # The object-based path, which is what test-vm-migration.sh uses: creating
+      # a VirtualMachineInstanceMigration triggers the same operation through a
+      # plain CRD write. delete covers `virtctl migrate-cancel` and cleanup.
+      - apiGroups: ["kubevirt.io"]
+        resources: ["virtualmachineinstancemigrations"]
+        verbs: ["get", "list", "watch", "create", "delete"]
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: ${ROLE_NAME}
+      namespace: ${NAMESPACE}
+    subjects:
+      - kind: User
+        apiGroup: rbac.authorization.k8s.io
+        name: ${USER_NAME}
+    roleRef:
+      kind: Role
+      apiGroup: rbac.authorization.k8s.io
+      name: ${ROLE_NAME}

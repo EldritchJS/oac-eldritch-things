@@ -1,0 +1,44 @@
+# GPU passthrough permission for KubeVirt — reference manifest.
+#
+# STATUS: this is ALREADY CORRECTLY CONFIGURED on the cluster. Applying this
+# file is a no-op. It exists so the setting lives in version control rather
+# than only in cluster state, and so it can be restored after a rebuild.
+#
+# PATH GOTCHA (this cost a wrong diagnosis once already):
+# The HyperConverged CR on this cluster is `hco.kubevirt.io/v1`, whose spec is
+# restructured. The field is at:
+#       spec.virtualization.permittedHostDevices      <-- v1  (THIS CLUSTER)
+# not at:
+#       spec.permittedHostDevices                     <-- v1beta1 only
+# Checking the v1beta1 path on a v1 object returns empty and makes a correct
+# configuration look missing. Verify with:
+#   oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv \
+#     -o jsonpath='{.spec.virtualization.permittedHostDevices}'
+#
+# FIELD-NAME GOTCHA:
+# HCO takes `pciDeviceSelector`. The KubeVirt CR that HCO generates from it
+# uses `pciVendorSelector`. Same value, different spelling — HCO translates.
+# Do not copy the KubeVirt spelling into this file; it will be rejected.
+#
+# 10DE:2330 = NVIDIA GH100 H100 SXM5 80GB.
+# externalResourceProvider: true means the NVIDIA sandbox device plugin
+# advertises the resource, not KubeVirt itself. This is what ties the
+# `nvidia.com/gpu.workload.config=vm-passthrough` node label to a GPU a VM can
+# actually claim.
+#
+# Apply as a merge patch so the rest of the HCO spec is untouched:
+#   oc patch hyperconverged kubevirt-hyperconverged -n openshift-cnv \
+#     --type=merge --patch-file manifests/07-cnv-permitted-host-devices.yaml
+---
+apiVersion: hco.kubevirt.io/v1
+kind: HyperConverged
+metadata:
+  name: kubevirt-hyperconverged
+  namespace: openshift-cnv
+spec:
+  virtualization:
+    permittedHostDevices:
+      pciHostDevices:
+        - pciDeviceSelector: "10DE:2330"
+          resourceName: nvidia.com/GH100_H100_SXM5_80GB
+          externalResourceProvider: true

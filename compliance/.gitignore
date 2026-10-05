@@ -1,0 +1,20 @@
+# Cluster credentials. kubeadmin-* kubeconfigs carry cluster-admin and must
+# never be committed.
+kubeadmin-*
+*kubeconfig*
+*.kubeconfig
+secret.yaml
+credentials.env
+*credentials*
+*.env
+
+# ACS cluster init bundles are cluster-join credential material.
+*init-bundle*
+
+# Binary installers and build junk
+*.pkg
+*.tar.gz
+results/
+
+# Personal Claude Code permission grants (cluster write access)
+.claude/settings.local.json

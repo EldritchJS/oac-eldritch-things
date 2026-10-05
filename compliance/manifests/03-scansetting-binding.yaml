@@ -1,0 +1,60 @@
+# Storage-backed compliance scanning.
+#
+# Raw ARF/XCCDF results are archived to a PVC on pure-fb-nfsv4. This is the
+# durable audit evidence an assessor asks for, and what `oc compliance
+# fetch-raw` retrieves. The earlier storage-less variant
+# (rawResultStorage.enabled: false) was a stopgap while the FlashBlade data
+# VIP was unreachable; see STORAGE-ISSUE.md.
+#
+# FlashBlade is network-attached, so the result-server PVC binds fine on a
+# master with no node-locality constraint.
+---
+apiVersion: compliance.openshift.io/v1alpha1
+kind: ScanSetting
+metadata:
+  name: jetty-default
+  namespace: openshift-compliance
+rawResultStorage:
+  enabled: true
+  size: 10Gi
+  rotation: 10
+  pvAccessModes:
+    - ReadWriteOnce
+  storageClassName: pure-fb-nfsv4
+  nodeSelector:
+    node-role.kubernetes.io/master: ""
+  tolerations:
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/master
+      operator: Exists
+roles:
+  - master
+  - worker
+scanTolerations:
+  - operator: Exists
+schedule: "0 1 * * *"
+showNotApplicable: false
+strictNodeScan: true
+suspend: false
+timeout: 30m
+maxRetryOnTimeout: 3
+---
+# CIS as the opening baseline until the real standards are confirmed.
+# Platform + node profiles paired deliberately: ocp4-cis audits the control
+# plane/API config, ocp4-cis-node audits the RHCOS hosts.
+apiVersion: compliance.openshift.io/v1alpha1
+kind: ScanSettingBinding
+metadata:
+  name: cis-baseline
+  namespace: openshift-compliance
+profiles:
+  - apiGroup: compliance.openshift.io/v1alpha1
+    kind: Profile
+    name: ocp4-cis
+  - apiGroup: compliance.openshift.io/v1alpha1
+    kind: Profile
+    name: ocp4-cis-node
+settingsRef:
+  apiGroup: compliance.openshift.io/v1alpha1
+  kind: ScanSetting
+  name: jetty-default

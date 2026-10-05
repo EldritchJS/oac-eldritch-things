@@ -1,0 +1,40 @@
+# Apply AFTER a StorageClass exists.
+# Central is the ACS control plane: UI, API, policy engine, and the Postgres DB.
+# The DB PVC is the hard storage dependency (100Gi default).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: stackrox
+  labels:
+    openshift.io/cluster-monitoring: "true"
+---
+apiVersion: platform.stackrox.io/v1alpha1
+kind: Central
+metadata:
+  name: stackrox-central-services
+  namespace: stackrox
+spec:
+  central:
+    exposure:
+      route:
+        enabled: true
+    db:
+      persistence:
+        persistentVolumeClaim:
+          claimName: central-db
+          size: 100Gi
+          # <<< SET THIS >>>
+          storageClassName: pure-fb-nfsv4
+  # Scanner V4 is the current image/node scanner in ACS 4.x.
+  scannerV4:
+    db:
+      persistence:
+        persistentVolumeClaim:
+          claimName: scanner-v4-db
+          size: 50Gi
+          # <<< SET THIS >>>
+          storageClassName: pure-fb-nfsv4
+  egress:
+    # Switch to Offline if this cluster cannot reach Red Hat for vuln feeds.
+    connectivityPolicy: Online

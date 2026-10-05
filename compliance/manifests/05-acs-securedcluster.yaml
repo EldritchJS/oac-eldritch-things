@@ -1,0 +1,34 @@
+# Apply AFTER Central is Running AND an init bundle has been created.
+#
+# The init bundle is the trust anchor that lets Sensor authenticate to Central.
+# It is NOT created by this file. Generate it first (see PLAN.md step 4):
+#
+#   oc -n stackrox exec deploy/central -- \
+#     roxctl central init-bundles generate jetty --insecure-skip-tls-verify \
+#     --password "$(oc -n stackrox get secret central-htpasswd -o go-template='{{index .data "password" | base64decode}}')" \
+#     --output-secrets - > /tmp/jetty-init-bundle.yaml
+#   oc -n stackrox apply -f /tmp/jetty-init-bundle.yaml
+#
+# Treat that file as a credential: it is cluster-join material. Do not commit it.
+---
+apiVersion: platform.stackrox.io/v1alpha1
+kind: SecuredCluster
+metadata:
+  name: stackrox-secured-cluster-services
+  namespace: stackrox
+spec:
+  # Name this cluster shows up as in the ACS UI.
+  clusterName: jetty
+  # Same-cluster install, so Sensor reaches Central via the in-cluster Service.
+  # For a remote Central, set this to its route hostname:443.
+  centralEndpoint: "central.stackrox.svc:443"
+  admissionControl:
+    listenOnCreates: true
+    listenOnUpdates: true
+    listenOnEvents: true
+  perNode:
+    collector:
+      # CORE_BPF is the default and the right choice on RHCOS 9.
+      collection: CORE_BPF
+  scannerV4:
+    scannerComponent: AutoSense
