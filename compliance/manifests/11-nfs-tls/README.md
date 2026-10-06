@@ -12,18 +12,21 @@ environment. That repo is the upstream reference and is **not** vendored here.
 
 ---
 
-## Placeholders — this will not apply until these are filled in
+## Remaining prerequisites
 
-Four values must come from the storage team. Each is marked `REPLACE-ME` in
-the manifests, and `kustomize build` **fails loudly** until the certificate
-exists — deliberately, because a wrong trust anchor is worse than none.
-
-| Placeholder | Where | What it is |
+| Item | Where | Status |
 |---|---|---|
-| `files/pure-ca.crt` | missing file | The jetty FlashBlade's CA / server cert. **CN or SAN must match the NFS data VIP** — mounts target it by IP and send that as SNI, so a hostname-only cert fails validation. |
-| `REPLACE-ME-tls-export-policy` | `storageclass.yaml` | Pure export policy with TLS enabled. The current `export-policy` is the **cleartext** one. |
-| `REPLACE-ME-tls-nfs-server` | `storageclass.yaml` | Pure NFS server name for the TLS endpoint. Current `nfs-server` is cleartext. |
-| `REPLACE-ME-IMAGE` | `daemonset.yaml` | Set by the ImageStream once built (Phase 1), or an external registry ref. |
+| TLS export policy | `storageclass.yaml` | ✅ `export-policy-tls` (2026-10-06) |
+| TLS NFS server name | `storageclass.yaml` | ✅ `nfs-server` — unchanged from the cleartext class |
+| FlashBlade certificate | `files/pure-ca.crt` | ⚠️ **gitignored, supply locally** — see [files/README.md](files/README.md) |
+| Container image | `daemonset.yaml` | ❌ `REPLACE-ME-IMAGE` — set after Phase 1 |
+
+`kustomize build` **fails loudly** until the certificate is in place.
+Deliberate: a missing or wrong trust anchor is worse than not deploying.
+
+The certificate is not committed because its subject carries the NFS data
+VIP, and this repo redacts internal addresses (top-level README
+§ Conventions). A clean clone therefore needs that one manual step.
 
 ---
 

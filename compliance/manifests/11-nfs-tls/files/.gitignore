@@ -1,0 +1,12 @@
+# Certificates are NOT committed here.
+#
+# Not because they are secret -- an X.509 certificate is public by design --
+# but because the FlashBlade's certificate carries the NFS data VIP in its
+# subject, and this repo redacts internal addresses (top-level README
+# § Conventions). A certificate cannot be redacted without breaking it, so it
+# is kept out of version control instead.
+#
+# Obtain it per files/README.md before deploying.
+*.crt
+*.pem
+*.key

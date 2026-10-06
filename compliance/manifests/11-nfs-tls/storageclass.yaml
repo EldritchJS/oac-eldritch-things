@@ -24,5 +24,5 @@ mountOptions:
   - xprtsec=tls
 parameters:
   backend: pure_file
-  pure_nfs_policy: REPLACE-ME-tls-export-policy   # cleartext equivalent: export-policy
-  pure_nfs_server: REPLACE-ME-tls-nfs-server      # cleartext equivalent: nfs-server
+  pure_nfs_policy: export-policy-tls   # cleartext equivalent: export-policy
+  pure_nfs_server: nfs-server      # cleartext equivalent: nfs-server

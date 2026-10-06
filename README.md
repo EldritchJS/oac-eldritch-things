@@ -33,6 +33,11 @@ to be safe to publish rather than hidden:
   the diagnostic value is in the *reasoning*, not the octets.
 - **Hostnames are kept.** Rack identifiers like `moc-r4pcc02u15` are opaque
   without network access and make the docs concrete.
+- **Certificates are not committed when their subject names an internal
+  address.** An X.509 cert is public key material, not a secret — but it
+  cannot be redacted without breaking it, so one carrying an internal VIP
+  stays out of the repo and is supplied locally instead. See
+  `compliance/manifests/11-nfs-tls/files/README.md`.
 
 When these notes are reused for a cluster that is actually under assessment,
 re-read them with this in mind: a careful public account of which controls are
