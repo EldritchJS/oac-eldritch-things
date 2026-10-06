@@ -245,6 +245,8 @@ fixing** — these need deliberate work.
 | 8 | **NetworkPolicies** | no default-deny posture | Flat pod network by default. ACS can *generate* policies, but someone must apply and own them (SC-7). |
 | 9 | **Image provenance / signing** | not configured | ACS scans for CVEs but does not enforce signature verification. Needs sigstore policy / `ClusterImagePolicy`. |
 | 10 | **FIPS scope discipline** | cluster OK | Workloads must also use FIPS-validated crypto. A Go binary built without BoringCrypto on a FIPS cluster is still non-compliant — the cluster being FIPS does not make applications FIPS. |
+| 11 | **NFS traffic to Pure is cleartext** | `sec=sys`, no `xprtsec` | All storage traffic, including model training data, is unencrypted on the wire (800-171 **3.13.8**, SC-8). **No scanner inspects CSI mount options**, so this never appears in scan results. The kernel already supports TLS; only `tlshd` is missing, and a colleague has proven the fix in this environment. See **[NFS-TLS.md](NFS-TLS.md)**. |
+| 12 | **Metrics have no persistence** | Prometheus `retention=15d`, **no `volumeClaimTemplate`** | Monitoring data is on emptyDir, so it is lost whenever the pod restarts or reschedules — "15 days" is nominal. There is no `cluster-monitoring-config` ConfigMap at all. Pairs with gap #3: the AU workstream needs a destination for *metrics* as well as logs. |
 
 Also note: **non-technical controls** (policies, SSPs, access reviews, IR plans,
 training) are typically the larger share of an authorization package, and no

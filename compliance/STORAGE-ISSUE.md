@@ -4,6 +4,12 @@
 > addresses**, not blanks to fill in. This repo is public; see the top-level
 > README § Conventions.
 
+> **Follow-on:** the data path works, but it is **unencrypted** (`sec=sys`,
+> no `xprtsec`). That is a separate open gap — see [NFS-TLS.md](NFS-TLS.md).
+> The cluster-side network config described here is now captured in
+> `manifests/10-nncp-br-storage.yaml`; the switch-side VLAN trunking is the
+> network team's and is not reproducible from this repo.
+
 > **STATUS: FIXED.** The storage VLAN was trunked to the Pure appliance and
 > everything works. ARP for `<fb-data-vip>` now resolves (`<fb-mac>`,
 > state `REACHABLE`), NFS 2049 is open from masters and workers, and real

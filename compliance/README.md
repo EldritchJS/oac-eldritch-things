@@ -375,6 +375,7 @@ automated way to prove it still works on the other side.
 | [STANDARDS.md](STANDARDS.md) | 800-171 / HIPAA / FIPS mapping, full scan results, scope analysis |
 | [PLAN.md](PLAN.md) | FIPS verification, operator install, gap list, decisions log |
 | [STORAGE-ISSUE.md](STORAGE-ISSUE.md) | The FlashBlade outage — diagnosis and resolution |
+| [NFS-TLS.md](NFS-TLS.md) | **Storage traffic is cleartext** — the gap, the evidence, and a proven fix |
 | `manifests/` | Everything applied, in numeric order |
 | [tests/README.md](tests/README.md) | **Verification suite** — run before and after hardening |
 | `remediate.sh` | **Staged hardening runbook** — `status`, `stage1`, `stage2`, all with `--dry-run` |

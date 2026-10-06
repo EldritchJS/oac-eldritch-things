@@ -1,0 +1,190 @@
+# Storage network (br-storage) — NMState, exported from live cluster state.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# The storage VLAN outage in STORAGE-ISSUE.md had two halves. The switch-side
+# half (trunking the VLAN to the Pure appliance) is the network team's and is
+# NOT reproducible from this repo. The cluster-side half is these five
+# NodeNetworkConfigurationPolicies -- and until now they existed only in
+# cluster state, in no tracked file. Same gap as manifests/07.
+#
+# Exported 2026-10-06. Contains no addresses: br-storage takes its IP from
+# DHCP, so there is nothing to redact.
+#
+# APPLYING
+# --------
+# Verified a no-op against the running cluster at export time. NMState is
+# declarative and converges, but a bad NNCP can take a node off the network --
+# apply one node at a time and confirm `oc get nncp` reports
+# SuccessfullyConfigured before moving on.
+#
+# KNOWN PENDING CHANGE -- deliberately NOT applied here
+# -----------------------------------------------------
+# All five set `dhcp: true` with `auto-gateway` unset, so DHCP installs a
+# SECOND default route on br-storage. Harmless today only because br-ex wins
+# on metric. The fix is `auto-gateway: false` on the br-storage ipv4 block:
+#
+#     ipv4:
+#       enabled: true
+#       dhcp: true
+#       auto-gateway: false      # <-- add this
+#
+# It is left out so this file stays a faithful record of what is deployed.
+# Add it deliberately, one node at a time, starting with a worker.
+#
+# NOTE: the NIC differs by role -- masters use eno2, workers enp163s0np0.
+---
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: br-storage-moc-r4pac08u31-s1a
+spec:
+  desiredState:
+    interfaces:
+    - ipv4:
+        enabled: false
+      ipv6:
+        enabled: false
+      name: eno2
+      state: up
+      type: ethernet
+    - bridge:
+        options:
+          stp:
+            enabled: false
+        port:
+        - name: eno2
+      ipv4:
+        dhcp: true
+        enabled: true
+      ipv6:
+        enabled: false
+      name: br-storage
+      state: up
+      type: linux-bridge
+  nodeSelector:
+    kubernetes.io/hostname: moc-r4pac08u31-s1a
+---
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: br-storage-moc-r4pac08u31-s1b
+spec:
+  desiredState:
+    interfaces:
+    - ipv4:
+        enabled: false
+      ipv6:
+        enabled: false
+      name: eno2
+      state: up
+      type: ethernet
+    - bridge:
+        options:
+          stp:
+            enabled: false
+        port:
+        - name: eno2
+      ipv4:
+        dhcp: true
+        enabled: true
+      ipv6:
+        enabled: false
+      name: br-storage
+      state: up
+      type: linux-bridge
+  nodeSelector:
+    kubernetes.io/hostname: moc-r4pac08u31-s1b
+---
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: br-storage-moc-r4pac08u35-s3d
+spec:
+  desiredState:
+    interfaces:
+    - ipv4:
+        enabled: false
+      ipv6:
+        enabled: false
+      name: eno2
+      state: up
+      type: ethernet
+    - bridge:
+        options:
+          stp:
+            enabled: false
+        port:
+        - name: eno2
+      ipv4:
+        dhcp: true
+        enabled: true
+      ipv6:
+        enabled: false
+      name: br-storage
+      state: up
+      type: linux-bridge
+  nodeSelector:
+    kubernetes.io/hostname: moc-r4pac08u35-s3d
+---
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: br-storage-moc-r4pcc02u15
+spec:
+  desiredState:
+    interfaces:
+    - ipv4:
+        enabled: false
+      ipv6:
+        enabled: false
+      name: enp163s0np0
+      state: up
+      type: ethernet
+    - bridge:
+        options:
+          stp:
+            enabled: false
+        port:
+        - name: enp163s0np0
+      ipv4:
+        dhcp: true
+        enabled: true
+      ipv6:
+        enabled: false
+      name: br-storage
+      state: up
+      type: linux-bridge
+  nodeSelector:
+    kubernetes.io/hostname: moc-r4pcc02u15
+---
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: br-storage-moc-r4pcc02u16
+spec:
+  desiredState:
+    interfaces:
+    - ipv4:
+        enabled: false
+      ipv6:
+        enabled: false
+      name: enp163s0np0
+      state: up
+      type: ethernet
+    - bridge:
+        options:
+          stp:
+            enabled: false
+        port:
+        - name: enp163s0np0
+      ipv4:
+        dhcp: true
+        enabled: true
+      ipv6:
+        enabled: false
+      name: br-storage
+      state: up
+      type: linux-bridge
+  nodeSelector:
+    kubernetes.io/hostname: moc-r4pcc02u16
