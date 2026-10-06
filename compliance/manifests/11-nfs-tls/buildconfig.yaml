@@ -2,11 +2,11 @@
 # so the privileged DaemonSet runs an image we own rather than one pulled
 # from an unowned registry.
 #
-# PREREQUISITE -- copy the entitlement secret into this namespace first:
-#
-#   oc get secret etc-pki-entitlement -n openshift-config-managed -o yaml \
-#     | sed 's/namespace: openshift-config-managed/namespace: nfs-tls/' \
-#     | oc apply -f -
+# PREREQUISITE -- copy the entitlement secret into this namespace first.
+# Use `oc create`, NOT `oc apply`: apply records the whole object in the
+# last-applied-configuration annotation, and entitlement.pem is ~325KB base64,
+# which exceeds the 256KB annotation limit. See README.md for the exact
+# command (it strips server-side metadata first, which `create` requires).
 #
 # UNVALIDATED: ktls-utils is almost certainly not in the UBI repos -- that is
 # why the reference build registers a subscription. Mounting the entitlement
@@ -19,22 +19,66 @@ metadata:
   name: tlshd
   namespace: nfs-tls
 spec:
+  # Pushes to GHCR, not the internal registry: the internal registry is
+  # managementState=Removed on this cluster, so an ImageStreamTag output fails
+  # with InvalidOutputReference ("Output image could not be resolved").
+  #
+  # Requires a docker-registry secret holding a GitHub PAT with write:packages:
+  #   oc create secret docker-registry ghcr-push -n nfs-tls \
+  #     --docker-server=ghcr.io --docker-username=<user> --docker-password=<PAT>
   output:
     to:
-      kind: ImageStreamTag
-      name: tlshd:latest
+      kind: DockerImage
+      name: ghcr.io/eldritchjs/tlshd:latest
+    pushSecret:
+      name: ghcr-push
   source:
     type: Dockerfile
     dockerfile: |
       FROM registry.access.redhat.com/ubi9/ubi:latest
 
-      # UBI images ship /etc/rhsm-host, which makes subscription-manager defer
-      # to the host and ignore the entitlement certs mounted into the build.
+      # UBI ships only the UBI repos, which are a subset of RHEL and do NOT
+      # carry ktls-utils. Registering with subscription-manager is one way to
+      # get the full repos; here we instead use the entitlement certificates
+      # mounted by the BuildConfig, which needs no account, activation key, or
+      # network registration -- the cluster is already entitled.
+      #
+      # /etc/rhsm-host makes subscription-manager defer to the host and ignore
+      # the mounted certs, so it has to go.
       RUN rm -rf /etc/rhsm-host
 
+      # Point dnf at the CDN using the mounted entitlement as a client cert.
+      RUN printf '%s\n' \
+        '[rhel-9-baseos]' \
+        'name=RHEL 9 BaseOS' \
+        'baseurl=https://cdn.redhat.com/content/dist/rhel9/9/x86_64/baseos/os' \
+        'enabled=1' \
+        'gpgcheck=1' \
+        'gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release' \
+        'sslverify=1' \
+        'sslcacert=/etc/rhsm/ca/redhat-uep.pem' \
+        'sslclientcert=/etc/pki/entitlement/entitlement.pem' \
+        'sslclientkey=/etc/pki/entitlement/entitlement-key.pem' \
+        '' \
+        '[rhel-9-appstream]' \
+        'name=RHEL 9 AppStream' \
+        'baseurl=https://cdn.redhat.com/content/dist/rhel9/9/x86_64/appstream/os' \
+        'enabled=1' \
+        'gpgcheck=1' \
+        'gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release' \
+        'sslverify=1' \
+        'sslcacert=/etc/rhsm/ca/redhat-uep.pem' \
+        'sslclientcert=/etc/pki/entitlement/entitlement.pem' \
+        'sslclientkey=/etc/pki/entitlement/entitlement-key.pem' \
+        > /etc/yum.repos.d/rhel9-entitled.repo
+
       RUN dnf install -y ktls-utils \
-       && dnf clean all \
-       && rm -rf /var/cache/dnf
+       || { echo "=== install failed; repos dnf could see: ==="; dnf repolist --all; exit 1; }
+      RUN dnf clean all && rm -rf /var/cache/dnf
+
+      # Prove the binary is actually present, so a broken image fails at build
+      # time rather than as a CrashLoopBackOff on every node.
+      RUN /usr/sbin/tlshd --version || test -x /usr/sbin/tlshd
 
       # tlshd reads /etc/tlshd.conf. The DaemonSet overrides the command to
       # install trust anchors first, so this is the fallback entrypoint.

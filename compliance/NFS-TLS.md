@@ -79,6 +79,28 @@ Running `tlshd` inside the container means `trust anchor` modifies the
 *container's* trust store, which is correct — the daemon doing the handshake
 is the one that needs the trust.
 
+## Status (2026-10-06): deployed, blocked on the array certificate
+
+Everything on the cluster side is done and working. The remaining blocker is
+external:
+
+| Step | State |
+|---|---|
+| Image built from the cluster's RHEL entitlement | ✅ `ktls-utils-0.11-3.el9_6` |
+| Pushed to `ghcr.io/eldritchjs/tlshd`, pinned by digest | ✅ |
+| `tlshd` DaemonSet on both workers | ✅ 2/2 Ready |
+| `nfs-over-tls` StorageClass provisions | ✅ PVC Bound |
+| TLS handshake | ❌ **`Certificate owner unexpected`** |
+
+The FlashBlade presents its **default Pure self-signed certificate, which has
+no Subject Alternative Name**. GnuTLS requires an `iPAddress` SAN to verify a
+peer addressed by IP and does not fall back to the CN. The reference array
+that works has `X509v3 Subject Alternative Name: IP Address:<its-vip>`; jetty's
+has `No extensions in certificate`.
+
+**Ask for the storage team:** reissue the FlashBlade NFS certificate with
+`subjectAltName = IP:<nfs-data-vip>`. Nothing else is known to be missing.
+
 ## Manifests
 
 Jetty-adapted manifests are in **[manifests/11-nfs-tls/](manifests/11-nfs-tls/)**,

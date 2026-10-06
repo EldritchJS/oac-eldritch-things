@@ -43,9 +43,18 @@ spec:
       #       effect: NoSchedule
       nodeSelector:
         node-role.kubernetes.io/worker: ""
+      # GHCR packages are private by default. This reuses the same secret the
+      # BuildConfig pushes with; a classic PAT with write:packages can also
+      # read. Alternative: make the package public and drop this.
+      imagePullSecrets:
+        - name: ghcr-push
       containers:
         - name: tlshd
-          image: REPLACE-ME-IMAGE   # image-registry.openshift-image-registry.svc:5000/nfs-tls/tlshd:latest
+          # Pinned by digest, not :latest -- the deployed bits are then
+          # identical to what was reviewed, and the tag cannot move underneath
+          # a node that reboots. Built by BuildConfig tlshd-4 on 2026-10-06
+          # from ktls-utils-0.11-3.el9_6 (rhel-9-for-x86_64-baseos-rpms).
+          image: ghcr.io/eldritchjs/tlshd@sha256:ec0458d18da724d12c4083c64866c248d509fa100210cbbb3b9e067649063e13
           securityContext:
             privileged: true
             seccompProfile:
@@ -75,17 +84,23 @@ spec:
             - name: nfs-certificates
               mountPath: /certs
               readOnly: true
+          # NOT pgrep: procps-ng is absent from ubi9/ubi, so `pgrep` probes
+          # error with "command error: exit code -1" and the pod never goes
+          # Ready even though tlshd is running fine. tlshd is PID 1 (the
+          # command execs it), so read /proc/1/comm with coreutils instead.
           livenessProbe:
             exec:
-              command: ["pgrep", "-x", "tlshd"]
+              command: ["/bin/sh", "-c", '[ "$(cat /proc/1/comm)" = tlshd ]']
             initialDelaySeconds: 10
             periodSeconds: 30
+            timeoutSeconds: 3
             failureThreshold: 3
           readinessProbe:
             exec:
-              command: ["pgrep", "-x", "tlshd"]
+              command: ["/bin/sh", "-c", '[ "$(cat /proc/1/comm)" = tlshd ]']
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 3
           resources:
             requests:
               cpu: 10m

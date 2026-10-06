@@ -1,6 +1,47 @@
 # 11 — NFS over TLS (`tlshd`)
 
-**Status: NOT DEPLOYED. Blocked on Phase 0 (storage team).**
+**Status: DEPLOYED and running. Blocked on one thing — the FlashBlade
+certificate has no `iPAddress` SAN, so every TLS handshake is rejected.**
+
+As of 2026-10-06 everything on the cluster side works:
+
+- Image built in-cluster from the cluster's own RHEL entitlement
+  (`ktls-utils-0.11-3.el9_6`), pushed to `ghcr.io/eldritchjs/tlshd`, pinned by
+  digest in `daemonset.yaml`.
+- `tlshd` DaemonSet is 2/2 Ready on both workers, trust anchor installed.
+- `nfs-over-tls` StorageClass provisions successfully — a PVC **Bound**.
+
+The mount then fails, and `tlshd` says exactly why:
+
+```
+tlshd[24]: Certificate owner unexpected.
+tlshd[24]: Handshake with '<fb-data-vip>' (<fb-data-vip>) failed
+```
+
+**The array is presenting its default Pure self-signed certificate, which has
+no Subject Alternative Name.** GnuTLS requires an `iPAddress` SAN to verify a
+peer addressed by IP; it does **not** fall back to the CN. Compare with the
+cert from the reference deployment that works:
+
+| | SAN |
+|---|---|
+| Reference array (works) | `X509v3 Subject Alternative Name: IP Address:<its-vip>` |
+| jetty FlashBlade (fails) | `No extensions in certificate` |
+
+Note the issuers differ too: the working one was issued by the site
+(`OU = Mass Open Cloud`), ours is the vendor default (`O = Pure Storage, Inc.`).
+Someone generated a proper certificate for that other array; the same needs to
+happen here.
+
+### The ask for the storage team
+
+> Reissue the FlashBlade NFS certificate with
+> `subjectAltName = IP:<nfs-data-vip>`.
+> The current default self-signed certificate has no SAN, so clients that
+> address the array by IP cannot verify it.
+
+Nothing else is known to be missing. Drop the new cert in as
+`files/pure-ca.crt`, `oc apply -k .`, and the mount should complete.
 
 Closes the cleartext-storage gap described in [../../NFS-TLS.md](../../NFS-TLS.md)
 (800-171 3.13.8 / SC-8). The kernel on this cluster already supports
@@ -43,9 +84,24 @@ works without a personal activation key. Copy it into the build namespace:
 
 ```sh
 oc apply -f namespace.yaml
-oc get secret etc-pki-entitlement -n openshift-config-managed -o yaml \
-  | sed 's/namespace: openshift-config-managed/namespace: nfs-tls/' \
-  | oc apply -f -
+
+# Copy the entitlement secret. Do NOT use `oc apply` -- it stores the whole
+# object in the last-applied-configuration annotation, and entitlement.pem is
+# ~325KB base64, over the 256KB annotation limit:
+#   "metadata.annotations: Too long: may not be more than 262144 bytes"
+# `oc create` adds no such annotation, but rejects server-side metadata, so
+# strip it first.
+oc get secret etc-pki-entitlement -n openshift-config-managed -o json \
+  | python3 -c "
+import json,sys
+d=json.load(sys.stdin); m=d['metadata']
+for k in ('resourceVersion','uid','creationTimestamp','managedFields',
+          'annotations','ownerReferences','selfLink','generation'):
+    m.pop(k,None)
+m['namespace']='nfs-tls'
+print(json.dumps(d))" \
+  | oc create -f -
+
 oc apply -f imagestream.yaml -f buildconfig.yaml
 oc start-build tlshd -n nfs-tls --follow
 ```
