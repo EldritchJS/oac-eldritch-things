@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nfs-tls
+  labels:
+    # The DaemonSet is privileged and host-networked; label the namespace
+    # accordingly so Pod Security admission does not silently reject it.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+  annotations:
+    openshift.io/description: >-
+      Runs the tlshd userspace TLS handshake daemon so NFS mounts can use
+      xprtsec=tls. See compliance/NFS-TLS.md.

@@ -79,6 +79,13 @@ Running `tlshd` inside the container means `trust anchor` modifies the
 *container's* trust store, which is correct — the daemon doing the handshake
 is the one that needs the trust.
 
+## Manifests
+
+Jetty-adapted manifests are in **[manifests/11-nfs-tls/](manifests/11-nfs-tls/)**,
+with the four storage-team unknowns marked `REPLACE-ME`. All eight objects
+validate against the live API under a server-side dry-run; `kustomize build`
+deliberately fails until the FlashBlade certificate is supplied.
+
 ## What jetty needs that the reference does not supply
 
 | Item | Why |

@@ -1,0 +1,99 @@
+# tlshd -- userspace TLS handshake daemon for NFS over TLS.
+#
+# The kernel on this cluster already speaks RPC-over-TLS (42 xprtsec/xs_tls
+# symbols, tls.ko loaded, handshake netlink present). It is missing only the
+# userspace listener. Without this daemon, a mount with xprtsec=tls fails with
+# "mount.nfs: No such process" -- ESRCH from the kernel's handshake upcall.
+#
+# privileged + hostNetwork are both REQUIRED: the daemon must live in the
+# host's network namespace to service handshakes for the host's own sockets.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: tlshd
+  namespace: nfs-tls
+  labels:
+    app: tlshd
+spec:
+  selector:
+    matchLabels:
+      app: tlshd
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Storage data path -- replace one node at a time.
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: tlshd
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      serviceAccountName: tlshd
+      # Nothing can mount a TLS-backed volume until this is Running. That
+      # matters on reboot, and remediate.sh stage 2 reboots every node.
+      priorityClassName: system-node-critical
+      # Workers only: masters carry the control-plane taint and mount zero NFS
+      # (measured 2026-10-06). To extend to control-plane nodes, delete this
+      # selector and add:
+      #   tolerations:
+      #     - key: node-role.kubernetes.io/master
+      #       operator: Exists
+      #       effect: NoSchedule
+      nodeSelector:
+        node-role.kubernetes.io/worker: ""
+      containers:
+        - name: tlshd
+          image: REPLACE-ME-IMAGE   # image-registry.openshift-image-registry.svc:5000/nfs-tls/tlshd:latest
+          securityContext:
+            privileged: true
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+              shopt -s nullglob
+              # Trust anchors are installed into THIS container's store, which
+              # is correct: tlshd performs the handshake, so tlshd is what
+              # needs to trust the storage server.
+              found=0
+              for cert in /certs/*.crt; do
+                echo "installing trust anchor: $cert"
+                trust anchor --store "$cert"
+                found=1
+              done
+              if [ "$found" -eq 0 ]; then
+                echo "FATAL: no certificates in /certs -- tlshd would fail every" \
+                     "handshake. Check the nfs-certificates ConfigMap." >&2
+                exit 1
+              fi
+              exec tlshd -s
+          volumeMounts:
+            - name: nfs-certificates
+              mountPath: /certs
+              readOnly: true
+          livenessProbe:
+            exec:
+              command: ["pgrep", "-x", "tlshd"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["pgrep", "-x", "tlshd"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: nfs-certificates
+          configMap:
+            name: nfs-certificates

@@ -1,0 +1,59 @@
+# Builds the tlshd image IN-CLUSTER using this cluster's RHEL entitlement,
+# so the privileged DaemonSet runs an image we own rather than one pulled
+# from an unowned registry.
+#
+# PREREQUISITE -- copy the entitlement secret into this namespace first:
+#
+#   oc get secret etc-pki-entitlement -n openshift-config-managed -o yaml \
+#     | sed 's/namespace: openshift-config-managed/namespace: nfs-tls/' \
+#     | oc apply -f -
+#
+# UNVALIDATED: ktls-utils is almost certainly not in the UBI repos -- that is
+# why the reference build registers a subscription. Mounting the entitlement
+# should make it resolvable, but this has NOT been run here. If dnf cannot
+# find the package, add an explicit RHEL repo pointing at cdn.redhat.com with
+# sslclientcert=/etc/pki/entitlement/*.pem. Treat the first build as the test.
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: tlshd
+  namespace: nfs-tls
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: tlshd:latest
+  source:
+    type: Dockerfile
+    dockerfile: |
+      FROM registry.access.redhat.com/ubi9/ubi:latest
+
+      # UBI images ship /etc/rhsm-host, which makes subscription-manager defer
+      # to the host and ignore the entitlement certs mounted into the build.
+      RUN rm -rf /etc/rhsm-host
+
+      RUN dnf install -y ktls-utils \
+       && dnf clean all \
+       && rm -rf /var/cache/dnf
+
+      # tlshd reads /etc/tlshd.conf. The DaemonSet overrides the command to
+      # install trust anchors first, so this is the fallback entrypoint.
+      CMD ["/usr/sbin/tlshd", "-s"]
+  strategy:
+    type: Docker
+    dockerStrategy:
+      volumes:
+        - name: etc-pki-entitlement
+          mounts:
+            - destinationPath: /etc/pki/entitlement
+          source:
+            type: Secret
+            secret:
+              secretName: etc-pki-entitlement
+  resources:
+    limits:
+      cpu: "2"
+      memory: 2Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi

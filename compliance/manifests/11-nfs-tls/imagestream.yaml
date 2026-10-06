@@ -1,0 +1,10 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: tlshd
+  namespace: nfs-tls
+spec:
+  lookupPolicy:
+    # Lets the DaemonSet reference the image by ImageStream name and have it
+    # resolved to a pinned digest, rather than chasing a mutable tag.
+    local: true

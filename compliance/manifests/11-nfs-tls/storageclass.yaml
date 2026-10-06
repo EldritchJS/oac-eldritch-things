@@ -1,0 +1,28 @@
+# A NEW StorageClass. `mountOptions` is immutable, so the existing
+# pure-fb-nfsv4 class cannot be upgraded in place -- volumes must be migrated
+# to this class to gain encryption in transit.
+#
+# Parameters mirror the live pure-fb-nfsv4 class except for the two TLS
+# values, which must come from the storage team. The current `export-policy`
+# and `nfs-server` are the CLEARTEXT endpoints -- reusing them here would
+# produce a class that claims TLS and silently fails every mount.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs-over-tls
+  annotations:
+    description: >-
+      NFS over TLS (RFC 9289). Requires the tlshd DaemonSet in the nfs-tls
+      namespace. See compliance/NFS-TLS.md.
+provisioner: pxd.portworx.com
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+mountOptions:
+  # The whole point. Without the tlshd DaemonSet running, mounts using this
+  # class fail with "mount.nfs: No such process".
+  - xprtsec=tls
+parameters:
+  backend: pure_file
+  pure_nfs_policy: REPLACE-ME-tls-export-policy   # cleartext equivalent: export-policy
+  pure_nfs_server: REPLACE-ME-tls-nfs-server      # cleartext equivalent: nfs-server

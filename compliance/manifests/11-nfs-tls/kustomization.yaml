@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: nfs-tls
+
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - scc-rolebinding.yaml
+  - imagestream.yaml
+  - buildconfig.yaml
+  - daemonset.yaml
+  - storageclass.yaml
+
+# Fails loudly until files/pure-ca.crt exists. That is deliberate: deploying
+# a trust anchor that is wrong (or absent) is worse than not deploying.
+configMapGenerator:
+  - name: nfs-certificates
+    files:
+      - files/pure-ca.crt
