@@ -1,7 +1,6 @@
 # Verification suite
 
-*Last updated 2026-10-05. Current result: 34 PASS / 0 FAIL / 3 WARN, baseline
-re-saved after stage 2.*
+*Last updated 2026-10-07. Current result: 36 PASS / 0 FAIL / 5 WARN.*
 
 A regression net for `jetty`, covering compliance posture, FIPS, RHACS, and
 **both GPU modalities**.
@@ -41,6 +40,7 @@ they flag things needing a human, not broken things.
 | T-07 | GPU passthrough modality | Node advertises the device resource, `vfio-manager` Running, **host driver absent**, and `permittedHostDevices` present on **both** HCO and the KubeVirt CR. |
 | T-10 | Registry allowlist | Compares registries in use against `allowedRegistries`. Prevents the `ocp-allowed-registries` foot-gun. |
 | T-11 | SCC exceptions known | The 10 privileged SCCs are the expected NVIDIA/KubeVirt set — a *new* one fails the test. |
+| T-13 | Storage traffic encrypted | `tlshd` Ready on every eligible node, `nfs-over-tls` requests `xprtsec=tls`, and reports the TLS-vs-cleartext mount ratio. **The only check for this** — no scanner inspects CSI mount options. |
 | T-12 | GPU switch is delegated & constrained | `gpu-modality-switcher` can patch only the GPU nodes (verified by SubjectAccessReview), cannot touch masters or delete nodes, and the admission policy exists. WARNs while the policy is non-enforcing. |
 
 ### Unit test — no cluster needed
@@ -130,7 +130,7 @@ hosts `central` and `central-db`.
 
 ## Known WARNs (expected, not bugs)
 
-Current state: **34 PASS, 0 FAIL, 3 WARN**, stable across repeated runs.
+Current state: **36 PASS, 0 FAIL, 5 WARN**, stable across repeated runs.
 
 - **T-02** — no CMVP certificate record yet. Paperwork, not a cluster problem.
 - **T-10** — `allowedRegistries` is unset, which is why `ocp-allowed-registries`
@@ -139,6 +139,9 @@ Current state: **34 PASS, 0 FAIL, 3 WARN**, stable across repeated runs.
   `registry.k8s.io`, `registry.redhat.io`. **All six must be in any allowlist**
   — `docker.io` and `registry.k8s.io` are easy to miss if you only inspect the
   GPU and CNV namespaces.
+- **T-13** — two WARNs: no TLS-backed mounts in use yet, and 18 still
+  cleartext. Expected until volumes are migrated off `pure-fb-nfsv4`;
+  `mountOptions` is immutable so they cannot be upgraded in place.
 - **T-12** — the GPU-switch admission policy is in `Warn`+`Audit`, not `Deny`.
   Deliberate: enforcing a node admission policy before an identity provider
   exists risks locking yourself out. Switch to `Deny` once an IdP is in place.

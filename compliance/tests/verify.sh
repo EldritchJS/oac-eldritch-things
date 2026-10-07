@@ -394,13 +394,80 @@ EOF
   fi
 }
 
+# --------------------------------------------------------------- T-13 ------
+run_t13() {
+  hdr "T-13  Storage traffic is encrypted (NFS over TLS)"
+  info "No scanner checks this: the Compliance Operator does not inspect CSI"
+  info "mount options, so a regression here is invisible to ocp4-moderate."
+  info "800-171 3.13.8 / SC-8. Detail: ../NFS-TLS.md"
+
+  local ns=nfs-tls
+
+  # 1. the daemon that answers the kernel's handshake upcall
+  if ! oc get ds tlshd -n "$ns" >/dev/null 2>&1; then
+    warn "tlshd DaemonSet absent in $ns — NFS over TLS is not deployed"
+    info "Any mount with xprtsec=tls then fails: 'mount.nfs: No such process'"
+    return
+  fi
+  local want have
+  want=$(jp daemonset tlshd "$ns" '{.status.desiredNumberScheduled}')
+  have=$(jp daemonset tlshd "$ns" '{.status.numberReady}')
+  if [ -n "$want" ] && [ "${want:-0}" -gt 0 ] && [ "$want" = "$have" ]; then
+    ok "tlshd Ready on $have/$want node(s)"
+  else
+    bad "tlshd not Ready: ${have:-0}/${want:-0} — TLS mounts will fail"
+  fi
+
+  # 2. the StorageClass that asks for it
+  local mo
+  mo=$(jp sc nfs-over-tls "" '{.mountOptions[*]}')
+  case "$mo" in
+    *xprtsec=tls*) ok "StorageClass nfs-over-tls requests xprtsec=tls" ;;
+    "")            bad "StorageClass nfs-over-tls is missing" ;;
+    *)             bad "StorageClass nfs-over-tls lacks xprtsec=tls (got: $mo)" ;;
+  esac
+
+  # 3. what is actually mounted, per worker. Cleartext mounts are EXPECTED
+  #    until existing PVCs are migrated -- mountOptions are immutable, so
+  #    volumes on pure-fb-nfsv4 cannot be upgraded in place. Report the ratio
+  #    rather than failing on it.
+  local nodes tot_tls=0 tot_clear=0
+  nodes=$(oc get nodes -l node-role.kubernetes.io/worker -o name 2>/dev/null | sed 's|node/||')
+  for n in $nodes; do
+    local out
+    out=$(oc debug "node/$n" -n default --quiet -- chroot /host /bin/bash -c \
+      'printf "%s|%s" "$(grep -c "xprtsec=tls" /proc/mounts)" \
+        "$(grep " nfs4\? " /proc/mounts | grep -vc xprtsec)"' 2>/dev/null | tr -d '\r')
+    case "$out" in
+      *"|"*) ;;
+      *) warn "$n  could not read /proc/mounts"; continue ;;
+    esac
+    local tls="${out%%|*}" clear="${out##*|}"
+    tot_tls=$((tot_tls + ${tls:-0})); tot_clear=$((tot_clear + ${clear:-0}))
+    info "$n  tls=$tls cleartext=$clear"
+  done
+  if [ "$tot_tls" -gt 0 ]; then
+    ok "$tot_tls NFS mount(s) carrying xprtsec=tls"
+  else
+    warn "no TLS-backed NFS mounts in use yet"
+    info "tlshd is ready, but nothing is consuming nfs-over-tls."
+  fi
+  if [ "$tot_clear" -gt 0 ]; then
+    warn "$tot_clear NFS mount(s) still CLEARTEXT (sec=sys, no xprtsec)"
+    info "Expected until PVCs are migrated: mountOptions are immutable, so"
+    info "volumes on pure-fb-nfsv4 need a new claim on nfs-over-tls and a copy."
+  else
+    ok "no cleartext NFS mounts remain"
+  fi
+}
+
 # ---------------------------------------------------------------- main -----
 command -v oc >/dev/null || { echo "oc not found" >&2; exit 2; }
 oc whoami >/dev/null 2>&1 || { echo "not logged in (set KUBECONFIG)" >&2; exit 2; }
 
 printf '%sjetty verification%s  —  %s  —  %s\n' "$B" "$N" "$(oc whoami --show-server)" "$(date -u '+%Y-%m-%d %H:%M UTC')"
 
-ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12"
+ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12 t13"
 RUN="${ONLY:-$ALL}"
 for t in ${RUN//,/ }; do
   if declare -f "run_$t" >/dev/null; then "run_$t"; else echo "no such test: $t" >&2; fi

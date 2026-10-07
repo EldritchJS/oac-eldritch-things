@@ -1,46 +1,19 @@
 # 11 — NFS over TLS (`tlshd`)
 
-**Status: DEPLOYED and running. Blocked on one thing — the FlashBlade
-certificate has no `iPAddress` SAN, so every TLS handshake is rejected.**
+**Status: WORKING.** Deployed 2026-10-06, verified end to end 2026-10-07.
 
-As of 2026-10-06 everything on the cluster side works:
+`tlshd` is 2/2 Ready on both workers, the `nfs-over-tls` StorageClass
+provisions, mounts carry `xprtsec=tls`, and a packet capture confirms the
+payload is encrypted (300 canary lines written, 0 occurrences in 3,454
+captured packets). See [../../NFS-TLS.md](../../NFS-TLS.md).
 
-- Image built in-cluster from the cluster's own RHEL entitlement
-  (`ktls-utils-0.11-3.el9_6`), pushed to `ghcr.io/eldritchjs/tlshd`, pinned by
-  digest in `daemonset.yaml`.
-- `tlshd` DaemonSet is 2/2 Ready on both workers, trust anchor installed.
-- `nfs-over-tls` StorageClass provisions successfully — a PVC **Bound**.
+The initial failure was the array's default certificate having no
+`iPAddress` SAN — GnuTLS will not fall back to the CN for an IP peer.
+The storage team reissued with `subjectAltName = IP:<nfs-data-vip>`.
+**Keep that requirement in mind for any other array.**
 
-The mount then fails, and `tlshd` says exactly why:
-
-```
-tlshd[24]: Certificate owner unexpected.
-tlshd[24]: Handshake with '<fb-data-vip>' (<fb-data-vip>) failed
-```
-
-**The array is presenting its default Pure self-signed certificate, which has
-no Subject Alternative Name.** GnuTLS requires an `iPAddress` SAN to verify a
-peer addressed by IP; it does **not** fall back to the CN. Compare with the
-cert from the reference deployment that works:
-
-| | SAN |
-|---|---|
-| Reference array (works) | `X509v3 Subject Alternative Name: IP Address:<its-vip>` |
-| jetty FlashBlade (fails) | `No extensions in certificate` |
-
-Note the issuers differ too: the working one was issued by the site
-(`OU = Mass Open Cloud`), ours is the vendor default (`O = Pure Storage, Inc.`).
-Someone generated a proper certificate for that other array; the same needs to
-happen here.
-
-### The ask for the storage team
-
-> Reissue the FlashBlade NFS certificate with
-> `subjectAltName = IP:<nfs-data-vip>`.
-> The current default self-signed certificate has no SAN, so clients that
-> address the array by IP cannot verify it.
-
-Nothing else is known to be missing. Drop the new cert in as
+Remaining work is migration: 18 NFS mounts are still cleartext, and
+`mountOptions` is immutable so they cannot be upgraded in place.
 `files/pure-ca.crt`, `oc apply -k .`, and the mount should complete.
 
 Closes the cleartext-storage gap described in [../../NFS-TLS.md](../../NFS-TLS.md)

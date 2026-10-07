@@ -1,11 +1,11 @@
-# NFS over TLS — open gap, with a proven path
+# NFS over TLS — working
 
-*Last updated 2026-10-06.*
+*Last updated 2026-10-07.*
 
 > Angle-bracket values are redacted internal addresses. See the top-level
 > README § Conventions.
 
-## The gap
+## The gap (now closed for new volumes)
 
 **All NFS traffic between the nodes and the FlashBlade is cleartext.** Live
 mount options on a worker:
@@ -79,27 +79,65 @@ Running `tlshd` inside the container means `trust anchor` modifies the
 *container's* trust store, which is correct — the daemon doing the handshake
 is the one that needs the trust.
 
-## Status (2026-10-06): deployed, blocked on the array certificate
-
-Everything on the cluster side is done and working. The remaining blocker is
-external:
+## Status (2026-10-07): WORKING, end to end
 
 | Step | State |
 |---|---|
-| Image built from the cluster's RHEL entitlement | ✅ `ktls-utils-0.11-3.el9_6` |
+| Image built from the cluster's own RHEL entitlement | ✅ `ktls-utils-0.11-3.el9_6` |
 | Pushed to `ghcr.io/eldritchjs/tlshd`, pinned by digest | ✅ |
 | `tlshd` DaemonSet on both workers | ✅ 2/2 Ready |
 | `nfs-over-tls` StorageClass provisions | ✅ PVC Bound |
-| TLS handshake | ❌ **`Certificate owner unexpected`** |
+| TLS handshake | ✅ `Handshake with <fb-data-vip> was successful` |
+| Mount carries `xprtsec=tls` | ✅ confirmed in `/proc/mounts` |
+| **Traffic actually encrypted** | ✅ **proven by packet capture** |
 
-The FlashBlade presents its **default Pure self-signed certificate, which has
-no Subject Alternative Name**. GnuTLS requires an `iPAddress` SAN to verify a
-peer addressed by IP and does not fall back to the CN. The reference array
-that works has `X509v3 Subject Alternative Name: IP Address:<its-vip>`; jetty's
-has `No extensions in certificate`.
+### The proof
 
-**Ask for the storage team:** reissue the FlashBlade NFS certificate with
-`subjectAltName = IP:<nfs-data-vip>`. Nothing else is known to be missing.
+A mount succeeding proves the mount worked, not that it is encrypted. So:
+300 lines of a unique canary string were written to a TLS-backed volume while
+capturing port 2049 to the array.
+
+| | |
+|---|---|
+| Canary lines written (control) | 300 |
+| Packets captured during the window | 3,454 (1.49 MB) |
+| **Occurrences of the canary in the capture** | **0** |
+
+On a cleartext mount that string appears in the capture verbatim.
+
+### What made it fail first time
+
+The array's **default Pure self-signed certificate has no Subject Alternative
+Name**, and GnuTLS requires an `iPAddress` SAN to verify a peer addressed by
+IP — it does not fall back to the CN. The symptom was:
+
+```
+tlshd: Certificate owner unexpected.
+tlshd: Handshake with <fb-data-vip> failed
+```
+
+Worth knowing *why* that error is diagnostic: `unexpected owner` means the
+chain validated against a trusted anchor and only the **name** check failed.
+A wrong or untrusted certificate gives an unknown-issuer error instead. So the
+message localises the fault precisely.
+
+Ruled out along the way, with evidence: the client permits TLS 1.3
+(`enabled-version = TLS1.3` under the FIPS policy), and the certificate is
+SHA-256/RSA-2048, both FIPS-acceptable — so neither a protocol-version
+mismatch nor an algorithm rejection.
+
+**Fix:** storage team reissued with `subjectAltName = IP:<nfs-data-vip>`.
+Keep that requirement in mind for any other array.
+
+### Still to do
+
+- **Migrate existing volumes.** 18 NFS mounts are still cleartext.
+  `mountOptions` is immutable, so `pure-fb-nfsv4` cannot be upgraded in place:
+  each volume needs a new claim on `nfs-over-tls` and a data copy. This is the
+  bulk of the remaining work, and `tests/verify.sh` T-13 tracks the ratio.
+- **Document the ACS exception** for the privileged DaemonSet.
+- **Consider making `nfs-over-tls` the default StorageClass** once migration
+  is done, so new volumes are encrypted without anyone having to remember.
 
 ## Manifests
 
