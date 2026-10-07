@@ -49,7 +49,8 @@ output for `jetty`. Keep it outside this working tree.
 | GPU — VM passthrough | ✅ Live on `u16` |
 | **Cluster hardening** | ✅ **Stages 1 + 2 applied.** 379/385 remediations; 6 outstanding |
 | Audit retention | ⚠️ 5.8 h — volume cut 73%, but still no forwarding |
-| CNV golden images | ❌ Blocked — unrelated CDI bug, fix known |
+| Storage encryption | ⚠️ NFS-over-TLS live and default; only ACS volumes left on cleartext |
+| CNV golden images | ✅ Fixed — all 6 imported, on encrypted storage |
 
 The headline: **the cluster is hardened and the GPUs survived it.** Platform
 and node remediation are applied — node failures went **377 → 10** — and both
@@ -293,15 +294,20 @@ cordoning and editing taints). Ships in Warn+Audit until an IdP exists.
 
 ## 7. Two loose ends
 
-**CNV golden images are blocked**, but not by anything above. CDI's built-in
-storage profile advertises `Block` first — correct for FlashArray, wrong for
-FlashBlade NFS — so all six DataVolumes were created as block devices and die
-trying to mount. Fix is CDI-scoped and does not affect RHACS:
+~~**CNV golden images are blocked.**~~ ✅ **Fixed 2026-10-07.** CDI's
+auto-detected storage profile advertised `Block` first — correct for a
+FlashArray, wrong for FlashBlade NFS — so all six DataVolumes were created as
+block devices and hung in `ImportScheduled` from cluster build. Six days, with
+no error that said so.
 
-```sh
-oc edit storageprofile pure-fb-nfsv4   # claimPropertySets -> RWX / Filesystem
-oc delete dv -n openshift-virtualization-os-images --all
-```
+Pinning `Filesystem` in the StorageProfile
+(`manifests/12-cdi-storageprofile.yaml`) and deleting the stuck DataVolumes
+released them: all six imported to `Succeeded`, DataSources Ready. They landed
+on `nfs-over-tls`, so they are encrypted in transit too.
+
+> `pure-fb-nfsv4` has the identical defect and is deliberately left unfixed —
+> everything is migrating off it. Apply the same override if anything is ever
+> provisioned there again.
 
 **Every node has a stray second default route** on `br-storage` via DHCP.
 Harmless today because `br-ex` wins on metric, but it wants `auto-gateway:

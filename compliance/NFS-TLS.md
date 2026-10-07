@@ -160,7 +160,8 @@ migration if recovery time starts to matter.
 |---|---|---|
 | 2026-10-07 | baseline after tlshd deployed | 18 |
 | 2026-10-07 | `nfs-over-tls` made the **default** StorageClass | 18 |
-| 2026-10-07 | Compliance Operator raw results migrated (8 PVCs) | **8** |
+| 2026-10-07 | Compliance Operator raw results migrated (8 PVCs) | 8 |
+| 2026-10-07 | CNV golden images fixed + migrated (6 PVCs) | **6** |
 
 **Default StorageClass is now `nfs-over-tls`.** Anything provisioned from here
 on is encrypted without anyone having to ask. Note the trade: `tlshd` is now a
@@ -174,8 +175,8 @@ name, so migrating meant deleting the old ones — the eight PVs were patched to
 survives as `Released` volumes on the array rather than being deleted with the
 claims. Recover one by creating a PVC bound to its `volumeName` if ever needed.
 
-Still on `pure-fb-nfsv4` (8 mounts): the six CNV golden images and the ACS
-stackrox volumes. See "Still to do".
+Still on `pure-fb-nfsv4`: only the three ACS stackrox volumes
+(`central-db` 100Gi, `central-db-backup` 200Gi, `scanner-v4-db` 50Gi).
 
 ### The mistake worth not repeating: scoping tlshd to workers
 
@@ -201,11 +202,9 @@ Two lessons, both now encoded:
 
 ### Still to do
 
-- **Migrate the remaining volumes.** 8 NFS mounts are still cleartext: the
-  six CNV golden images (already broken independently -- the `nfs-over-tls`
-  StorageProfile advertises `Block` first, the same defect that stalled them
-  on `pure-fb-nfsv4`, so fix the profile before repointing) and the ACS
-  stackrox volumes (live Postgres, needs a maintenance window).
+- **Migrate the ACS volumes** — the last three, 350Gi. Live Postgres, so it
+  needs a maintenance window: scale Central down, copy, repoint. Or accept
+  losing violation history and let it rebuild.
   `mountOptions` is immutable, so `pure-fb-nfsv4` cannot be upgraded in place:
   each volume needs a new claim on `nfs-over-tls` and a data copy. This is the
   bulk of the remaining work, and `tests/verify.sh` T-13 tracks the ratio.

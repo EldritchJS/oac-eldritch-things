@@ -1,0 +1,38 @@
+# CDI StorageProfile override for nfs-over-tls.
+#
+# WHY THIS EXISTS
+# ---------------
+# CDI auto-detects what a StorageClass supports and, for the Portworx/Pure
+# provisioner, advertises Block FIRST:
+#
+#   status.claimPropertySets[0] = {accessModes: [ReadWriteMany], volumeMode: Block}
+#
+# That is correct for a FlashArray and wrong for a FlashBlade, which is file
+# and object only. CDI takes the first entry, creates the DataVolume's PVC as
+# a block device, and the import then hangs forever. The six CNV golden-image
+# DataVolumes sat in ImportScheduled from cluster build (2026-10-01) until
+# 2026-10-07 for exactly this reason -- six days, no error message that said
+# so, just "scheduled".
+#
+# Setting spec.claimPropertySets pins Filesystem and overrides the detection.
+# Within seconds of applying this and deleting the stuck DataVolumes, all six
+# imports ran to Succeeded.
+#
+# NOTE: pure-fb-nfsv4 has the identical defect and is deliberately NOT fixed
+# here -- everything is being migrated off it. If anything is ever provisioned
+# on it again, apply the same override.
+#
+# Verified 2026-10-07: 6/6 DataVolumes Succeeded, DataSources Ready,
+# PVCs volumeMode=Filesystem on nfs-over-tls.
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: StorageProfile
+metadata:
+  name: nfs-over-tls
+spec:
+  claimPropertySets:
+    - accessModes:
+        - ReadWriteMany
+      volumeMode: Filesystem
+    - accessModes:
+        - ReadWriteOnce
+      volumeMode: Filesystem
