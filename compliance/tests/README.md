@@ -130,8 +130,13 @@ case; a node with GPU workloads to evict will be slower.
 The script refuses to run if any pod requests a GPU or any VMI is running, and
 warns if the target node hosts RHACS Central. A label flip evicts nothing, so
 it is safe alongside running non-GPU workloads — but **do not** use the
-cordon/drain path in `../vms/gpu/test-gpu-switch.sh` on `moc-r4pcc02u16`, which
-hosts `central` and `central-db`.
+cordon/drain path in `../vms/gpu/test-gpu-switch.sh` on whichever worker is
+currently hosting `central` and `central-db`.
+
+> **Check, do not assume.** Those pods move. They were on `moc-r4pcc02u16`
+> when this was first written and are on `moc-r4pcc02u15` as of 2026-10-07,
+> having relocated during the stage 2 reboots. Run
+> `oc get pods -n stackrox -o wide | grep central` before draining anything.
 
 ## Known WARNs (expected, not bugs)
 
@@ -144,8 +149,7 @@ Current state: **36 PASS, 0 FAIL, 5 WARN**, stable across repeated runs.
   `registry.k8s.io`, `registry.redhat.io`. **All six must be in any allowlist**
   — `docker.io` and `registry.k8s.io` are easy to miss if you only inspect the
   GPU and CNV namespaces.
-- **T-13** — two WARNs: no TLS-backed mounts in use yet, and 18 still
-  cleartext. Expected until volumes are migrated off `pure-fb-nfsv4`;
+- **T-13** — one WARN: 18 mounts still cleartext. Expected until volumes are migrated off `pure-fb-nfsv4`;
   `mountOptions` is immutable so they cannot be upgraded in place.
 - **T-12** — the GPU-switch admission policy is in `Warn`+`Audit`, not `Deny`.
   Deliberate: enforcing a node admission policy before an identity provider

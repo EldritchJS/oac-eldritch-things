@@ -129,6 +129,31 @@ mismatch nor an algorithm rejection.
 **Fix:** storage team reissued with `subjectAltName = IP:<nfs-data-vip>`.
 Keep that requirement in mind for any other array.
 
+### Node-reboot behaviour — measured, and it is a non-issue
+
+The obvious worry with running `tlshd` as a pod is ordering: nothing can mount
+a TLS volume until the daemon is up, so a reboot could strand workloads.
+Measured on `moc-r4pcc02u16`, 2026-10-07, with a TLS-backed volume in use:
+
+| Interval | Time |
+|---|---|
+| reboot issued → node Ready | 606s |
+| node Ready → `tlshd` Ready | **0s** |
+| node Ready → TLS mount usable | 6s |
+| **`tlshd` Ready → TLS mount usable** | **6s** ← the ordering window |
+| heartbeat gap on the TLS volume | 580s (vs 606s total reboot) |
+
+`tlshd` is Ready *at the moment the node is* — a DaemonSet with
+`priorityClassName: system-node-critical` comes up with the node rather than
+after it. **TLS adds nothing measurable to recovery.**
+
+The only `FailedMount` observed was `driver name pxd.portworx.com not found in
+the list of registered CSI drivers` — CSI registration lag, which affects every
+volume regardless of encryption and has nothing to do with `tlshd`.
+
+Caveat: one node, lightly loaded, one TLS volume. Worth re-measuring after
+migration if recovery time starts to matter.
+
 ### Still to do
 
 - **Migrate existing volumes.** 18 NFS mounts are still cleartext.

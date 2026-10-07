@@ -1,0 +1,80 @@
+# A 1Gi canary that keeps one TLS-backed volume mounted and written to.
+#
+# WHY KEEP IT
+# -----------
+# tests/verify.sh T-13 can confirm that tlshd is Ready and that the
+# StorageClass asks for xprtsec, but it cannot confirm the path actually
+# WORKS unless something is using it. Until the 18 existing volumes are
+# migrated off pure-fb-nfsv4, this is the only live consumer -- without it
+# T-13 degrades to "no TLS-backed NFS mounts in use yet".
+#
+# It also writes a timestamp every 5s, so the gap in /data/heartbeat measures
+# any real outage of the encrypted write path. That is how the reboot window
+# below was measured.
+#
+# Delete it once real workloads are on nfs-over-tls; it has served its purpose
+# at that point.
+#
+# MEASURED: reboot recovery, moc-r4pcc02u16, 2026-10-07
+# ------------------------------------------------------
+#   reboot issued -> node Ready       606s
+#   node Ready    -> tlshd Ready        0s   (DaemonSet + system-node-critical:
+#                                             tlshd is up WITH the node)
+#   node Ready    -> TLS mount usable   6s
+#   tlshd Ready   -> TLS mount usable   6s   <-- the ordering window
+#   heartbeat gap on the TLS volume   580s   (vs 606s total reboot)
+#
+# Conclusion: the tlshd-ordering concern is not real in practice. TLS adds
+# nothing measurable to node recovery. The only FailedMount seen was
+# "driver name pxd.portworx.com not found in the list of registered CSI
+# drivers" -- CSI registration lag, which affects every volume regardless of
+# encryption and is unrelated to tlshd.
+#
+# Caveat: one node, lightly loaded, one TLS volume. Re-measure after migration
+# if recovery time starts to matter.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tls-canary
+  namespace: nfs-tls
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: nfs-over-tls
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tls-canary
+  namespace: nfs-tls
+  labels:
+    app: tls-canary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tls-canary
+  template:
+    metadata:
+      labels:
+        app: tls-canary
+    spec:
+      containers:
+        - name: canary
+          image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+          command:
+            - /bin/sh
+            - -c
+            - while true; do date -u +%FT%TZ >> /data/heartbeat; sleep 5; done
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits:   {cpu: 50m, memory: 64Mi}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: tls-canary
