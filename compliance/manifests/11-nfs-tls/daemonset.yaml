@@ -34,15 +34,21 @@ spec:
       # Nothing can mount a TLS-backed volume until this is Running. That
       # matters on reboot, and remediate.sh stage 2 reboots every node.
       priorityClassName: system-node-critical
-      # Workers only: masters carry the control-plane taint and mount zero NFS
-      # (measured 2026-10-06). To extend to control-plane nodes, delete this
-      # selector and add:
-      #   tolerations:
-      #     - key: node-role.kubernetes.io/master
-      #       operator: Exists
-      #       effect: NoSchedule
-      nodeSelector:
-        node-role.kubernetes.io/worker: ""
+      # EVERY node, including control-plane.
+      #
+      # This was originally scoped to workers, on the reasoning that masters
+      # carried the control-plane taint and mounted zero NFS -- which was true
+      # when measured on 2026-10-06. It was still the wrong call: that was an
+      # observation about where pods happened to be sitting, not a durable
+      # property. The Compliance Operator's result-server pods schedule onto
+      # masters, and when the compliance PVCs moved to nfs-over-tls those
+      # mounts failed with exit status 32 on every master, with no handshake
+      # even reaching a tlshd (there wasn't one there to reach).
+      #
+      # A daemon in the storage data path belongs everywhere storage can be
+      # mounted. Do not re-narrow this based on current pod placement.
+      tolerations:
+        - operator: Exists
       # GHCR packages are private by default. This reuses the same secret the
       # BuildConfig pushes with; a classic PAT with write:packages can also
       # read. Alternative: make the package public and drop this.

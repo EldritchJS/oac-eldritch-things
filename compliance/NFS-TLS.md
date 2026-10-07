@@ -154,9 +154,58 @@ volume regardless of encryption and has nothing to do with `tlshd`.
 Caveat: one node, lightly loaded, one TLS volume. Worth re-measuring after
 migration if recovery time starts to matter.
 
+### Migration progress
+
+| Date | Change | Cleartext mounts |
+|---|---|---|
+| 2026-10-07 | baseline after tlshd deployed | 18 |
+| 2026-10-07 | `nfs-over-tls` made the **default** StorageClass | 18 |
+| 2026-10-07 | Compliance Operator raw results migrated (8 PVCs) | **8** |
+
+**Default StorageClass is now `nfs-over-tls`.** Anything provisioned from here
+on is encrypted without anyone having to ask. Note the trade: `tlshd` is now a
+dependency for every new volume cluster-wide. The reboot measurement above
+says that is safe, but it is a real centralisation of risk.
+
+**Compliance raw results.** `jetty-default` ScanSetting now sets
+`rawResultStorage.storageClassName: nfs-over-tls`. The operator reuses PVCs by
+name, so migrating meant deleting the old ones — the eight PVs were patched to
+`persistentVolumeReclaimPolicy: Retain` first, so the archived ARF evidence
+survives as `Released` volumes on the array rather than being deleted with the
+claims. Recover one by creating a PVC bound to its `volumeName` if ever needed.
+
+Still on `pure-fb-nfsv4` (8 mounts): the six CNV golden images and the ACS
+stackrox volumes. See "Still to do".
+
+### The mistake worth not repeating: scoping tlshd to workers
+
+The DaemonSet originally carried `nodeSelector: node-role.kubernetes.io/worker`,
+justified as reducing the blast radius of a privileged host-network pod, on the
+measured basis that masters carried the control-plane taint and mounted zero
+NFS.
+
+The measurement was accurate and the conclusion was still wrong. It described
+*where pods happened to be sitting*, not where they can run. The Compliance
+Operator schedules its result-server pods onto masters, and the moment the
+compliance PVCs moved to `nfs-over-tls` every one of those mounts failed with
+`exit status 32` — with no handshake reaching any `tlshd`, because there was
+none on those nodes to reach.
+
+Two lessons, both now encoded:
+
+- **A daemon in the storage data path belongs on every node that can mount
+  storage.** The reference implementation had no nodeSelector; narrowing it was
+  not an improvement. `tolerations: [{operator: Exists}]` now.
+- **T-13 was polling workers only**, mirroring the same bad assumption, so it
+  could not have caught this. It now checks all nodes.
+
 ### Still to do
 
-- **Migrate existing volumes.** 18 NFS mounts are still cleartext.
+- **Migrate the remaining volumes.** 8 NFS mounts are still cleartext: the
+  six CNV golden images (already broken independently -- the `nfs-over-tls`
+  StorageProfile advertises `Block` first, the same defect that stalled them
+  on `pure-fb-nfsv4`, so fix the profile before repointing) and the ACS
+  stackrox volumes (live Postgres, needs a maintenance window).
   `mountOptions` is immutable, so `pure-fb-nfsv4` cannot be upgraded in place:
   each volume needs a new claim on `nfs-over-tls` and a data copy. This is the
   bulk of the remaining work, and `tests/verify.sh` T-13 tracks the ratio.

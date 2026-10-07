@@ -431,8 +431,13 @@ run_t13() {
   #    until existing PVCs are migrated -- mountOptions are immutable, so
   #    volumes on pure-fb-nfsv4 cannot be upgraded in place. Report the ratio
   #    rather than failing on it.
+  # ALL nodes, not just workers. This originally polled workers only, matching
+  # a tlshd DaemonSet that was scoped the same way -- and both were wrong. The
+  # Compliance Operator's result-server pods schedule onto masters and mount
+  # NFS there, so a worker-only check cannot see cleartext (or broken) mounts
+  # on the control plane. That is precisely the failure it missed once.
   local nodes tot_tls=0 tot_clear=0
-  nodes=$(oc get nodes -l node-role.kubernetes.io/worker -o name 2>/dev/null | sed 's|node/||')
+  nodes=$(oc get nodes -o name 2>/dev/null | sed 's|node/||')
   for n in $nodes; do
     local out
     out=$(oc debug "node/$n" -n default --quiet -- chroot /host /bin/bash -c \
