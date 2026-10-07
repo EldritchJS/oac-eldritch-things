@@ -385,17 +385,27 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
   after a full node-hardening reboot. This converts FEASIBILITY.md §3 #4 from a
   prediction into a measurement.
 
-- **Remediation is ITERATIVE — stage 2 is not one-and-done.** 6 remediations
-  remain `NotApplied`, all usbguard, all `kind: MachineConfig`, all
-  `spec.apply: false`. They carry
-  `compliance.openshift.io/depends-on: ...package_usbguard_installed` and were
-  labelled `compliance.openshift.io/has-unmet-dependencies` when stage 2 ran —
-  the operator **will not apply a remediation until its prerequisite is applied
-  and a rescan re-evaluates it**. Stage 2 installed the usbguard package; the
-  post-hardening rescan then flipped them to `dependencies-met` and generated
-  2 brand-new ones (`configure-usbguard-auditbackend`, total 383 → 385).
-  **A second `./remediate.sh stage2` pass (plus another reboot) is required**,
-  and possibly a third. See §7 "Open".
+- **Stage 2 round two applied 2026-10-07** — the 6 usbguard remediations that
+  were dependency-blocked during round one became eligible after the
+  post-hardening rescan. One more rolling reboot, ~2h, all 5 nodes, nothing
+  degraded.
+
+  **Node failures 10 → 4:** `rhcos4-moderate-master` and `-worker` both
+  4 → **1**. The four survivors are both genuinely manual —
+  `sshd-limit-user-access` (no remediation offered) and
+  `reject-unsigned-images-by-default` (stage 3, GPU-dangerous, deferred).
+  **Node hardening is effectively complete.**
+
+  Two things survived the reboot that are worth recording: both GPU
+  modalities (T-06/T-07 pass), and the `tlshd` DaemonSet came back 2/2, so
+  the storage data path recovers on its own. `usbguard` is `enabled` and
+  `active`, with the HID/hub allow rule applied in the same rendered config —
+  the ordering guard in `lib/select-remediations.py` doing its job on its
+  first real outing.
+
+  Timing note for next time: this was run while **zero** TLS-backed mounts
+  were in use, so `tlshd` restarting cost nothing. After volume migration,
+  every reboot has to wait for it.
 
 ### Standards confirmed: NIST 800-171 + HIPAA + FIPS
 

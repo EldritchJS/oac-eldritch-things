@@ -74,7 +74,7 @@ stage**, once you have confirmed the new numbers are the ones you wanted:
 ./verify.sh -t t03 --save-baseline
 ```
 
-Current baseline (2026-10-05, **after stage 2**):
+Current baseline (2026-10-07, **after stage 2 round two**):
 
 ```
 ocp4-cis                     8
@@ -83,19 +83,24 @@ ocp4-cis-node-worker         0
 ocp4-moderate               21
 ocp4-moderate-node-master    1
 ocp4-moderate-node-worker    1
-rhcos4-moderate-master       4
-rhcos4-moderate-worker       4
+rhcos4-moderate-master       1
+rhcos4-moderate-worker       1
 ```
 
 Progression:
 
-| Scan | initial | after stage 1 | after stage 2 |
-|---|---|---|---|
-| `ocp4-cis` | 10 | 8 | 8 |
-| `ocp4-moderate` | 25 | 21 | 21 |
-| `ocp4-moderate-node-master` | 4 | 4 | **1** |
-| `rhcos4-moderate-master` | 191 | 191 | **4** |
-| `rhcos4-moderate-worker` | 191 | 191 | **4** |
+| Scan | initial | after stage 1 | after stage 2 | after round two |
+|---|---|---|---|---|
+| `ocp4-cis` | 10 | 8 | 8 | 8 |
+| `ocp4-moderate` | 25 | 21 | 21 | 21 |
+| `ocp4-moderate-node-master` | 4 | 4 | 1 | 1 |
+| `rhcos4-moderate-master` | 191 | 191 | 4 | **1** |
+| `rhcos4-moderate-worker` | 191 | 191 | 4 | **1** |
+
+**Node failures: 377 -> 10 -> 4.** The four survivors are both genuinely
+manual: `sshd-limit-user-access` (no remediation is offered) and
+`reject-unsigned-images-by-default` (a stage 3 GPU-dangerous check,
+deliberately deferred -- see FEASIBILITY.md §3).
 
 Stage 1 was platform-only (6 rules, 2 CIS + 4 moderate). Stage 2 was node-only
 (377 MachineConfigs): **377 node failures → 10**, platform untouched.
