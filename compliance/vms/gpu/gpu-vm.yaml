@@ -1,3 +1,6 @@
+# COSTS MONEY. A VM created from this template CLAIMS a physical GPU, and
+# the MOC bill is driven by claimed GPUs whether or not the guest is doing
+# anything. Delete the VM when finished.
 apiVersion: template.openshift.io/v1
 kind: Template
 metadata:

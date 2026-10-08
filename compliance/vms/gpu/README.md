@@ -2,7 +2,26 @@
 
 Giving a VM a physical NVIDIA GPU, and measuring what it costs to move a node between serving containers and serving VMs.
 
-> **Status: the passthrough path is built and partly proven on `jetty`.** `preflight.sh`, `install-operators.sh` and `setup-passthrough.sh` (including `APPLY=1`) have all run against real hardware. A GPU VM **schedules and is allocated an H100**, but does not finish booting — blocked on the cluster having no storage, see "Result" below. `test-gpu-switch.sh` has not been run.
+> **Status: the passthrough path is built and partly proven on `jetty`.** `preflight.sh`, `install-operators.sh` and `setup-passthrough.sh` (including `APPLY=1`) have all run against real hardware. A GPU VM **schedules and is allocated an H100**. The original blocker — no working storage — was resolved on 2026-10-02, but `test-gpu-vm.sh` has **not been re-run since**, so a full guest boot is still unproven. `test-gpu-switch.sh` has not been run. Node-level modality switching *has* been measured independently: see `tests/gpu-switch-timing.sh` (73s / 208s, no reboot).
+
+## Cost warning
+
+**Claimed GPUs are billable on MOC — idle or not, pod or VM.** Anything in
+here that creates a user-space GPU workload costs money for as long as it
+exists:
+
+| File | Claims a GPU |
+|---|---|
+| `gpu-vm.yaml` / `test-gpu-vm.sh` | yes — a VM with a GPU hostDevice |
+| `test-gpu-switch.sh` | yes — a pod requesting `nvidia.com/gpu: 1` |
+| `preflight.sh`, `setup-passthrough.sh` | no |
+| `../../tests/gpu-switch-timing.sh` | no — and refuses to run if anything else is holding one |
+| `../../tests/verify.sh` (T-06/T-07) | no — reads node state only |
+
+**Delete the workload when you are finished.** The GPU Operator's own
+daemonsets (driver, device plugin, `vfio-manager`, DCGM) bind and advertise
+the hardware but never request it as a pod resource, so they are not
+billable — that is just the operator doing its job.
 
 ### Target cluster: `jetty` (as of 2026-10-01)
 

@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ---------------------------------------------------------------------------
+# COSTS MONEY. This creates a user-space workload that CLAIMS a GPU, and the
+# MOC bill is driven by claimed GPUs -- idle or not, pod or VM. Delete the
+# workload when you are done; do not leave it running overnight.
+#
+# Free by comparison: tests/verify.sh (T-06/T-07 only read node state) and
+# gpu-switch-timing.sh / preflight.sh, which refuse to run if anything is
+# already holding a GPU and never add a claim themselves.
+# ---------------------------------------------------------------------------
+
 # Automated proof that a VM on OpenShift Virtualization can be given a whole
 # physical NVIDIA GPU by PCI passthrough, and that the guest can actually use it
 # for CUDA compute.
