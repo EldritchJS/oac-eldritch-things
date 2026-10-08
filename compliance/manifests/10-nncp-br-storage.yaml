@@ -18,19 +18,24 @@
 # apply one node at a time and confirm `oc get nncp` reports
 # SuccessfullyConfigured before moving on.
 #
-# KNOWN PENDING CHANGE -- deliberately NOT applied here
-# -----------------------------------------------------
-# All five set `dhcp: true` with `auto-gateway` unset, so DHCP installs a
-# SECOND default route on br-storage. Harmless today only because br-ex wins
-# on metric. The fix is `auto-gateway: false` on the br-storage ipv4 block:
+# auto-gateway: false / auto-dns: false -- APPLIED 2026-10-08
+# -----------------------------------------------------------
+# Before: DHCP on the storage VLAN installed a SECOND default route on
+# br-storage (metric 425; br-ex won only on metric) AND pushed the storage
+# gateway into /etc/resolv.conf as a nameserver, with a search domain. So DNS
+# could fall back out the storage network. auto-gateway alone would not have
+# stopped the DNS half -- both flags are needed.
 #
-#     ipv4:
-#       enabled: true
-#       dhcp: true
-#       auto-gateway: false      # <-- add this
+# Safe because the FlashBlade is on the directly-connected storage subnet:
+# NFS never used the default route. The connected route comes from the
+# interface address, not DHCP, and is unaffected.
 #
-# It is left out so this file stays a faithful record of what is deployed.
-# Add it deliberately, one node at a time, starting with a worker.
+# How NMState applied it (measured): NetworkManager `device-reapply` -- no
+# link down -- with the DHCP client restarted. `ip monitor` on br-storage
+# recorded exactly ONE kernel event: deletion of the stray default route. No
+# address removal, no subnet-route change. On u16, which carried all six
+# TLS NFS mounts: no kernel NFS/RPC messages and zero tlshd re-handshakes, so
+# the encrypted connections never dropped. Applied u15 -> 3 masters -> u16.
 #
 # NOTE: the NIC differs by role -- masters use eno2, workers enp163s0np0.
 ---
@@ -55,6 +60,8 @@ spec:
         port:
         - name: eno2
       ipv4:
+        auto-dns: false
+        auto-gateway: false
         dhcp: true
         enabled: true
       ipv6:
@@ -86,6 +93,8 @@ spec:
         port:
         - name: eno2
       ipv4:
+        auto-dns: false
+        auto-gateway: false
         dhcp: true
         enabled: true
       ipv6:
@@ -117,6 +126,8 @@ spec:
         port:
         - name: eno2
       ipv4:
+        auto-dns: false
+        auto-gateway: false
         dhcp: true
         enabled: true
       ipv6:
@@ -148,6 +159,8 @@ spec:
         port:
         - name: enp163s0np0
       ipv4:
+        auto-dns: false
+        auto-gateway: false
         dhcp: true
         enabled: true
       ipv6:
@@ -179,6 +192,8 @@ spec:
         port:
         - name: enp163s0np0
       ipv4:
+        auto-dns: false
+        auto-gateway: false
         dhcp: true
         enabled: true
       ipv6:

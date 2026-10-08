@@ -337,9 +337,16 @@ on `nfs-over-tls`, so they are encrypted in transit too.
 > everything is migrating off it. Apply the same override if anything is ever
 > provisioned there again.
 
-**Every node has a stray second default route** on `br-storage` via DHCP.
-Harmless today because `br-ex` wins on metric, but it wants `auto-gateway:
-false` in the NNCPs. Nobody owns this yet.
+~~**Every node has a stray second default route** on `br-storage` via DHCP.~~
+✅ **Fixed 2026-10-08.** DHCP was also pushing the storage gateway into
+`resolv.conf` as a nameserver, so the NNCPs now set both `auto-gateway: false`
+and `auto-dns: false`. Applied one node at a time; NetworkManager reapplied in
+place, and the kernel saw only the route deletion — the NFS-over-TLS
+connections on `u16` never dropped. Detail in `manifests/10-nncp-br-storage.yaml`.
+
+Still open from the same look: **`8.8.8.8` (Google public DNS) is the second
+nameserver on every node**, from the primary network config — some cluster
+DNS lookups leave the site. Worth pointing at an internal resolver.
 
 ---
 
