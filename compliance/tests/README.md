@@ -41,6 +41,7 @@ they flag things needing a human, not broken things.
 | T-10 | Registry allowlist | Compares registries in use against `allowedRegistries`. Prevents the `ocp-allowed-registries` foot-gun. |
 | T-11 | SCC exceptions known | The 10 privileged SCCs are the expected NVIDIA/KubeVirt set — a *new* one fails the test. |
 | T-13 | Storage traffic encrypted | `tlshd` Ready on every eligible node, `nfs-over-tls` requests `xprtsec=tls`, and reports the TLS-vs-cleartext mount ratio. **The only check for this** — no scanner inspects CSI mount options. |
+| T-14 | etcd backups running | CronJob present and not suspended, newest **successful** job ≤ `BACKUP_MAX_AGE_HOURS` (26) old, backup PV `Retain`. Reads job completion times, not `lastSuccessfulTime`, so manual runs count. No scanner checks for backups at all. |
 | T-12 | GPU switch is delegated & constrained | `gpu-modality-switcher` can patch only the GPU nodes (verified by SubjectAccessReview), cannot touch masters or delete nodes, and the admission policy exists. WARNs while the policy is non-enforcing. |
 
 ### Unit test — no cluster needed
@@ -143,7 +144,8 @@ currently hosting `central` and `central-db`.
 
 ## Known WARNs (expected, not bugs)
 
-Current state: **46 PASS, 0 FAIL, 2 WARN** (2026-10-08, after stage 3).
+Current state: **49 PASS, 0 FAIL, 2 WARN** (2026-10-08, after stage 3 and
+etcd backups).
 
 - **T-02** — no CMVP certificate record yet. Paperwork, not a cluster problem.
 

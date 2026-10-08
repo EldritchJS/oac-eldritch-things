@@ -178,8 +178,9 @@ The scans flag configuration. These are real and mostly invisible to them:
 - **No identity provider.** Authentication is `kubeadmin` — one shared
   break-glass account, so no per-user attribution at all. Also why the
   GPU-switch admission policy ships in Warn rather than Deny.
-- **No etcd backups**, no default-deny network policies, no file integrity
-  monitoring. Image signing is **partial**: pulls are restricted to 8
+- ~~**No etcd backups**~~ — ✅ nightly since 2026-10-08, 14 kept, guarded by
+  `verify.sh` T-14; restore not yet tested (PLAN.md §7). Still no
+  default-deny network policies, no file integrity monitoring. Image signing is **partial**: pulls are restricted to 8
   registries, but only the OpenShift release images are signature-verified
   (NVIDIA's index-only signing defeats CRI-O enforcement — see §6).
 

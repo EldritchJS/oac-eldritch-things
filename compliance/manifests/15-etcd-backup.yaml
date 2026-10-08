@@ -1,0 +1,169 @@
+# Nightly etcd backup (800-53 CP-9; PLAN.md §6 gap #7). Applied 2026-10-08.
+#
+# WHY A CRONJOB: OpenShift's own automated backup API is gated behind the
+# AutomatedEtcdBackup feature gate, disabled in the Default feature set on
+# 4.22. Enabling it means TechPreviewNoUpgrade, which is irreversible and
+# blocks upgrades. So: run the operator-installed /usr/local/bin/
+# cluster-backup.sh on a master, the same thing `oc debug node` + the docs do,
+# on a schedule.
+#
+# WHAT A BACKUP CONTAINS (measured 2026-10-08):
+#   snapshot_<ts>.db               etcd snapshot, ~165 MB on jetty
+#   static_kuberesources_<ts>.tar.gz   latest static-pod resources for
+#       kube-apiserver, kube-controller-manager, kube-scheduler, etcd --
+#       INCLUDING secrets/encryption-config/encryption-config, the aesgcm key.
+# A backup can therefore decrypt every Secret it contains. Treat the volume as
+# Secret-grade: this namespace holds nothing else, only this privileged
+# ServiceAccount mounts it, files are 0600 root, and the PV is Retain. Say this
+# plainly in the SSP.
+#
+# The script refuses to run while kube-apiserver / kube-controller-manager /
+# kube-scheduler / etcd operators are Progressing (a reliable backup needs a
+# settled control plane). A night that lands mid-rollout fails and retries;
+# a run of failures is what tests/verify.sh T-14 (proposed) would catch.
+#
+# DESTINATION: an nfs-over-tls PVC on the FlashBlade -- off the masters and
+# encrypted in transit, but the SAME array as the cluster's data. That covers
+# losing masters, not losing the array. A second copy elsewhere is future work
+# (same S3 dependency as audit forwarding).
+#
+# IMAGE: the release payload's cli image, pinned by digest. It is under the
+# built-in `openshift` ClusterImagePolicy, so this job's own image is
+# signature-verified by CRI-O. It only provides bash/coreutils -- the real
+# work runs on the host via chroot. Refresh the digest after an upgrade:
+#   oc adm release info --image-for=cli
+#
+# Privileges mirror `oc debug node`: privileged, hostNetwork, hostPID, host /
+# mounted. cluster-backup.sh needs host podman (to pull etcdctl from the etcd
+# image) and the node's etcd certs. Another privileged workload for the ACS
+# exception list, alongside tlshd.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: etcd-backup
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: etcd-backup
+  namespace: etcd-backup
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: etcd-backup-privileged-scc
+  namespace: etcd-backup
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:privileged
+subjects:
+  - kind: ServiceAccount
+    name: etcd-backup
+    namespace: etcd-backup
+---
+# ~170 MB per backup x 14 retained = ~2.4 GB. 10Gi leaves room for etcd to
+# grow several-fold. After it binds, patch the PV to Retain (StorageClass
+# default is Delete) -- same rule as the compliance evidence PVs.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: etcd-backup
+  namespace: etcd-backup
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: nfs-over-tls
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: etcd-backup
+  namespace: etcd-backup
+spec:
+  # 02:30 UTC: clear of the 01:00 compliance scans.
+  schedule: "30 2 * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        spec:
+          serviceAccountName: etcd-backup
+          restartPolicy: Never
+          # Label is control-plane (master is deprecated); the TAINT on jetty
+          # is still keyed master, so tolerate both.
+          nodeSelector:
+            node-role.kubernetes.io/control-plane: ""
+          tolerations:
+            - key: node-role.kubernetes.io/master
+              operator: Exists
+              effect: NoSchedule
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+          hostNetwork: true
+          hostPID: true
+          priorityClassName: system-cluster-critical
+          containers:
+            - name: backup
+              image: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:b4e48cec3040a0f18fe5697e128d8deb1c9409c28b6b3249c789f7beaba10fea
+              securityContext:
+                privileged: true
+                runAsUser: 0
+              resources:
+                requests: {cpu: 100m, memory: 256Mi}
+                limits: {cpu: "1", memory: 1Gi}
+              env:
+                - name: RETAIN
+                  value: "14"
+              command: ["/bin/bash", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+                  chmod 700 /backup   # NFS root arrives 0777; backups are Secret-grade
+                  ts=$(date -u +%Y-%m-%dT%H%M%SZ)
+                  node=$(chroot /host hostname)
+                  staging=/var/tmp/etcd-backup-staging   # host path, /var has the space
+                  rm -rf "/host${staging}"
+
+                  echo "== backup on ${node} at ${ts}"
+                  chroot /host /usr/local/bin/cluster-backup.sh "${staging}"
+
+                  dest="/backup/${ts}"
+                  mkdir -p "${dest}"
+                  cp "/host${staging}"/snapshot_*.db "/host${staging}"/static_kuberesources_*.tar.gz "${dest}/"
+                  rm -rf "/host${staging}"
+                  chmod 700 "${dest}"; chmod 600 "${dest}"/*
+                  # Integrity: the copy must match what the script verified on the host.
+                  ( cd "${dest}" && sha256sum * > SHA256SUMS )
+                  printf '%s %s\n' "${ts}" "${node}" > /backup/LATEST
+
+                  # Retention: keep the newest $RETAIN backup directories.
+                  ls -1d /backup/20*/ | sort | head -n -"${RETAIN}" | xargs -r rm -rf
+                  echo "== kept: $(ls -1d /backup/20*/ | wc -l) backups"
+                  du -sh "${dest}"
+              volumeMounts:
+                - name: host
+                  mountPath: /host
+                - name: backup
+                  mountPath: /backup
+          volumes:
+            - name: host
+              hostPath:
+                path: /
+                type: Directory
+            - name: backup
+              persistentVolumeClaim:
+                claimName: etcd-backup

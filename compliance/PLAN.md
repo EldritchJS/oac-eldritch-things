@@ -248,7 +248,7 @@ fixing** — these need deliberate work.
 | 4 | **Identity provider** | **none configured** | Auth is via `kubeadmin` only — a shared break-glass account. No per-user attribution, which breaks accountability controls (AC-2, IA-2). |
 | 5 | **kubeadmin still present** | secret exists | Standard hardening says remove it once a real IdP works. Do *not* remove before step 4 or you lose access. |
 | 6 | **TLS security profile** | unset (Intermediate default) | FIPS-aligned deployments usually pin `Modern` or an explicit `Custom` profile. |
-| 7 | **etcd backup** | no backup CronJob | Not a scanner finding, but a contingency-planning control (CP-9) and plain operational sanity. |
+| 7 | ~~**etcd backup**~~ | ✅ **CLOSED 2026-10-08** — nightly CronJob, 14 retained | `manifests/15-etcd-backup.yaml`; `tests/verify.sh` T-14 guards it. Backups hold the `aesgcm` key, so the volume is Secret-grade. Same array as the cluster's data (no off-array copy yet), and **restore is untested**. |
 | 8 | **NetworkPolicies** | no default-deny posture | Flat pod network by default. ACS can *generate* policies, but someone must apply and own them (SC-7). |
 | 9 | **Image provenance / signing** | **partial** (2026-10-08) | Registry allowlist in force (default `reject`, 8 registries). Signature-verified at runtime: OpenShift release images only. `nvcr.io` cannot be: NVIDIA signs the index, CRI-O verifies the platform manifest (FEASIBILITY.md §3 #2). Remaining options: ACS deploy-time signature checks; sign `ghcr.io/eldritchjs/tlshd` ourselves. |
 | 10 | **FIPS scope discipline** | cluster OK | Workloads must also use FIPS-validated crypto. A Go binary built without BoringCrypto on a FIPS cluster is still non-compliant — the cluster being FIPS does not make applications FIPS. |
@@ -436,6 +436,28 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
     `pure-fb-nfsv4` class). Applying it unchecked would have moved evidence
     back to unencrypted storage. `oc diff` before every `oc apply`.
 
+- **etcd backups running 2026-10-08** (gap #7, CP-9). `manifests/15-etcd-
+  backup.yaml`: nightly 02:30 UTC CronJob that runs the operator-installed
+  `cluster-backup.sh` on a master and copies the result to a 10Gi
+  `nfs-over-tls` PVC (PV `Retain`), keeping 14. A CronJob because the
+  built-in API (`AutomatedEtcdBackup`) is disabled in the Default feature set
+  and enabling it means irreversible `TechPreviewNoUpgrade`.
+
+  First run: 24s, 164 MB snapshot, 11,307 keys. Verified **independently of
+  the job** by a read-back pod: SHA256SUMS match, `etcdutl snapshot status`
+  on the stored copy agrees with the host-side check (revision 8120221; hash
+  `67a8b3a3` = the host's decimal `1739109283`), files 0600, dirs 0700.
+
+  Things to know: (a) the tarball contains
+  `secrets/encryption-config/encryption-config` — **a backup can decrypt its
+  own Secrets**; protect it accordingly and say so in the SSP. (b) The
+  script refuses to run while a control-plane operator is Progressing — a
+  night landing mid-rollout fails and retries. (c) Backups share the
+  FlashBlade with everything else — they survive losing masters, not the
+  array. (d) **A restore has not been tested.** Integrity is proven; a
+  restore is a separate, disruptive exercise. T-14 fails if the newest
+  successful backup is over 26h old; verified that it does fail.
+
 - **Stage 3 complete 2026-10-08: registry allowlist.**
   `manifests/14-image-registry-allowlist.yaml` sets `allowedRegistries` (the
   8 measured registries) and `allowedRegistriesForImport`. One change closed
@@ -475,8 +497,8 @@ tenant. Rationale and the alternatives considered: STANDARDS.md §4.
 2. **Identity provider** (gaps #4, #5). Sequencing note that matters: **wire
    an IdP and verify login before removing kubeadmin**, or you lose cluster
    access. Also unblocks flipping the GPU-switch policy to `Deny`.
-3. Still unaddressed and invisible to scanners — the rest of the §6 gaps: etcd
-   backups, NetworkPolicies, TLS profile, image signature verification
+3. Still unaddressed and invisible to scanners — the rest of the §6 gaps:
+   NetworkPolicies, TLS profile, image signature verification
    beyond the release images (gap #9), metrics
    persistence, plus the non-technical controls.
 

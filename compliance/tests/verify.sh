@@ -26,6 +26,7 @@ GPU_NS=nvidia-gpu-operator
 CO_NS=openshift-compliance
 ACS_NS=stackrox
 SCAN_MAX_AGE_HOURS="${SCAN_MAX_AGE_HOURS:-48}"
+BACKUP_MAX_AGE_HOURS="${BACKUP_MAX_AGE_HOURS:-26}"   # nightly + slack for one retried night
 
 PASS=0; FAIL=0; WARN=0; SKIP=0; ONLY=""; SAVE_BASELINE=0
 
@@ -466,13 +467,55 @@ run_t13() {
   fi
 }
 
+# --------------------------------------------------------------- T-14 ------
+# A backup job that silently stops working looks exactly like one that works,
+# until the day you need it. No scanner checks for etcd backups at all.
+run_t14() {
+  hdr "T-14  etcd backups are running (CP-9)"
+  local ns=etcd-backup
+  if ! oc get cronjob etcd-backup -n "$ns" >/dev/null 2>&1; then
+    bad "no etcd-backup CronJob in $ns — etcd is not being backed up"
+    info "See ../manifests/15-etcd-backup.yaml"
+    return
+  fi
+  [ "$(jp cronjob etcd-backup "$ns" '{.spec.suspend}')" = "true" ] \
+    && warn "CronJob etcd-backup is SUSPENDED" || ok "CronJob etcd-backup active ($(jp cronjob etcd-backup "$ns" '{.spec.schedule}'))"
+
+  # Newest SUCCESSFUL job of any origin. Not .status.lastSuccessfulTime: a
+  # manual `oc create job --from=cronjob/...` run does not update it.
+  local newest age_h
+  newest=$(oc get jobs -n "$ns" -o jsonpath='{range .items[?(@.status.succeeded==1)]}{.status.completionTime}{"\n"}{end}' 2>/dev/null | grep . | sort | tail -1)
+  if [ -z "$newest" ]; then
+    bad "no successful backup job on record"
+    return
+  fi
+  age_h=$(python3 -c "
+import datetime
+t=datetime.datetime.strptime('$newest','%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=datetime.timezone.utc)
+print(int((datetime.datetime.now(datetime.timezone.utc)-t).total_seconds()//3600))")
+  [ "$age_h" -le "$BACKUP_MAX_AGE_HOURS" ] \
+    && ok "newest successful backup ${age_h}h old (<= ${BACKUP_MAX_AGE_HOURS}h)" \
+    || bad "newest successful backup ${age_h}h old (> ${BACKUP_MAX_AGE_HOURS}h) — backups have stopped"
+
+  local failed
+  failed=$(oc get jobs -n "$ns" -o jsonpath='{range .items[?(@.status.failed)]}{.metadata.name}{"\n"}{end}' 2>/dev/null | grep -c . || true)
+  [ "${failed:-0}" -gt 0 ] && warn "$failed failed backup job(s) retained — check: oc get jobs -n $ns" \
+    || true
+
+  local reclaim pv
+  pv=$(jp pvc etcd-backup "$ns" '{.spec.volumeName}')
+  reclaim=$(jp pv "$pv" "" '{.spec.persistentVolumeReclaimPolicy}')
+  [ "$reclaim" = "Retain" ] && ok "backup PV reclaim policy Retain" \
+    || bad "backup PV reclaim policy is '$reclaim' — one 'oc delete pvc' destroys every backup"
+}
+
 # ---------------------------------------------------------------- main -----
 command -v oc >/dev/null || { echo "oc not found" >&2; exit 2; }
 oc whoami >/dev/null 2>&1 || { echo "not logged in (set KUBECONFIG)" >&2; exit 2; }
 
 printf '%sjetty verification%s  —  %s  —  %s\n' "$B" "$N" "$(oc whoami --show-server)" "$(date -u '+%Y-%m-%d %H:%M UTC')"
 
-ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12 t13"
+ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12 t13 t14"
 RUN="${ONLY:-$ALL}"
 for t in ${RUN//,/ }; do
   if declare -f "run_$t" >/dev/null; then "run_$t"; else echo "no such test: $t" >&2; fi
