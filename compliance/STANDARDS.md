@@ -182,3 +182,36 @@ workers for a separate MachineConfigPool to mean something.
 `ocp4-cis-vm-extension` and `ocp4-stig-vm-extension` profiles exist, but there
 is **no `moderate-vm-extension`**. So for an 800-171 posture, CNV/VM-specific
 hardening is not covered by any profile and needs manual attention.
+
+---
+
+## 5. HIPAA 164 in ACS — first run 2026-10-08
+
+ACS had **never run a compliance scan** before this date, so its `HIPAA_164`
+results did not exist — nobody could have reviewed them. Triggered via the
+API (`POST /v1/compliancemanagement/runs`, standard `HIPAA_164`); it reads
+cluster state only and finished in 6 seconds. Re-run it the same way after
+any change worth measuring — results do not refresh on their own.
+
+**18 controls.** 9 pass outright. The failures reduce to five causes:
+
+| Cause | Controls | Where | Disposition |
+|---|---|---|---|
+| **124 running images have CVEs with fixes available** — 77 are the OpenShift release payload, 24 OpenShift Virtualization, 9 ACS, rest storage/sidecars. All NVIDIA images clean. | 306(e), 308(a)(6)(ii) | cluster | **Fix:** upgrade 4.22.14 → 4.22.16 (both newer z-streams are recommended in `stable-4.22`), plus operator updates. A rolling reboot of every node — schedule it, and re-run `verify.sh` after. |
+| **No ACS policy has a notifier** — violations are detected and go nowhere | 308(a)(6)(ii), 314(a)(2)(i)(C) | cluster | **Fix:** needs a destination (email, webhook, SIEM). Same open decision as audit log forwarding — likely the same answer. |
+| **No egress NetworkPolicy** | 308(a)(4)(ii)(B), 308(a)(6)(ii), 312(c), 312(e), 312(e)(1) | 31 of our deployments (GPU operator, Portworx, ACS, tlshd, etcd-backup); 59 platform | **Fix (ours):** the egress round deferred from the ingress work. Platform: Red Hat's to own. |
+| **Host networking** (bypasses NetworkPolicy) | same | `tlshd`, `etcd-backup`, Portworx `px-pure-csi-node`; 54 platform | **Document:** inherent to node-level agents. No fix exists short of not running them. |
+| **Cluster-wide `*` on all core resources** | 308(a)(3)(ii)(B), 308(a)(4), 312(e)(1) | `portworx-operator`, `rhacs-operator`; 18 platform | **Document** as vendor-required, like the SCC exception — effectively cluster-admin over the core API, Secrets included. Say so plainly. |
+
+Notes for reading these numbers:
+
+- **The no-ingress finding is gone for everything we own** — zero
+  non-platform deployments fail it, a direct result of `manifests/17-*`.
+  What remains is all `openshift-*`.
+- **ACS evaluates platform namespaces; the Compliance Operator's
+  NetworkPolicy check exempts them.** Most of the raw failure count (185 of
+  217 deployments are platform) is Red Hat-managed components. Report them
+  separately rather than letting them swamp the actionable items.
+- **These are technical safeguards only.** HIPAA's administrative and
+  physical safeguards — risk analysis, workforce training, BAAs, facility
+  controls — are outside what any scanner sees, and usually the larger part.

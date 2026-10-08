@@ -533,12 +533,18 @@ tenant. Rationale and the alternatives considered: STANDARDS.md §4.
 ### Open
 
 1. **Audit log forwarding** (gap #3, §6b) — the most urgent gap. Decide the
-   destination first.
-2. **Identity provider** (gaps #4, #5). Sequencing note that matters: **wire
+   destination first. **The same destination should take ACS policy
+   notifications** — HIPAA 308(a)(6)(ii) and 314(a)(2)(i)(C) fail because
+   ACS violations go nowhere (STANDARDS.md §5).
+2. **Cluster upgrade 4.22.14 → 4.22.16** — clears the bulk of 124 images with
+   fixable CVEs (77 are release payload; HIPAA 306(e)). A rolling reboot of
+   every node: schedule it, check GPU modalities and `tlshd` after.
+3. **Identity provider** (gaps #4, #5). Sequencing note that matters: **wire
    an IdP and verify login before removing kubeadmin**, or you lose cluster
    access. Also unblocks flipping the GPU-switch policy to `Deny`.
-3. Still unaddressed and invisible to scanners — the rest of the §6 gaps:
-   egress policy (incl. the Portworx call-home), TLS profile, image signature verification
+4. Still unaddressed and invisible to scanners — the rest of the §6 gaps:
+   egress policy (31 of our deployments per ACS, incl. the Portworx
+   call-home), TLS profile, image signature verification
    beyond the release images (gap #9), metrics
    persistence, plus the non-technical controls.
 

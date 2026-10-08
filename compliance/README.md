@@ -51,6 +51,7 @@ output for `jetty`. Keep it outside this working tree.
 | Audit retention | ⚠️ 5.8 h — volume cut 73%, but still no forwarding |
 | Storage encryption | ✅ **All NFS traffic encrypted** — 18/18 PVCs on NFS-over-TLS |
 | CNV golden images | ✅ Fixed — all 6 imported, on encrypted storage |
+| HIPAA (ACS `HIPAA_164`) | ⚠️ First run 2026-10-08: 9/18 controls pass. Fixable: cluster upgrade, ACS notifier, egress policy — [STANDARDS.md](STANDARDS.md) §5 |
 
 The headline: **the cluster is hardened and the GPUs survived it.** Platform
 and node remediation are applied — node failures went **377 → 2** — and both
