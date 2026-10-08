@@ -85,10 +85,10 @@ What that does and does not mean:
 - But federal procurement language is that agencies **"should not include"**
   Historical modules in **new acquisitions**.
 
-`jetty` was built on 2026-09-30, after the sunset. It is a new deployment,
-so **140-3 is the
-target.** If your requirement document says "FIPS 140-2", that is not wrong —
-it is simply pre-sunset wording. Satisfying 140-3 satisfies the intent.
+`jetty` was built on 2026-09-30, after the sunset. It is a new deployment, so
+**140-3 is the target.** If your requirement document says "FIPS 140-2", that
+is not wrong — it is simply pre-sunset wording. Satisfying 140-3 satisfies the
+intent.
 
 ### The distinction that actually matters
 
