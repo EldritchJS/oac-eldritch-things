@@ -324,9 +324,10 @@ false` in the NNCPs. Nobody owns this yet.
 
 Open decisions for you:
 
-1. **Scope.** Treat the whole cluster as in-scope for 800-171? With two
-   workers there is no meaningful way to split it, and the control plane is
-   shared regardless. Recommended: yes, whole cluster.
+1. ~~**Scope**~~ — **decided 2026-10-08: the whole cluster is in scope** for
+   800-171. With two workers there is no meaningful way to split it, and the
+   control plane is shared regardless. A tenant who cannot live with node
+   hardening needs a different cluster. See STANDARDS.md §4.
 2. ~~**Finish remediation**~~ — **done 2026-10-07.** It took two passes:
    6 usbguard remediations were dependency-gated during the first and only
    became eligible after the post-hardening rescan. `remediate.sh` now reports

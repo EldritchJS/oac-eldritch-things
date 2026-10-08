@@ -424,16 +424,20 @@ HIPAA lives in ACS (`HIPAA_164`). The 383 remediations initially available
 (377 of them MachineConfigs) — 385 once the dependency-gated usbguard ones
 surfaced — are all applied.
 
+### Decided 2026-10-08: whole cluster in scope
+
+The entire cluster is in scope for 800-171 — no split by MachineConfigPool or
+tenant. Rationale and the alternatives considered: STANDARDS.md §4.
+
 ### Open
 
-1. **You:** decide the scope posture for mixed VM tenancy (STANDARDS.md §4).
-2. **Audit log forwarding** (gap #3, §6b) — the most urgent gap. Decide the
+1. **Audit log forwarding** (gap #3, §6b) — the most urgent gap. Decide the
    destination first.
-3. **Identity provider** (gaps #4, #5). Sequencing note that matters: **wire
+2. **Identity provider** (gaps #4, #5). Sequencing note that matters: **wire
    an IdP and verify login before removing kubeadmin**, or you lose cluster
    access. Also unblocks flipping the GPU-switch policy to `Deny`.
-4. **Stage 3** — the three GPU-dangerous manual checks, individually.
-5. Still unaddressed and invisible to scanners — the rest of the §6 gaps: etcd
+3. **Stage 3** — the three GPU-dangerous manual checks, individually.
+4. Still unaddressed and invisible to scanners — the rest of the §6 gaps: etcd
    backups, NetworkPolicies, TLS profile, image signing policy, metrics
    persistence, plus the non-technical controls.
 

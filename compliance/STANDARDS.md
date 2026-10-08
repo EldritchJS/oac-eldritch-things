@@ -131,7 +131,8 @@ Historical are separate searchable views).
 
 ### The hard constraint
 
-383 remediations are now available; **377 of them are MachineConfigs.**
+383 remediations were available initially; **377 of them were MachineConfigs**
+(all since applied — two rolling reboots, 2026-10-05 and 2026-10-07).
 Applying the 800-171 baseline is therefore a **cluster-wide rolling reboot**:
 the MCO drains and reboots each node in turn. On 5 nodes that is hours, and
 with only **2 workers** draining one pushes every VM onto the other.
@@ -167,13 +168,14 @@ not policy preference, but kernel behaviour.
 
 | Option | Viability here |
 |---|---|
-| **Whole cluster in scope** | **Recommended.** Uniform, simplest to defend to an assessor. |
+| **Whole cluster in scope** | **Chosen.** Uniform, simplest to defend to an assessor. |
 | Separate MachineConfigPools for CUI vs general workers | Technically real — label nodes, create an MCP, scope remediation by role. But the control plane stays shared and in scope, and with **2 workers** there is nothing to split. Revisit if the cluster grows. |
 | Separate clusters | The only truly clean separation, and the honest answer if some tenants must stay unhardened. |
 
-**Recommendation:** treat the whole cluster as in scope. If a tenant genuinely
+**Decision (2026-10-08): the whole cluster is in scope.** If a tenant genuinely
 cannot live with node hardening, they need a different cluster — that is a
-governance decision, not a technical one.
+governance decision, not a technical one. Revisit if the cluster grows enough
+workers for a separate MachineConfigPool to mean something.
 
 ### CNV-specific note
 
