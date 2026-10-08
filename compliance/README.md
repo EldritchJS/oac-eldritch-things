@@ -83,13 +83,6 @@ expresses FIPS as separate `99-master-fips`/`99-worker-fips` MachineConfigs
 rather than through install-config. So cite the node-level evidence to an
 assessor, not the install-config.
 
-**FIPS 140-2 sunset on 21 September 2026 — eleven days ago.** Every remaining
-140-2 certificate moved to the CMVP *Historical* list; only 140-3 is Active.
-Historical is not revoked — existing systems may keep using those modules — but
-federal guidance says not to include them in *new* acquisitions, and this
-cluster is eleven days younger than the deadline. **Target 140-3.** If your
-requirement document says 140-2, that is just pre-sunset wording.
-
 And the distinction that actually matters: **FIPS mode is not FIPS validation.**
 We proved the OS runs in FIPS mode. That is not the same as proving the
 cryptographic modules carry active CMVP certificates — those are tied to

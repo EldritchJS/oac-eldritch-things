@@ -72,9 +72,10 @@ New platform findings beyond the CIS set, notable for these frameworks:
 
 ## 3. FIPS: target 140-3, not 140-2
 
-**FIPS 140-2 sunset on 21 September 2026 — eleven days ago.** As of 22
-September 2026 all remaining 140-2 certificates moved to the CMVP **Historical
-List**, and only 140-3 certificates are Active.
+**FIPS 140-2 sunset on 21 September 2026.** All remaining 140-2 certificates
+moved to the CMVP **Historical List** the following day; only 140-3
+certificates are Active. This cluster was built after that date, so 140-3 is
+the only sensible target.
 
 What that does and does not mean:
 
@@ -84,7 +85,8 @@ What that does and does not mean:
 - But federal procurement language is that agencies **"should not include"**
   Historical modules in **new acquisitions**.
 
-`jetty` was built two days ago. It is a new deployment, so **140-3 is the
+`jetty` was built on 2026-09-30, after the sunset. It is a new deployment,
+so **140-3 is the
 target.** If your requirement document says "FIPS 140-2", that is not wrong —
 it is simply pre-sunset wording. Satisfying 140-3 satisfies the intent.
 
