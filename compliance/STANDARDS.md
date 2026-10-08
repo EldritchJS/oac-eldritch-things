@@ -3,8 +3,8 @@
 > **Last updated 2026-10-05.** The framework mapping below is current. The
 > **scan results are not** — the counts in §2 (209/21/10, and 191 per node)
 > are the **pre-remediation** baseline, kept as a record of the starting
-> position. Stages 1 and 2 have since been applied: node failures **377 → 10**,
-> `rhcos4-moderate-*` **191 → 4** per node. Current figures:
+> position. Hardening is complete: node failures **377 → 4**,
+> `rhcos4-moderate-*` **191 → 1** per node. Current figures:
 > [README.md](README.md) §3 and `tests/baseline-fail-counts.txt`.
 
 ## 1. Neither tool ships an 800-171 or HIPAA profile

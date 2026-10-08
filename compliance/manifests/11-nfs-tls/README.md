@@ -12,8 +12,9 @@ The initial failure was the array's default certificate having no
 The storage team reissued with `subjectAltName = IP:<nfs-data-vip>`.
 **Keep that requirement in mind for any other array.**
 
-Remaining work is migration: 18 NFS mounts are still cleartext, and
-`mountOptions` is immutable so they cannot be upgraded in place.
+**Migration complete 2026-10-07.** All 18 PVCs in use are on `nfs-over-tls`,
+which is also the default StorageClass; T-13 reports no cleartext NFS mounts
+remain.
 `files/pure-ca.crt`, `oc apply -k .`, and the mount should complete.
 
 Closes the cleartext-storage gap described in [../../NFS-TLS.md](../../NFS-TLS.md)

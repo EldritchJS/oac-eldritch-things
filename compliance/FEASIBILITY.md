@@ -4,7 +4,8 @@
 > *does compliance hardening break GPU support?* — has since been **answered
 > empirically: no.** Stage 2 applied 377 MachineConfigs and rebooted all 5
 > nodes on 2026-10-05; both GPU modalities still work. §3 #4 below was written
-> as a prediction and is now a measurement. Failure counts quoted here
+> as a prediction and is now a measurement, confirmed across two separate
+> full-cluster rolling reboots. Failure counts quoted here
 > (25 platform / 191 per-node) are the **pre-remediation** baseline; current
 > figures are in [README.md](README.md) §3.
 

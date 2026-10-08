@@ -1,7 +1,8 @@
 # Jetty cluster — compliance baseline
 
-> **Last updated 2026-10-05.** Stages 1 and 2 are applied: node failures
-> **377 → 10**, both GPU modalities survived. Figures in §3b and §6 marked
+> **Last updated 2026-10-07.** Node hardening is complete: 385/385
+> remediations applied, node failures **377 → 4**, both GPU modalities
+> survived, and all NFS traffic is encrypted. Figures in §3b and §6 marked
 > "initial" are the **pre-remediation** baseline, kept as a historical record.
 > For current numbers see §7 "Done", `tests/baseline-fail-counts.txt`, or run
 > `./remediate.sh status`. Current state of record: [README.md](README.md).

@@ -2,7 +2,7 @@
 
 *Read this one. Everything else is detail you can drill into if you want it.*
 
-Last updated 2026-10-05.
+Last updated 2026-10-07.
 
 ---
 
@@ -47,7 +47,7 @@ output for `jetty`. Keep it outside this working tree.
 | Storage | ✅ Working (was broken most of the day; fixed) |
 | GPU — container mode | ✅ Live on `u15` |
 | GPU — VM passthrough | ✅ Live on `u16` |
-| **Cluster hardening** | ✅ **Stages 1 + 2 applied.** 379/385 remediations; 6 outstanding |
+| **Cluster hardening** | ✅ **Complete.** 385/385 remediations applied; node failures 377 → 4 |
 | Audit retention | ⚠️ 5.8 h — volume cut 73%, but still no forwarding |
 | Storage encryption | ✅ **All NFS traffic encrypted** — 18/18 PVCs on NFS-over-TLS |
 | CNV golden images | ✅ Fixed — all 6 imported, on encrypted storage |
@@ -57,9 +57,14 @@ and node remediation are applied — node failures went **377 → 10** — and b
 GPU modalities still work after a full rolling reboot. That was the central
 open question and it is now answered with a measurement, not a prediction.
 
-What remains is deliberate, not blocked: 6 dependency-gated remediations need
-another pass, the three GPU-dangerous manual checks (stage 3) are untouched on
-purpose, and audit log forwarding is still the one genuinely open gap.
+Node hardening is finished: all 385 remediations are applied and the four
+remaining node failures are both genuinely manual (`sshd-limit-user-access`,
+which offers no remediation, and `reject-unsigned-images-by-default`, a stage
+3 GPU-dangerous check deliberately deferred).
+
+What remains is deliberate, not blocked: the three GPU-dangerous manual checks
+(stage 3) are untouched on purpose, and **audit log forwarding is now the one
+genuinely open gap.**
 
 ---
 
@@ -322,11 +327,11 @@ Open decisions for you:
 1. **Scope.** Treat the whole cluster as in-scope for 800-171? With two
    workers there is no meaningful way to split it, and the control plane is
    shared regardless. Recommended: yes, whole cluster.
-2. **Finish remediation — it is iterative.** 6 usbguard remediations were
-   dependency-gated during stage 2 and only became eligible after the
-   post-hardening rescan. Rescan → `./remediate.sh stage2` → reboot → repeat
-   until it reports nothing outstanding. The script now reports `BLOCKED` and
-   `HOLD` counts instead of silently appearing complete.
+2. ~~**Finish remediation**~~ — **done 2026-10-07.** It took two passes:
+   6 usbguard remediations were dependency-gated during the first and only
+   became eligible after the post-hardening rescan. `remediate.sh` now reports
+   `BLOCKED` and `HOLD` counts instead of silently appearing complete, so the
+   iteration is visible.
 3. **Get the FIPS 140-3 certificate numbers** — a paperwork task, not a
    cluster one.
 4. **Audit log forwarding is the most urgent gap.** Measured: retention was
@@ -351,9 +356,10 @@ Recommended order of work:
 4. ~~**Stage 2** — node hardening~~ — **done 2026-10-05**: 377 MachineConfigs,
    full rolling reboot. **Node failures 377 → 10** (`rhcos4-moderate-*`
    191 → 4 each). **Both GPU modalities survived** — the headline result.
-4b. **Stage 2, round two** — 6 usbguard remediations were dependency-blocked
-   during round one and are only now eligible. Remediation is iterative;
-   re-run `./remediate.sh stage2` for another apply + reboot. See PLAN.md §7.
+4b. ~~**Stage 2, round two**~~ — **done 2026-10-07**: the 6 dependency-gated
+   usbguard remediations, one more rolling reboot. **Node failures 10 → 4**,
+   `rhcos4-moderate-*` 4 → 1 each. 385/385 applied. Both GPU modalities and
+   the tlshd storage path survived.
 5. **Stage 3** — the three GPU-dangerous manual checks, individually and last.
 6. **Re-run `tests/verify.sh` after each stage** and re-save the baseline once
    the new numbers are the intended ones.
