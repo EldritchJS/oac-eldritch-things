@@ -161,7 +161,11 @@ migration if recovery time starts to matter.
 | 2026-10-07 | baseline after tlshd deployed | 18 |
 | 2026-10-07 | `nfs-over-tls` made the **default** StorageClass | 18 |
 | 2026-10-07 | Compliance Operator raw results migrated (8 PVCs) | 8 |
-| 2026-10-07 | CNV golden images fixed + migrated (6 PVCs) | **6** |
+| 2026-10-07 | CNV golden images fixed + migrated (6 PVCs) | 6 |
+| 2026-10-07 | ACS central-db + scanner-v4-db migrated (3 PVCs) | **0** |
+
+**Migration complete.** `tests/verify.sh` T-13 reports *"no cleartext NFS
+mounts remain"*. All 18 PVCs in use are on `nfs-over-tls`.
 
 **Default StorageClass is now `nfs-over-tls`.** Anything provisioned from here
 on is encrypted without anyone having to ask. Note the trade: `tlshd` is now a
@@ -175,8 +179,10 @@ name, so migrating meant deleting the old ones — the eight PVs were patched to
 survives as `Released` volumes on the array rather than being deleted with the
 claims. Recover one by creating a PVC bound to its `volumeName` if ever needed.
 
-Still on `pure-fb-nfsv4`: only the three ACS stackrox volumes
-(`central-db` 100Gi, `central-db-backup` 200Gi, `scanner-v4-db` 50Gi).
+Two PVCs remain *defined* on `pure-fb-nfsv4` — the original `central-db` and
+`scanner-v4-db`. Nothing mounts them; they are the rollback path. Their PVs
+are `Retain`, so deleting the claims preserves the data. Delete once you are
+satisfied the migration held.
 
 ### The mistake worth not repeating: scoping tlshd to workers
 
@@ -202,9 +208,37 @@ Two lessons, both now encoded:
 
 ### Still to do
 
-- **Migrate the ACS volumes** — the last three, 350Gi. Live Postgres, so it
-  needs a maintenance window: scale Central down, copy, repoint. Or accept
-  losing violation history and let it rebuild.
+### Migrating ACS: three operator behaviours that will stop you
+
+Done 2026-10-07, Central offline ~40 minutes. The data was trivial —
+central-db was **292MB** and scanner-v4-db **20GB**, against 350Gi
+provisioned — but the ACS operator fought every step, each time with a
+precise error worth knowing in advance:
+
+1. **It reverts your scale-downs.** Scale
+   `rhacs-operator-controller-manager` to 0 first, do the work, scale it back.
+2. **It will not adopt a pre-created PVC if you also set `size` or
+   `storageClassName`.** Those mean "create this for me". For an existing
+   volume, set `claimName` only:
+   > *Please remove the storageClassName and size properties from your spec,
+   > or change the name to allow the operator to create a new one.*
+3. **Renaming the DB claim orphans its backup volume.** The backup PVC name is
+   derived from the DB claim, so it tries to create `<newname>-backup` and
+   refuses while the old one exists:
+   > *the operator can only manage 1 PVC for central-db-backup.*
+
+   Delete the old backup PVC (PV on `Retain` first) and it creates the new one.
+4. **Helm-managed PVCs need ownership metadata.** `scannerV4.db` is reconciled
+   through Helm, so a hand-made PVC is rejected until it carries
+   `app.kubernetes.io/managed-by: Helm` plus
+   `meta.helm.sh/release-name` / `-namespace`. Add those and the operator
+   adopts it and stamps the rest of its labels itself.
+
+Copy mechanics: `tar`, not `cp -a`. The FlashBlade export carries a read-only
+`.snapshot` directory and the mount root rejects `utime`, so `cp -a` exits
+non-zero having copied fine. Assert on **file count**, not exit status —
+`ubi-minimal` has no `tar` at all, and a job that silently copied 0 files
+still reported success until the count check caught it.
   `mountOptions` is immutable, so `pure-fb-nfsv4` cannot be upgraded in place:
   each volume needs a new claim on `nfs-over-tls` and a data copy. This is the
   bulk of the remaining work, and `tests/verify.sh` T-13 tracks the ratio.

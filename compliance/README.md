@@ -49,7 +49,7 @@ output for `jetty`. Keep it outside this working tree.
 | GPU — VM passthrough | ✅ Live on `u16` |
 | **Cluster hardening** | ✅ **Stages 1 + 2 applied.** 379/385 remediations; 6 outstanding |
 | Audit retention | ⚠️ 5.8 h — volume cut 73%, but still no forwarding |
-| Storage encryption | ⚠️ NFS-over-TLS live and default; only ACS volumes left on cleartext |
+| Storage encryption | ✅ **All NFS traffic encrypted** — 18/18 PVCs on NFS-over-TLS |
 | CNV golden images | ✅ Fixed — all 6 imported, on encrypted storage |
 
 The headline: **the cluster is hardened and the GPUs survived it.** Platform

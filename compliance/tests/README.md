@@ -1,6 +1,6 @@
 # Verification suite
 
-*Last updated 2026-10-07. Current result: 36 PASS / 0 FAIL / 5 WARN.*
+*Last updated 2026-10-07. Current result: 38 PASS / 0 FAIL / 3 WARN.*
 
 A regression net for `jetty`, covering compliance posture, FIPS, RHACS, and
 **both GPU modalities**.
@@ -140,7 +140,7 @@ currently hosting `central` and `central-db`.
 
 ## Known WARNs (expected, not bugs)
 
-Current state: **36 PASS, 0 FAIL, 5 WARN**, stable across repeated runs.
+Current state: **38 PASS, 0 FAIL, 3 WARN**, stable across repeated runs.
 
 - **T-02** — no CMVP certificate record yet. Paperwork, not a cluster problem.
 - **T-10** — `allowedRegistries` is unset, which is why `ocp-allowed-registries`
@@ -149,7 +149,7 @@ Current state: **36 PASS, 0 FAIL, 5 WARN**, stable across repeated runs.
   `registry.k8s.io`, `registry.redhat.io`. **All six must be in any allowlist**
   — `docker.io` and `registry.k8s.io` are easy to miss if you only inspect the
   GPU and CNV namespaces.
-- **T-13** — one WARN: 18 mounts still cleartext. Expected until volumes are migrated off `pure-fb-nfsv4`;
+- **T-13** — now clean: no cleartext NFS mounts remain. Expected until volumes are migrated off `pure-fb-nfsv4`;
   `mountOptions` is immutable so they cannot be upgraded in place.
 - **T-12** — the GPU-switch admission policy is in `Warn`+`Audit`, not `Deny`.
   Deliberate: enforcing a node admission policy before an identity provider
