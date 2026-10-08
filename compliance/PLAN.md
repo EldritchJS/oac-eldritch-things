@@ -559,7 +559,8 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
 - **NVIDIA images scanned for the first time 2026-10-08.** Added ACS image
   integration *NVIDIA NGC (nvcr.io, anonymous)* — ACS config, not in a
   manifest. All 10 images have fixable CVEs (13–49 each); HIPAA 306(e) count
-  124 → 134, still 9/18. Critical: CVE-2025-23266 in mig-parted (Open #3).
+  124 → 134, still 9/18. Critical CVE-2025-23266 in mig-parted turned out to be a pseudo-version
+  false positive (Open #3).
   On the way, Central's image API hung for ~20 minutes with no network
   cause found; a Central restart fixed it. Details: STANDARDS.md §5.
 
@@ -589,11 +590,10 @@ tenant. Rationale and the alternatives considered: STANDARDS.md §4.
    upgrade did that and the count did not move (STANDARDS.md §5). What
    remains to decide is a **patch cadence** to write into the SSP, and
    whether to add an ACS policy enforcing a severity floor on *our* images.
-3. **CVE-2025-23266 / -23267 in `mig-parted`** (Critical, ACS-flagged in
-   `k8s-mig-manager` and `vgpu-device-manager`). The known exploit path is
-   the Container Toolkit hook, which is patched here (v1.20.1); check
-   NVIDIA's advisory for whether mig-parted's copy matters, and whether a
-   newer GPU operator ships newer mig-manager / vgpu-device-manager.
+3. ~~CVE-2025-23266 / -23267 in `mig-parted`~~ **False positive, resolved
+   2026-10-08.** ACS matched a Go pseudo-version (`v0.0.0-20260921…`, a
+   2026 commit) as older than the fixed 0.12.2. Remaining step: record an
+   ACS exception carrying that reasoning (STANDARDS.md §5).
 4. **Identity provider** (gaps #4, #5). Sequencing note that matters: **wire
    an IdP and verify login before removing kubeadmin**, or you lose cluster
    access. Also unblocks flipping the GPU-switch policy to `Deny`.

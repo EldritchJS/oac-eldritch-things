@@ -2,6 +2,9 @@
 
 *Read this one. Everything else is detail you can drill into if you want it.*
 
+*Doing this on another cluster? Start with [PLAYBOOK.md](PLAYBOOK.md) — the
+method, order of operations and cautions, generalised from jetty.*
+
 Last updated 2026-10-08.
 
 ---
@@ -51,7 +54,7 @@ output for `jetty`. Keep it outside this working tree.
 | Audit retention | ⚠️ 5.8 h — volume cut 73%, but still no forwarding |
 | Storage encryption | ✅ **All NFS traffic encrypted** — 18/18 PVCs on NFS-over-TLS |
 | CNV golden images | ✅ Fixed — all 6 imported, on encrypted storage |
-| HIPAA (ACS `HIPAA_164`) | ⚠️ 9/18 controls pass (2026-10-08, unchanged by the 4.22.16 upgrade). Egress done (28/31 of ours now pass; 3 are hostNetwork). NVIDIA images now scanned (were never scanned before; Critical CVE-2025-23266 open). Fixable: ACS notifier. Fixable-CVE controls need a patch cadence, not a fix — [STANDARDS.md](STANDARDS.md) §5 |
+| HIPAA (ACS `HIPAA_164`) | ⚠️ 9/18 controls pass (2026-10-08, unchanged by the 4.22.16 upgrade). Egress done (28/31 of ours now pass; 3 are hostNetwork). NVIDIA images now scanned (were never scanned before; the one Critical, CVE-2025-23266, is a scanner false positive). Fixable: ACS notifier. Fixable-CVE controls need a patch cadence, not a fix — [STANDARDS.md](STANDARDS.md) §5 |
 
 The headline: **the cluster is hardened and the GPUs survived it.** Platform
 and node remediation are applied — node failures went **377 → 2** — and both

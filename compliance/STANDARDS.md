@@ -300,14 +300,24 @@ The RHEL-based images (driver, DCGM) carry the bulk: `openssl-libs`,
 `libxml2`, `expat`, `libevent`, `sqlite-libs`, `curl` — the same pattern as
 the OpenShift payload.
 
-**The one to chase: CVE-2025-23266 (Critical) and CVE-2025-23267**, which
-ACS attributes to the `github.com/NVIDIA/mig-parted` module in
-`k8s-mig-manager` and `vgpu-device-manager`. That CVE number is the NVIDIA
-Container Toolkit container-escape published July 2025 ("NVIDIAScape").
-Its known exploit path is the toolkit's OCI runtime hook, and the toolkit
-here is **v1.20.1**, well past the fixed 1.17.8. Whether the code vendored
-into mig-parted is reachable is for NVIDIA's advisory to say, not ACS's
-version match. Recorded as **open**, not dismissed.
+**CVE-2025-23266 (Critical) and CVE-2025-23267: a false positive, resolved
+2026-10-08.** ACS attributes both to the Go module
+`github.com/NVIDIA/mig-parted` in `k8s-mig-manager` (`usr/bin/nvidia-mig-manager`)
+and `vgpu-device-manager` (`usr/bin/nvidia-mig-parted`), "fixed by 0.12.2".
+The version it found is the Go **pseudo-version
+`v0.0.0-20260921144545-a24171d5bed3`**, a mig-parted commit from
+2026-09-21. That is fourteen months after the fix (NVIDIA bulletin 5659,
+July 2025: mig-parted ≤ 0.12.1 affected, and only with CDI), but `v0.0.0-…`
+sorts below `0.12.2` in semver, so ACS's version range matches it. The
+binaries ship in mig-manager **v0.15.1** and vgpu-device-manager **v0.5.1**
+(GPU operator 26.7.1, the latest channel), and the toolkit is **v1.20.1**
+(fixed in 1.17.8). Nothing to patch. Record it as an exception in ACS with
+this reasoning, rather than deleting the finding, so the next reviewer sees
+why it was dismissed.
+
+The general lesson: **a Go pseudo-version (`v0.0.0-<date>-<commit>`) in a
+scanner finding means "built from an untagged commit", not "version 0".**
+Check the commit date against the fix date before treating it as real.
 
 **Incident during this work:** before the integration could be tested,
 Central stopped answering image scans and integration changes (reads still
