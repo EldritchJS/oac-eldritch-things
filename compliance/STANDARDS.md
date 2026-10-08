@@ -199,9 +199,9 @@ any change worth measuring — results do not refresh on their own.
 
 | Cause | Controls | Where | Disposition |
 |---|---|---|---|
-| **124 running images have CVEs with fixes available** — 77 are the OpenShift release payload, 24 OpenShift Virtualization, 9 ACS, rest storage/sidecars. All NVIDIA images clean. | 306(e), 308(a)(6)(ii) | cluster | **Standing condition, not fixable by us.** The 4.22.16 upgrade did not move it — see below. The control is a documented patch cadence. |
+| **124 running images have CVEs with fixes available** — 77 are the OpenShift release payload, 24 OpenShift Virtualization, 9 ACS, rest storage/sidecars. NVIDIA images were **never scanned** until 2026-10-08; now scanned, all 10 have fixable CVEs → **134** total (see below). | 306(e), 308(a)(6)(ii) | cluster | **Standing condition, not fixable by us.** The 4.22.16 upgrade did not move it — see below. The control is a documented patch cadence. |
 | **No ACS policy has a notifier** — violations are detected and go nowhere | 308(a)(6)(ii), 314(a)(2)(i)(C) | cluster | **Fix:** needs a destination (email, webhook, SIEM). Same open decision as audit log forwarding — likely the same answer. |
-| **No egress NetworkPolicy** | 308(a)(4)(ii)(B), 308(a)(6)(ii), 312(c), 312(e), 312(e)(1) | 31 of our deployments (GPU operator, Portworx, ACS, tlshd, etcd-backup); 59 platform | **Fix (ours):** the egress round deferred from the ingress work. Platform: Red Hat's to own. |
+| **No egress NetworkPolicy** | 308(a)(4)(ii)(B), 308(a)(6)(ii), 312(c), 312(e), 312(e)(1) | 31 of our deployments (GPU operator, Portworx, ACS, tlshd, etcd-backup); 59 platform | ✅ **Ours fixed 2026-10-08** (`manifests/18-*`): 28 of 31 now pass; the other 3 are the hostNetwork row below. Platform: Red Hat's to own. |
 | **Host networking** (bypasses NetworkPolicy) | same | `tlshd`, `etcd-backup`, Portworx `px-pure-csi-node`; 54 platform | **Document:** inherent to node-level agents. No fix exists short of not running them. |
 | **Cluster-wide `*` on all core resources** | 308(a)(3)(ii)(B), 308(a)(4), 312(e)(1) | `portworx-operator`, `rhacs-operator`; 18 platform | **Document** as vendor-required, like the SCC exception — effectively cluster-admin over the core API, Secrets included. Say so plainly. |
 
@@ -264,3 +264,68 @@ which no cluster running vendor images will reach, but:
    *our own* namespaces (`vms-test`, `nfs-tls`, `etcd-backup`), where we
    control the image and can actually act on it. Pairs naturally with the
    notifier once a destination exists.
+
+### Correction: the NVIDIA images were never scanned (found 2026-10-08)
+
+The first write-up of this run said "all NVIDIA images clean". **That was
+wrong.** ACS reported "has no fixed CVEs" for every `nvcr.io` image because
+it has **no data on them**: all 10 show `scanTime` never, and a forced scan
+fails with *"no matching image registries found: please add an image
+integration for nvcr.io"*. ACS has integrations for quay.io, the Red Hat
+registries, ghcr.io, docker.io and registry.k8s.io, but not `nvcr.io` —
+so the GPU stack, which runs privileged and loads a kernel module, is the
+one part of the cluster nobody is vulnerability-scanning.
+
+The HIPAA control passed those images by default; "no evidence of fixable
+CVEs" and "evidence of no fixable CVEs" are different statements, and the
+check does not distinguish them.
+
+**Fixed the same day.** Added an ACS image integration — type `docker`,
+endpoint `nvcr.io`, no credentials (anonymous pull works for these public
+images), named *NVIDIA NGC (nvcr.io, anonymous)*. It is ACS configuration,
+not a manifest; recreate it the same way after an ACS rebuild. All 10
+images then scanned in 2–27s each. HIPAA rerun: **134** images with fixable
+CVEs (124 + the 10 NVIDIA), still 9/18 controls.
+
+| Image | OS | CVEs | Fixable | of which Critical / Important |
+|---|---|---|---|---|
+| `driver` | rhel 9 | 414 | 49 | 0 / 17 |
+| `cloud-native/dcgm` | rhel 10 | 255 | 33 | 0 / 9 |
+| `kubevirt-gpu-device-plugin` | debian 13 | 47 | 26 | 0 / 1 |
+| `cloud-native/vgpu-device-manager` | debian 13 | 39 | 17 | **1** / 1 |
+| `cloud-native/k8s-mig-manager` | debian 13 | 36 | 15 | **1** / 1 |
+| `gpu-operator`, `container-toolkit`, `k8s-driver-manager`, `k8s-device-plugin`, `dcgm-exporter` | debian 13 | 34–39 | 13–15 | 0 / 0–1 |
+
+The RHEL-based images (driver, DCGM) carry the bulk: `openssl-libs`,
+`libxml2`, `expat`, `libevent`, `sqlite-libs`, `curl` — the same pattern as
+the OpenShift payload.
+
+**The one to chase: CVE-2025-23266 (Critical) and CVE-2025-23267**, which
+ACS attributes to the `github.com/NVIDIA/mig-parted` module in
+`k8s-mig-manager` and `vgpu-device-manager`. That CVE number is the NVIDIA
+Container Toolkit container-escape published July 2025 ("NVIDIAScape").
+Its known exploit path is the toolkit's OCI runtime hook, and the toolkit
+here is **v1.20.1**, well past the fixed 1.17.8. Whether the code vendored
+into mig-parted is reachable is for NVIDIA's advisory to say, not ACS's
+version match. Recorded as **open**, not dismissed.
+
+**Incident during this work:** before the integration could be tested,
+Central stopped answering image scans and integration changes (reads still
+worked) for ~20 minutes. No egress was being dropped: no `SYN_SENT`
+sockets, and the identical integration created cleanly after a Central
+restart. The first Central instance after the 19:25 egress restart had
+also logged a mid-transfer `unexpected EOF` from `definitions.stackrox.io`;
+the post-restart instance logged neither problem. Root cause not
+established — if Central's image API hangs again, restart Central first.
+
+### Egress policies applied (2026-10-08)
+
+`manifests/18-egress-network-policies.yaml`, applied one namespace at a
+time with a functional check after each (details: PLAN.md §7). HIPAA rerun
+afterwards: **28 of our 31 deployments now pass** 308(a)(4)(ii)(B),
+308(a)(6)(ii), 312(c) and 312(e) — evidence *"has both ingress and egress
+network policies applied to it, and does not use host network namespace"*.
+Still failing, as expected: the 3 hostNetwork agents, and the 2 operators'
+cluster-wide RBAC. Control-level score is **unchanged at 9/18**, because
+platform (`openshift-*`) deployments fail the same controls — the score
+alone will never show this work.

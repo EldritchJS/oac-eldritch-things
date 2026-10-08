@@ -250,7 +250,7 @@ fixing** — these need deliberate work.
 | 5 | **kubeadmin still present** | secret exists | Standard hardening says remove it once a real IdP works. Do *not* remove before step 4 or you lose access. |
 | 6 | **TLS security profile** | unset (Intermediate default) | FIPS-aligned deployments usually pin `Modern` or an explicit `Custom` profile. |
 | 7 | ~~**etcd backup**~~ | ✅ **CLOSED 2026-10-08** — nightly CronJob, 14 retained | `manifests/15-etcd-backup.yaml`; `tests/verify.sh` T-14 guards it. Backups hold the `aesgcm` key, so the volume is Secret-grade. Same array as the cluster's data (no off-array copy yet), and **restore is untested**. |
-| 8 | ~~**NetworkPolicies**~~ | ✅ **CLOSED for ingress 2026-10-08** | Default-deny ingress plus measured allows on the six namespaces the check covers (`manifests/17-*`); `openshift-*` namespaces largely ship their own. **Egress is still open** — including an undocumented Portworx operator call-home to the internet. |
+| 8 | ~~**NetworkPolicies**~~ | ✅ **CLOSED 2026-10-08, ingress and egress** | Default-deny ingress (`manifests/17-*`) and egress (`manifests/18-*`) with measured allows, on our six namespaces plus egress for `stackrox`; `openshift-*` namespaces largely ship their own. Internet egress remains only for ACS Central and scanner-v4-indexer (vulnerability feeds, registry scans). The Portworx version-manifest fetch is blocked. |
 | 9 | **Image provenance / signing** | **partial** (2026-10-08) | Registry allowlist in force (default `reject`, 8 registries). Signature-verified at runtime: OpenShift release images only. `nvcr.io` cannot be: NVIDIA signs the index, CRI-O verifies the platform manifest (FEASIBILITY.md §3 #2). Remaining options: ACS deploy-time signature checks; sign `ghcr.io/eldritchjs/tlshd` ourselves. |
 | 10 | **FIPS scope discipline** | cluster OK | Workloads must also use FIPS-validated crypto. A Go binary built without BoringCrypto on a FIPS cluster is still non-compliant — the cluster being FIPS does not make applications FIPS. |
 | 11 | ~~**NFS traffic to Pure is cleartext**~~ | ✅ **CLOSED 2026-10-07** | All NFS traffic is now encrypted (RFC 9289). `tests/verify.sh` T-13 reports no cleartext mounts remain; 18/18 PVCs on `nfs-over-tls`, which is also the default class. Proven by packet capture, not just by the mount succeeding. **No scanner checks this** — T-13 is the only guard. See **[NFS-TLS.md](NFS-TLS.md)**. |
@@ -461,7 +461,7 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
   still starting, then came up cleanly; it reaches DCGM through the
   in-namespace Service, which the same-namespace rule covers.
 
-  Known limits: ingress only (egress open). The check passes on ANY
+  Known limits: ingress only (egress followed — next entry). The check passes on ANY
   NetworkPolicy — these are real, but the
   scanner cannot tell. Side findings: the Portworx data-path pods
   (`px-pure-csi-node`) are hostNetwork, so no NetworkPolicy can protect
@@ -529,6 +529,40 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
   z-stream would clear it was wrong; see STANDARDS.md §5 for why and what
   that control actually needs.
 
+- **Default-deny egress 2026-10-08** (`manifests/18-*`), seven namespaces:
+  our six plus `stackrox`. Allows derived from 72 ACS-observed flows (window
+  covers GPU switches and the upgrade) and live sockets; API as port 6443
+  (OVN matches post-DNAT — Red Hat's own pattern), DNS 53 + 5353.
+  Applied one namespace at a time, 19:17Z–19:25Z, each proven by a fresh
+  pod start, not just by the policy existing:
+  - `rhacs-operator`: pod deleted, re-acquired its leader lease. Probe pod
+    under the policy: DNS and the API reachable, internet blocked (:443/:80).
+  - `nvidia-gpu-operator`: operator and dcgm-exporter restarted; 4 GPUs
+    still allocatable, ClusterPolicy `ready`, all 3 scrape targets `up`,
+    fresh `DCGM_FI_DEV_GPU_TEMP` for all 4 GPUs (exporter -> DCGM path).
+  - `portworx`: operator and CSI controllers restarted; a test PVC on
+    `nfs-over-tls` provisioned, mounted, wrote, deleted (array mgmt path,
+    allowed as `10.0.0.0/8:443` so no address is committed). The blocked
+    version-manifest fetch logs no error; the operator carries on.
+  - `stackrox`: all components restarted; Central reports every component
+    HEALTHY; a forced Scanner V4 scan of a registry.redhat.io image
+    succeeded (246 components).
+
+  HIPAA rerun: 28 of our 31 deployments now pass the network controls;
+  the 3 left are hostNetwork. Score still 9/18 (platform deployments).
+  **Side finding:** ACS has never scanned the NVIDIA images (no `nvcr.io`
+  integration) — the earlier "NVIDIA images clean" was wrong.
+  Central's first post-restart download from `definitions.stackrox.io`
+  ended in `unexpected EOF`; that instance later also hung on image scans
+  (next entry). A further Central restart cleared both.
+
+- **NVIDIA images scanned for the first time 2026-10-08.** Added ACS image
+  integration *NVIDIA NGC (nvcr.io, anonymous)* — ACS config, not in a
+  manifest. All 10 images have fixable CVEs (13–49 each); HIPAA 306(e) count
+  124 → 134, still 9/18. Critical: CVE-2025-23266 in mig-parted (Open #3).
+  On the way, Central's image API hung for ~20 minutes with no network
+  cause found; a Central restart fixed it. Details: STANDARDS.md §5.
+
 ### Standards confirmed: NIST 800-171 + HIPAA + FIPS
 
 Full mapping, baseline results, FIPS 140-3 position, and the mixed-VM-tenancy
@@ -555,12 +589,16 @@ tenant. Rationale and the alternatives considered: STANDARDS.md §4.
    upgrade did that and the count did not move (STANDARDS.md §5). What
    remains to decide is a **patch cadence** to write into the SSP, and
    whether to add an ACS policy enforcing a severity floor on *our* images.
-3. **Identity provider** (gaps #4, #5). Sequencing note that matters: **wire
+3. **CVE-2025-23266 / -23267 in `mig-parted`** (Critical, ACS-flagged in
+   `k8s-mig-manager` and `vgpu-device-manager`). The known exploit path is
+   the Container Toolkit hook, which is patched here (v1.20.1); check
+   NVIDIA's advisory for whether mig-parted's copy matters, and whether a
+   newer GPU operator ships newer mig-manager / vgpu-device-manager.
+4. **Identity provider** (gaps #4, #5). Sequencing note that matters: **wire
    an IdP and verify login before removing kubeadmin**, or you lose cluster
    access. Also unblocks flipping the GPU-switch policy to `Deny`.
-4. Still unaddressed and invisible to scanners — the rest of the §6 gaps:
-   egress policy (31 of our deployments per ACS, incl. the Portworx
-   call-home), TLS profile, image signature verification
+5. Still unaddressed and invisible to scanners — the rest of the §6 gaps:
+   TLS profile, image signature verification
    beyond the release images (gap #9), metrics
    persistence, plus the non-technical controls.
 

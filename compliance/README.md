@@ -51,7 +51,7 @@ output for `jetty`. Keep it outside this working tree.
 | Audit retention | ⚠️ 5.8 h — volume cut 73%, but still no forwarding |
 | Storage encryption | ✅ **All NFS traffic encrypted** — 18/18 PVCs on NFS-over-TLS |
 | CNV golden images | ✅ Fixed — all 6 imported, on encrypted storage |
-| HIPAA (ACS `HIPAA_164`) | ⚠️ 9/18 controls pass (2026-10-08, unchanged by the 4.22.16 upgrade). Fixable: ACS notifier, egress policy. Fixable-CVE controls need a patch cadence, not a fix — [STANDARDS.md](STANDARDS.md) §5 |
+| HIPAA (ACS `HIPAA_164`) | ⚠️ 9/18 controls pass (2026-10-08, unchanged by the 4.22.16 upgrade). Egress done (28/31 of ours now pass; 3 are hostNetwork). NVIDIA images now scanned (were never scanned before; Critical CVE-2025-23266 open). Fixable: ACS notifier. Fixable-CVE controls need a patch cadence, not a fix — [STANDARDS.md](STANDARDS.md) §5 |
 
 The headline: **the cluster is hardened and the GPUs survived it.** Platform
 and node remediation are applied — node failures went **377 → 2** — and both
@@ -185,8 +185,8 @@ The scans flag configuration. These are real and mostly invisible to them:
   GPU-switch admission policy ships in Warn rather than Deny.
 - ~~**No etcd backups**~~ — ✅ nightly since 2026-10-08, 14 kept, guarded by
   `verify.sh` T-14; restore not yet tested (PLAN.md §7).
-  ~~No default-deny network policies~~ — ✅ ingress default-deny on all six
-  uncovered namespaces since 2026-10-08 (egress still open). Still no file
+  ~~No default-deny network policies~~ — ✅ ingress and egress default-deny
+  since 2026-10-08; internet egress only for ACS's vulnerability feeds. Still no file
   integrity monitoring. Image signing is **partial**: pulls are restricted to 8
   registries, but only the OpenShift release images are signature-verified
   (NVIDIA's index-only signing defeats CRI-O enforcement — see §6).
