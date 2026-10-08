@@ -3,7 +3,7 @@
 > **Last updated 2026-10-05.** The framework mapping below is current. The
 > **scan results are not** — the counts in §2 (209/21/10, and 191 per node)
 > are the **pre-remediation** baseline, kept as a record of the starting
-> position. Hardening is complete: node failures **377 → 4**,
+> position. Hardening is complete: node failures **377 → 2**,
 > `rhcos4-moderate-*` **191 → 1** per node. Current figures:
 > [README.md](README.md) §3 and `tests/baseline-fail-counts.txt`.
 

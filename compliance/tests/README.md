@@ -97,15 +97,13 @@ Progression:
 | `rhcos4-moderate-master` | 191 | 191 | 4 | **1** |
 | `rhcos4-moderate-worker` | 191 | 191 | 4 | **1** |
 
-Platform since then: 7 / 20, after the SCC capability exception
-(2026-10-08). Those scans are now named `jetty-ocp4-cis` and
+Stage 3 (2026-10-08) took platform to 5 / 18 and `ocp4-moderate-node-*` to
+0 / 0. The platform scans are now named `jetty-ocp4-cis` and
 `jetty-ocp4-moderate`, because they run TailoredProfiles. The baseline file
 uses the new names.
 
-**Node failures: 377 -> 10 -> 4.** The four survivors are both genuinely
-manual: `sshd-limit-user-access` (no remediation is offered) and
-`reject-unsigned-images-by-default` (a stage 3 GPU-dangerous check,
-deliberately deferred -- see FEASIBILITY.md §3).
+**Node failures: 377 -> 10 -> 4 -> 2.** The two survivors are one rule on
+both pools, `sshd-limit-user-access`, which offers no remediation.
 
 Stage 1 was platform-only (6 rules, 2 CIS + 4 moderate). Stage 2 was node-only
 (377 MachineConfigs): **377 node failures → 10**, platform untouched.
@@ -145,17 +143,16 @@ currently hosting `central` and `central-db`.
 
 ## Known WARNs (expected, not bugs)
 
-Current state: **38 PASS, 0 FAIL, 3 WARN**, stable across repeated runs.
+Current state: **46 PASS, 0 FAIL, 2 WARN** (2026-10-08, after stage 3).
 
 - **T-02** — no CMVP certificate record yet. Paperwork, not a cluster problem.
-- **T-10** — `allowedRegistries` is unset, which is why `ocp-allowed-registries`
-  FAILs. Eight registries are in use cluster-wide (measured 2026-10-08):
-  `docker.io`, `ghcr.io`, `nvcr.io`, `quay.io`, `registry.access.redhat.com`,
-  `registry.connect.redhat.com`, `registry.k8s.io`, `registry.redhat.io`.
-  **All eight must be in any allowlist** — `docker.io` and `registry.k8s.io`
-  are easy to miss if you only inspect the GPU and CNV namespaces, `ghcr.io`
-  carries `tlshd`, which every TLS-backed NFS mount depends on, and
-  `registry.access.redhat.com` is the `tlshd` build's base image.
+
+T-10 no longer warns: `allowedRegistries` is set (`manifests/14-*`), and T-10
+now checks every in-use registry against it. Its blind spot is that it only
+sees **running** containers — a registry used only by a CronJob, a
+scaled-to-zero workload, an operator's `relatedImages` or an ImageStream will
+not appear. Inventory those too before editing the allowlist (the manifest
+header lists what was checked).
 - **T-12** — the GPU-switch admission policy is in `Warn`+`Audit`, not `Deny`.
   Deliberate: enforcing a node admission policy before an identity provider
   exists risks locking yourself out. Switch to `Deny` once an IdP is in place.

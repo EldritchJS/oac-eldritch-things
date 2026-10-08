@@ -1,7 +1,7 @@
 # Jetty cluster — compliance baseline
 
-> **Last updated 2026-10-07.** Node hardening is complete: 385/385
-> remediations applied, node failures **377 → 4**, both GPU modalities
+> **Last updated 2026-10-08.** Node hardening is complete: 385/385
+> remediations applied plus stage 3, node failures **377 → 2**, both GPU modalities
 > survived, and all NFS traffic is encrypted. Figures in §3b and §6 marked
 > "initial" are the **pre-remediation** baseline, kept as a historical record.
 > For current numbers see §7 "Done", `tests/baseline-fail-counts.txt`, or run
@@ -250,7 +250,7 @@ fixing** — these need deliberate work.
 | 6 | **TLS security profile** | unset (Intermediate default) | FIPS-aligned deployments usually pin `Modern` or an explicit `Custom` profile. |
 | 7 | **etcd backup** | no backup CronJob | Not a scanner finding, but a contingency-planning control (CP-9) and plain operational sanity. |
 | 8 | **NetworkPolicies** | no default-deny posture | Flat pod network by default. ACS can *generate* policies, but someone must apply and own them (SC-7). |
-| 9 | **Image provenance / signing** | not configured | ACS scans for CVEs but does not enforce signature verification. Needs sigstore policy / `ClusterImagePolicy`. |
+| 9 | **Image provenance / signing** | **partial** (2026-10-08) | Registry allowlist in force (default `reject`, 8 registries). Signature-verified at runtime: OpenShift release images only. `nvcr.io` cannot be: NVIDIA signs the index, CRI-O verifies the platform manifest (FEASIBILITY.md §3 #2). Remaining options: ACS deploy-time signature checks; sign `ghcr.io/eldritchjs/tlshd` ourselves. |
 | 10 | **FIPS scope discipline** | cluster OK | Workloads must also use FIPS-validated crypto. A Go binary built without BoringCrypto on a FIPS cluster is still non-compliant — the cluster being FIPS does not make applications FIPS. |
 | 11 | ~~**NFS traffic to Pure is cleartext**~~ | ✅ **CLOSED 2026-10-07** | All NFS traffic is now encrypted (RFC 9289). `tests/verify.sh` T-13 reports no cleartext mounts remain; 18/18 PVCs on `nfs-over-tls`, which is also the default class. Proven by packet capture, not just by the mount succeeding. **No scanner checks this** — T-13 is the only guard. See **[NFS-TLS.md](NFS-TLS.md)**. |
 | 12 | **Metrics have no persistence** | Prometheus `retention=15d`, **no `volumeClaimTemplate`** | Monitoring data is on emptyDir, so it is lost whenever the pod restarts or reschedules — "15 days" is nominal. There is no `cluster-monitoring-config` ConfigMap at all. Pairs with gap #3: the AU workstream needs a destination for *metrics* as well as logs. |
@@ -436,6 +436,23 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
     `pure-fb-nfsv4` class). Applying it unchecked would have moved evidence
     back to unencrypted storage. `oc diff` before every `oc apply`.
 
+- **Stage 3 complete 2026-10-08: registry allowlist.**
+  `manifests/14-image-registry-allowlist.yaml` sets `allowedRegistries` (the
+  8 measured registries) and `allowedRegistriesForImport`. One change closed
+  three checks — `ocp-allowed-registries`, `-for-import`, and
+  `reject-unsigned-images-by-default`, which only wants `policy.json` to
+  default to `reject`. **No reboots** (CRI-O reload; boot IDs unchanged).
+  Node failures 4 → **2** (`ocp4-moderate-node-*` now COMPLIANT);
+  `jetty-ocp4-cis` 7 → **5**, `jetty-ocp4-moderate` 20 → **18**.
+  `tests/verify.sh` **46 PASS / 0 FAIL / 2 WARN**; an uncached `nvcr.io`
+  pull still succeeds, a non-allowed registry is refused.
+
+  Before it, real signature verification for `nvcr.io` was tried via a
+  ClusterImagePolicy and **reverted after ~4 minutes**: NVIDIA signs only the
+  multi-arch index, CRI-O verifies the platform manifest, so signed GPU
+  images were refused. Nothing pulled in that window. Full account:
+  FEASIBILITY.md §3 #2.
+
 ### Standards confirmed: NIST 800-171 + HIPAA + FIPS
 
 Full mapping, baseline results, FIPS 140-3 position, and the mixed-VM-tenancy
@@ -458,12 +475,9 @@ tenant. Rationale and the alternatives considered: STANDARDS.md §4.
 2. **Identity provider** (gaps #4, #5). Sequencing note that matters: **wire
    an IdP and verify login before removing kubeadmin**, or you lose cluster
    access. Also unblocks flipping the GPU-switch policy to `Deny`.
-3. **Stage 3** — two GPU-dangerous manual checks remain, individually:
-   `reject-unsigned-images-by-default` (investigate `nvcr.io` signatures
-   first) and `ocp-allowed-registries` (last; reboots every node). The SCC
-   check is done.
-4. Still unaddressed and invisible to scanners — the rest of the §6 gaps: etcd
-   backups, NetworkPolicies, TLS profile, image signing policy, metrics
+3. Still unaddressed and invisible to scanners — the rest of the §6 gaps: etcd
+   backups, NetworkPolicies, TLS profile, image signature verification
+   beyond the release images (gap #9), metrics
    persistence, plus the non-technical controls.
 
 ### Not covered by any of this

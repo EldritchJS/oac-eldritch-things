@@ -221,6 +221,7 @@ case "$STAGE" in
   stage3) hdr "STAGE 3 — not automated"
           note "ocp-allowed-registries, reject-unsigned-images, scc-limit-capabilities."
           note "All manual, all can break GPU support. See FEASIBILITY.md §3."
-          note "scc-limit-capabilities: done 2026-10-08 (manifests/13-*)." ;;
+          note "Done on jetty 2026-10-08: scc-limit-capabilities (manifests/13-*);"
+          note "allowed-registries + reject-unsigned-images, one change (manifests/14-*)." ;;
   *) echo "usage: $0 {status|stage1|stage2|stage3} [--dry-run]" >&2; exit 2 ;;
 esac

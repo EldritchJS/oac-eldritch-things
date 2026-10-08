@@ -1,0 +1,67 @@
+# Registry allowlist: closes ocp-allowed-registries, ocp-allowed-registries-
+# for-import, AND reject-unsigned-images-by-default in one change.
+#
+# Setting allowedRegistries makes the MCO regenerate /etc/containers/
+# policy.json with "default": [{"type": "reject"}] and an
+# insecureAcceptAnything entry per allowed registry. That default is all
+# reject-unsigned-images-by-default checks -- it does NOT require signatures.
+# Be precise about this in the SSP: outside the OpenShift release images
+# (sigstoreSigned via the built-in `openshift` ClusterImagePolicy), pulls are
+# restricted by REGISTRY, not verified by SIGNATURE.
+#
+# Why not signature verification for nvcr.io too: tried 2026-10-08 and
+# reverted. NVIDIA signs only the multi-arch index; CRI-O verifies the
+# per-platform manifest it pulls, which carries no signature. See
+# FEASIBILITY.md §3 #2.
+#
+# INVENTORY, measured 2026-10-08 across running pods (containers, init,
+# ephemeral), all Deployments/DaemonSets/StatefulSets including scaled-to-0,
+# CronJobs/Jobs, OLM CatalogSources, CSV relatedImages, CDI DataImportCrons,
+# ImageStream tags and BuildConfig bases. Every reference resolved to one of
+# these eight -- tests/verify.sh T-10 only sees running containers, so it is
+# NOT sufficient on its own before changing this list:
+#
+#   nvcr.io                      all NVIDIA GPU Operator images (both modes)
+#   quay.io                      release payload, most platform images, CDI crons
+#   registry.redhat.io           operators, catalogs, ImageStreams
+#   registry.connect.redhat.com  certified partner operator
+#   registry.access.redhat.com   tlshd build base; 101 sample ImageStream tags
+#   docker.io                    misc workloads
+#   registry.k8s.io              misc workloads
+#   ghcr.io                      tlshd -- omit it and TLS NFS mounts fail on
+#                                every node the next time the image is pulled
+#
+# The internal registry is managementState: Removed, so it is not listed.
+#
+# allowedRegistriesForImport governs ImageStream imports only; measured
+# sources are quay.io, registry.access.redhat.com, registry.redhat.io.
+#
+# Failure mode of a missed entry: new PULLS from it are refused
+# (ImagePullBackOff). Images already cached on a node keep running.
+#
+# Node cost on 4.22: policy.json change = CRI-O reload, no reboot
+# (machineconfiguration/cluster nodeDisruptionPolicyStatus). Verified with
+# boot IDs when applied.
+---
+apiVersion: config.openshift.io/v1
+kind: Image
+metadata:
+  name: cluster
+spec:
+  registrySources:
+    allowedRegistries:
+      - nvcr.io
+      - quay.io
+      - registry.redhat.io
+      - registry.connect.redhat.com
+      - registry.access.redhat.com
+      - docker.io
+      - registry.k8s.io
+      - ghcr.io
+  allowedRegistriesForImport:
+    - domainName: quay.io
+      insecure: false
+    - domainName: registry.access.redhat.com
+      insecure: false
+    - domainName: registry.redhat.io
+      insecure: false

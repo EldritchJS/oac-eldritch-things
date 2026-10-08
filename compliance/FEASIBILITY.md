@@ -147,7 +147,19 @@ for.
 
 ### The three, with specifics
 
+> ✅ **All three applied 2026-10-08; both GPU modalities intact, no reboots.**
+> #1 and #2 turned out to be one change (`manifests/14-image-registry-
+> allowlist.yaml`); #3 is `manifests/13-scc-capabilities-tailoring.yaml`.
+> The analysis below is the pre-change assessment, with corrections inline.
+
 **1. `ocp-allowed-registries` — highest risk, and it is a one-shot foot-gun.**
+
+> **Corrections from applying it:** (a) on 4.22 it does **not** reboot — it
+> regenerates `policy.json`, whose node disruption policy is a CRI-O reload;
+> boot IDs were unchanged. (b) Eight registries, not three — see the
+> manifest header for the full inventory, which covered CronJobs, scaled-to-
+> zero workloads, CSV `relatedImages`, ImageStreams and BuildConfigs. The
+> internal registry is `Removed` on jetty and was not needed.
 
 Currently unset (`registrySources` is empty). The rule wants
 `image.config.openshift.io/cluster` `.spec.registrySources.allowedRegistries`
@@ -184,6 +196,54 @@ reject-by-default policy blocks the GPU driver, and the pragmatic path is a
 per-transport `insecureAcceptAnything` entry for `nvcr.io` — which weakens the
 control and should be recorded as an accepted deviation rather than quietly
 applied.
+
+> ✅ **Answered 2026-10-08: they do, and they verify.** All 9 `nvcr.io`
+> images in use carry cosign signatures (tag convention
+> `sha256-<digest>.sig`; the OCI referrers API returns nothing). They are
+> **key-based, not keyless** — no Fulcio certificate or Rekor bundle — signed
+> with NVIDIA's NGC key, a single ECDSA P-256 key published at
+> `https://api.ngc.nvidia.com/v2/catalog/containers/public-key` (NVIDIA signs
+> everything in the NGC catalog since July 2023).
+>
+> Verified independently with `openssl`, not by trusting the tag's existence:
+> **16/16 signatures valid** (`driver` carries 6, `dcgm-exporter` 3, the rest
+> 1 each), and every signed payload names exactly the repo and digest jetty
+> runs. A fabricated `.sig` tag returns 404, so the 200s are real.
+>
+> Two consequences:
+>
+> - **The rule itself does not require signatures.** It checks only that
+>   `policy.json` defaults to `reject`. Setting `image.config`
+>   `allowedRegistries` makes the MCO write exactly that, with
+>   `insecureAcceptAnything` per allowed registry — so this check and
+>   `ocp-allowed-registries` are satisfied by **one change**. Confirmed when
+>   applied: both PASS, and a pull from a non-allowed registry (`gcr.io`) is
+>   refused while an uncached `nvcr.io` pull still succeeds.
+> - **Real verification for the GPU stack does NOT work through CRI-O —
+>   tried and reverted 2026-10-08.** A `ClusterImagePolicy` scoped to
+>   `nvcr.io/nvidia` with NVIDIA's key (PEM sha256 `3f793789…ab1b57`, no
+>   Rekor) rolled out cleanly, but CRI-O then refused a signed image:
+>   *"A signature was required, but no signature exists"*. Cause, confirmed
+>   on all 9 images: NVIDIA signs only the **multi-arch index** digest; the
+>   per-platform (amd64) manifests carry no `.sig`. CRI-O resolves the index
+>   and verifies the **platform manifest** it actually pulls. `cosign verify`
+>   checks the index, so it passes — which is exactly why this looks like it
+>   should work. The policy was live ~4 minutes; nothing pulled in that
+>   window, and removal was another CRI-O reload with no reboot.
+>
+>   Lesson for the transferable method: **test a real uncached pull through
+>   CRI-O before trusting any signature policy** — a successful rollout and a
+>   passing `cosign verify` prove nothing about runtime enforcement. If real
+>   verification of `nvcr.io` is wanted, the candidates are ACS deploy-time
+>   signature checks, or NVIDIA signing per-platform manifests.
+>
+>   jetty does have working runtime verification for the OpenShift release
+>   images (built-in `openshift` ClusterImagePolicy, `sigstoreSigned`).
+>
+> And a correction to the cost: on 4.22 a `policy.json` change is a CRI-O
+> **reload**, not a reboot (`machineconfiguration/cluster`
+> `nodeDisruptionPolicyStatus`). `registries.conf` is `Special` — the MCO
+> decides per change.
 
 **3. `scc-limit-container-allowed-capabilities` — this finding *is* your GPU stack.**
 

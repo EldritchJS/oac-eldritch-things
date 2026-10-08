@@ -47,25 +47,23 @@ output for `jetty`. Keep it outside this working tree.
 | Storage | ✅ Working (was broken most of the day; fixed) |
 | GPU — container mode | ✅ Live on `u15` |
 | GPU — VM passthrough | ✅ Live on `u16` |
-| **Cluster hardening** | ✅ **Complete.** 385/385 remediations applied; node failures 377 → 4 |
+| **Cluster hardening** | ✅ **Complete.** 385/385 remediations applied, stage 3 done; node failures 377 → 2 |
 | Audit retention | ⚠️ 5.8 h — volume cut 73%, but still no forwarding |
 | Storage encryption | ✅ **All NFS traffic encrypted** — 18/18 PVCs on NFS-over-TLS |
 | CNV golden images | ✅ Fixed — all 6 imported, on encrypted storage |
 
 The headline: **the cluster is hardened and the GPUs survived it.** Platform
-and node remediation are applied — node failures went **377 → 4** — and both
+and node remediation are applied — node failures went **377 → 2** — and both
 GPU modalities still work after two full rolling reboots. That was the central
 open question and it is now answered with a measurement, not a prediction.
 
-Node hardening is finished: all 385 remediations are applied and the four
-remaining node failures are both genuinely manual (`sshd-limit-user-access`,
-which offers no remediation, and `reject-unsigned-images-by-default`, a stage
-3 GPU-dangerous check deliberately deferred).
+Node hardening is finished: all 385 remediations are applied, and so are the
+three GPU-dangerous manual checks (stage 3, 2026-10-08) — without breaking
+either GPU modality. The two remaining node failures are one rule on both
+pools, `sshd-limit-user-access`, which offers no remediation.
 
-What remains is deliberate, not blocked: two of the three GPU-dangerous manual
-checks (stage 3) are still untouched on purpose — the third, the SCC
-capability exception, was recorded 2026-10-08 — and **audit log forwarding is
-now the one genuinely open gap.**
+What remains is not hardening: **audit log forwarding is the one genuinely
+open gap**, followed by the identity provider.
 
 ---
 
@@ -129,18 +127,20 @@ Failure counts, as first measured and as they stand after remediation:
 
 | Scan | Initial | After stage 1 | **Now** |
 |---|---|---|---|
-| `ocp4-cis` (platform) | 10 | 8 | **7** |
-| `ocp4-moderate` (platform) | 25 | 21 | **20** |
-| Node-level OpenShift config | 4 master / 1 worker | 4 / 1 | **1 / 1** |
+| `ocp4-cis` (platform) | 10 | 8 | **5** |
+| `ocp4-moderate` (platform) | 25 | 21 | **18** |
+| Node-level OpenShift config | 4 master / 1 worker | 4 / 1 | **0 / 0** |
 | **RHCOS operating system** | **191 per node** | 191 | **1 per node** |
 
-The platform rows dropped by one each on 2026-10-08 when the SCC exception
-was recorded. Those two scans are now named `jetty-ocp4-cis` and
-`jetty-ocp4-moderate`, because they run the jetty TailoredProfiles.
+Stage 3 (2026-10-08) took the platform rows down by three each — the SCC
+exception and the registry allowlist pair — and the node-config rows to zero
+(`reject-unsigned-images-by-default`). The two platform scans are now named
+`jetty-ocp4-cis` and `jetty-ocp4-moderate`, because they run the jetty
+TailoredProfiles.
 
 The RHCOS number looked frightening and mostly was not: 112 of the 191 were
 audit rules, 27 sysctls, 18 kernel modules — bulk, not depth, and nearly all
-auto-remediable. **Node failures went 377 → 4.**
+auto-remediable. **Node failures went 377 → 2.**
 
 Getting there meant 377 MachineConfigs and a rolling reboot of every node, one
 at a time. That was the single biggest operational fact in this document, and
@@ -149,10 +149,9 @@ mid-run and recovered on its own. A second, smaller round on 2026-10-07
 applied 6 usbguard remediations that only became eligible after the first
 round's rescan, taking failures 10 → 4.
 
-The 4 survivors are two rules, each failing on both pools, and both genuinely
-manual: `sshd-limit-user-access` (no remediation offered) and
-`reject-unsigned-images-by-default`, a stage 3 GPU-dangerous check deliberately
-left alone.
+Those 4 were two rules on both pools. Stage 3 cleared
+`reject-unsigned-images-by-default`, leaving **2**: `sshd-limit-user-access`
+on each pool, which offers no remediation.
 
 Raw ARF evidence is archived to persistent storage, so these results are
 durable audit artefacts rather than a transient read.
@@ -179,8 +178,10 @@ The scans flag configuration. These are real and mostly invisible to them:
 - **No identity provider.** Authentication is `kubeadmin` — one shared
   break-glass account, so no per-user attribution at all. Also why the
   GPU-switch admission policy ships in Warn rather than Deny.
-- **No etcd backups**, no default-deny network policies, no image signing
-  policy, no file integrity monitoring.
+- **No etcd backups**, no default-deny network policies, no file integrity
+  monitoring. Image signing is **partial**: pulls are restricted to 8
+  registries, but only the OpenShift release images are signature-verified
+  (NVIDIA's index-only signing defeats CRI-O enforcement — see §6).
 
 Plus the non-technical half of both frameworks, which is usually the larger
 share of an authorisation package and which no tool produces.
@@ -247,10 +248,14 @@ support are all **manual** — none has an auto-remediation. A bulk "apply
 everything" will not touch them. The risk is only a human applying one without
 thinking.
 
+✅ **All three done 2026-10-08, GPUs intact.** The detail below is kept
+because it is what made that safe.
+
 **`ocp-allowed-registries` is a one-shot foot-gun.** It restricts which
-registries the container runtime may pull from. Miss an entry and you get
-cluster-wide `ImagePullBackOff` — and it rewrites a node config file, so it
-reboots everything too. **Eight** registries are actually in use cluster-wide:
+registries the container runtime may pull from. Miss an entry and new pulls
+from it fail with `ImagePullBackOff` (cached images keep running). It does
+**not** reboot anything on 4.22 — it rewrites `policy.json`, which is a CRI-O
+reload; measured, boot IDs unchanged. **Eight** registries are actually in use cluster-wide:
 `nvcr.io` (all nine NVIDIA images), `quay.io`, `registry.redhat.io`,
 `registry.connect.redhat.com`, `docker.io`, `registry.k8s.io`, `ghcr.io`
 (the `tlshd` image), and `registry.access.redhat.com` (the `tlshd` build's
@@ -258,14 +263,19 @@ base image). **All eight must be in any allowlist** — `docker.io` and
 `registry.k8s.io` are easy to miss if you only inspect the GPU and CNV
 namespaces. Leave out `nvcr.io` and the GPU stack dies in both modalities.
 Leave out `ghcr.io` and the next reboot takes encrypted storage with it: no
-`tlshd`, no TLS mounts, on any node. `verify.sh` T-10 re-measures this live;
-re-run it immediately before applying, since the list is a snapshot.
+`tlshd`, no TLS mounts, on any node. `verify.sh` T-10 re-measures this live,
+but only sees running containers — before changing the list, inventory
+CronJobs, scaled-to-zero workloads, CSV `relatedImages`, ImageStreams and
+BuildConfigs too (`manifests/14-image-registry-allowlist.yaml` header).
 
-**`reject-unsigned-images-by-default` has an open question.** It would require
-every image to carry a verifiable signature. Nobody has checked whether the
-`nvcr.io` images satisfy that. If they do not, enforcing it blocks the GPU
-driver, and the workaround weakens the control enough that it should be a
-recorded deviation rather than a quiet fix.
+**`reject-unsigned-images-by-default` turned out not to be about signatures.**
+The check only wants `policy.json` to default to `reject`, which the registry
+allowlist above produces — so one change closed both. Be precise in the SSP:
+pulls are restricted **by registry**; only the OpenShift release images are
+verified **by signature**. Real verification for `nvcr.io` was tried and
+reverted: NVIDIA signs every image (16/16 signatures verify against its NGC
+key), but only the multi-arch index, and CRI-O verifies the per-platform
+manifest it pulls. Detail: FEASIBILITY.md §3 #2.
 
 **`scc-limit-container-allowed-capabilities` was failing entirely because of
 your own stack.** Exactly 10 security contexts failed it: **nine NVIDIA ones**
@@ -367,9 +377,11 @@ Recommended order of work:
    usbguard remediations, one more rolling reboot. **Node failures 10 → 4**,
    `rhcos4-moderate-*` 4 → 1 each. 385/385 applied. Both GPU modalities and
    the tlshd storage path survived.
-5. **Stage 3** — the three GPU-dangerous manual checks, individually and last.
-   SCC exception **done 2026-10-08**; `reject-unsigned-images-by-default` and
-   `ocp-allowed-registries` remain.
+5. ~~**Stage 3**~~ — **done 2026-10-08**: SCC exception (TailoredProfile),
+   then the registry allowlist, which closed `ocp-allowed-registries`,
+   `-for-import` and `reject-unsigned-images-by-default` together. No
+   reboots. Node failures 4 → **2**; `jetty-ocp4-cis` **5**,
+   `jetty-ocp4-moderate` **18**. Both GPU modalities intact.
 6. **Re-run `tests/verify.sh` after each stage** and re-save the baseline once
    the new numbers are the intended ones.
 
