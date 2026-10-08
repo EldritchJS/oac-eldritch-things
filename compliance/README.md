@@ -128,7 +128,7 @@ Failure counts, as first measured and as they stand after remediation:
 | Scan | Initial | After stage 1 | **Now** |
 |---|---|---|---|
 | `ocp4-cis` (platform) | 10 | 8 | **5** |
-| `ocp4-moderate` (platform) | 25 | 21 | **18** |
+| `ocp4-moderate` (platform) | 25 | 21 | **16** |
 | Node-level OpenShift config | 4 master / 1 worker | 4 / 1 | **0 / 0** |
 | **RHCOS operating system** | **191 per node** | 191 | **1 per node** |
 
@@ -136,7 +136,9 @@ Stage 3 (2026-10-08) took the platform rows down by three each — the SCC
 exception and the registry allowlist pair — and the node-config rows to zero
 (`reject-unsigned-images-by-default`). The two platform scans are now named
 `jetty-ocp4-cis` and `jetty-ocp4-moderate`, because they run the jetty
-TailoredProfiles.
+TailoredProfiles. Moderate then dropped two more (18 → 16) for the AC-8
+system use notice — console banner and `oc login` MOTD — which is
+**placeholder text**, not legally approved (`manifests/16-*`).
 
 The RHCOS number looked frightening and mostly was not: 112 of the 191 were
 audit rules, 27 sysctls, 18 kernel modules — bulk, not depth, and nearly all

@@ -1,0 +1,49 @@
+# System use notification (800-53 AC-8). Closes banner-or-login-template-set
+# (web console) and openshift-motd-exists (`oc login`).
+#
+# !!! PLACEHOLDER TEXT — NOT APPROVED BY ANY LEGAL OR COMPLIANCE OFFICE !!!
+#
+# jetty is a sandbox and will not be formally assessed (decision 2026-10-08),
+# so a placeholder is acceptable HERE. For any cluster under assessment:
+#   - The wording must come from the organisation's legal/compliance office,
+#     and should match SSH, VPN and every other login point.
+#   - Do NOT use the DoD notice the rule's help text suggests unless the
+#     system really is a U.S. Government information system — on anything
+#     else it makes a false statement at every login.
+#   - If PHI is in scope, the notice usually says so.
+#
+# The two objects below carry the same notice in two places; keep them in
+# step. The console banner is the short form (banners are one line), the MOTD
+# is the full form. An OAuth custom login page would show the notice BEFORE
+# credentials are entered, which is closer to AC-8's intent — worth doing on
+# an assessed cluster; the banner is enough to satisfy the check.
+---
+apiVersion: console.openshift.io/v1
+kind: ConsoleNotification
+metadata:
+  # The NAME is what the check looks for -- it is mentioned only in the rule's
+  # instructions, not its description. A ConsoleNotification with any other
+  # name shows the same banner and still FAILs (measured 2026-10-08).
+  name: classification-banner
+spec:
+  location: BannerTop
+  text: "[PLACEHOLDER — NOT LEGALLY APPROVED] Authorized use only. Activity on this system is monitored and recorded. Use constitutes consent to monitoring."
+  color: "#ffffff"
+  backgroundColor: "#8a1c1c"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: motd
+  namespace: openshift
+data:
+  message: |
+    ************************************************************************
+    *  PLACEHOLDER NOTICE — NOT APPROVED BY ANY LEGAL OR COMPLIANCE OFFICE  *
+    ************************************************************************
+    This system is for authorized use only. All activity on this system is
+    monitored, recorded, and subject to audit. Users have no expectation of
+    privacy in any data stored on or transmitted through this system.
+    Unauthorized use may result in loss of access and other action.
+    By continuing, you consent to these terms.
+    ************************************************************************

@@ -436,6 +436,15 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
     `pure-fb-nfsv4` class). Applying it unchecked would have moved evidence
     back to unencrypted storage. `oc diff` before every `oc apply`.
 
+- **AC-8 system use notice 2026-10-08 — PLACEHOLDER TEXT.**
+  `manifests/16-system-use-notice.yaml`: a console banner and the `oc login`
+  MOTD, same notice in both. Closes `banner-or-login-template-set` and
+  `openshift-motd-exists`; `jetty-ocp4-moderate` 18 → **16**. The wording is
+  a clearly marked placeholder, acceptable only because jetty will not be
+  formally assessed. Trap: the banner check requires the ConsoleNotification
+  to be **named `classification-banner`** — stated only in the rule's
+  instructions; any other name shows the banner and still FAILs.
+
 - **etcd backups running 2026-10-08** (gap #7, CP-9). `manifests/15-etcd-
   backup.yaml`: nightly 02:30 UTC CronJob that runs the operator-installed
   `cluster-backup.sh` on a master and copies the result to a 10Gi
