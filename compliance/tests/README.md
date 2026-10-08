@@ -99,7 +99,8 @@ Progression:
 | `rhcos4-moderate-worker` | 191 | 191 | 4 | **1** |
 
 Stage 3 (2026-10-08) took platform to 5 / 18 and `ocp4-moderate-node-*` to
-0 / 0; the AC-8 notice then took moderate to 16. The platform scans are now named `jetty-ocp4-cis` and
+0 / 0; the AC-8 notice then took moderate to 16, and NetworkPolicies took
+platform to 4 / 15. The platform scans are now named `jetty-ocp4-cis` and
 `jetty-ocp4-moderate`, because they run TailoredProfiles. The baseline file
 uses the new names.
 

@@ -1,0 +1,165 @@
+# Default-deny INGRESS NetworkPolicies (800-53 SC-7; closes
+# configure-network-policies-namespaces, severity high). Applied 2026-10-08 in
+# the order below, verified after each step -- results in PLAN.md §7.
+#
+# SCOPE: the check covers every namespace except openshift-*, kube-* and
+# default. On jetty that is 8; stackrox and assisted-installer already have
+# policies. These are the other six. etcd-backup and nfs-tls run only
+# hostNetwork pods, which NetworkPolicy does not affect -- their policies are
+# for the check and for anything added there later, not for current traffic.
+#
+# NOTE: the check passes if ANY NetworkPolicy exists in a namespace; whether it
+# is restrictive is left to manual review. These are written to be real.
+#
+# HOW THE ALLOW RULES WERE DERIVED (2026-10-08), not guessed:
+#   - ACS observed network graph since 2026-10-02 (includes GPU modality
+#     switches during that window). Inbound flows on ephemeral ports were
+#     treated as reply traffic, not listeners.
+#   - Declared intent: Services, ServiceMonitors, and the one webhook
+#     (portworx-operator-mutating-webhook -> portworx-operator:9443).
+#   - Which Prometheus scrapes what: only nvidia-gpu-operator is actually
+#     scraped (3 targets, platform Prometheus). portworx lacks the
+#     cluster-monitoring label and user-workload monitoring is off, so its
+#     ServiceMonitors are inert; rhacs-operator is labelled but has no
+#     ServiceMonitor, so nothing scrapes it either (PLAN.md gap #12).
+#
+# INGRESS ONLY. Egress is untouched in this round: denying egress risks API
+# server and DNS access for operators, for less SC-7 value. Known egress worth
+# a decision: portworx-operator makes outbound HTTPS to the internet (ACS
+# attributes it to Google Cloud us-west1) -- likely Portworx telemetry/licence
+# call-home. Undocumented outbound flow from the storage operator.
+#
+# KUBELET PROBES: OVN-Kubernetes admits traffic from the node's management
+# port to local pods, so liveness/readiness probes are not blocked by these
+# policies. VERIFIED on rhacs-operator: HTTP probes on 8081 (readiness every
+# 10s, liveness every 20s) kept passing for 2 minutes under default-deny
+# with no allow rule for them.
+#
+# APPLY ORDER (lowest risk first), verifying after each:
+#   1. etcd-backup, nfs-tls, vms-test          (no pod-network traffic today)
+#   2. rhacs-operator                          (pods stay Ready = probe test)
+#   3. nvidia-gpu-operator                     (T-06/T-07; GPU metrics scraped)
+#   4. portworx                                (T-13; test PVC provisions)
+# Rollback per namespace: oc delete networkpolicy --all -n <ns>
+# --------------------------------------------------------------------------
+
+# ---- 1. no pod-network traffic today -------------------------------------
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny-ingress, namespace: etcd-backup}
+spec: {podSelector: {}, policyTypes: [Ingress]}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny-ingress, namespace: nfs-tls}
+spec: {podSelector: {}, policyTypes: [Ingress]}
+---
+# vms-test is empty today. A VM on the pod network placed here will need an
+# explicit allow for whatever it serves (e.g. SSH) -- deny is the right start.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny-ingress, namespace: vms-test}
+spec: {podSelector: {}, policyTypes: [Ingress]}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-same-namespace, namespace: vms-test}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{podSelector: {}}]
+
+# ---- 2. rhacs-operator ------------------------------------------------------
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny-ingress, namespace: rhacs-operator}
+spec: {podSelector: {}, policyTypes: [Ingress]}
+---
+# Declared metrics endpoint (svc ...-metrics-service 8443 -> https). Nothing
+# scrapes it today (no ServiceMonitor); allowed so that adding one later does
+# not silently fail.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-platform-monitoring, namespace: rhacs-operator}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: openshift-monitoring}
+      ports: [{port: 8443, protocol: TCP}]
+
+# ---- 3. nvidia-gpu-operator ---------------------------------------------------
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny-ingress, namespace: nvidia-gpu-operator}
+spec: {podSelector: {}, policyTypes: [Ingress]}
+---
+# Observed: dcgm-exporter -> dcgm :5555. Allow intra-namespace generally: the
+# operator's components are one system, and validators/driver pods that only
+# appear during a modality switch talk among themselves.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-same-namespace, namespace: nvidia-gpu-operator}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{podSelector: {}}]
+---
+# Observed AND declared (ServiceMonitors): prometheus-k8s -> gpu-operator
+# :8080, dcgm-exporter :9400, node-status-exporter :8000.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-platform-monitoring, namespace: nvidia-gpu-operator}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: openshift-monitoring}
+      ports:
+        - {port: 8080, protocol: TCP}
+        - {port: 9400, protocol: TCP}
+        - {port: 8000, protocol: TCP}
+
+# ---- 4. portworx ------------------------------------------------------------
+# px-pure-csi-node (the volume DATA PATH) is hostNetwork and unaffected. These
+# policies touch only portworx-operator and px-pure-csi-controller
+# (provisioning). Worst case if wrong: new PVCs stop provisioning.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny-ingress, namespace: portworx}
+spec: {podSelector: {}, policyTypes: [Ingress]}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-same-namespace, namespace: portworx}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{podSelector: {}}]
+---
+# The API server calls portworx-operator-mutating-webhook (svc 443 -> pod
+# 9443) from the masters' host network. failurePolicy is Ignore and it only
+# covers UPDATE storageclusters, so a miss is a 10s delay, not an outage --
+# but allow it anyway. OVN-K marks host-network traffic with this label.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-webhook-from-host-network, namespace: portworx}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {policy-group.network.openshift.io/host-network: ""}
+      ports: [{port: 9443, protocol: TCP}]

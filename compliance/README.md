@@ -127,8 +127,8 @@ Failure counts, as first measured and as they stand after remediation:
 
 | Scan | Initial | After stage 1 | **Now** |
 |---|---|---|---|
-| `ocp4-cis` (platform) | 10 | 8 | **5** |
-| `ocp4-moderate` (platform) | 25 | 21 | **16** |
+| `ocp4-cis` (platform) | 10 | 8 | **4** |
+| `ocp4-moderate` (platform) | 25 | 21 | **15** |
 | Node-level OpenShift config | 4 master / 1 worker | 4 / 1 | **0 / 0** |
 | **RHCOS operating system** | **191 per node** | 191 | **1 per node** |
 
@@ -138,7 +138,9 @@ exception and the registry allowlist pair — and the node-config rows to zero
 `jetty-ocp4-cis` and `jetty-ocp4-moderate`, because they run the jetty
 TailoredProfiles. Moderate then dropped two more (18 → 16) for the AC-8
 system use notice — console banner and `oc login` MOTD — which is
-**placeholder text**, not legally approved (`manifests/16-*`).
+**placeholder text**, not legally approved (`manifests/16-*`). Then one more
+each (CIS 5 → 4, moderate 16 → 15) for default-deny NetworkPolicies, the
+only high-severity platform finding (`manifests/17-*`).
 
 The RHCOS number looked frightening and mostly was not: 112 of the 191 were
 audit rules, 27 sysctls, 18 kernel modules — bulk, not depth, and nearly all
@@ -181,8 +183,10 @@ The scans flag configuration. These are real and mostly invisible to them:
   break-glass account, so no per-user attribution at all. Also why the
   GPU-switch admission policy ships in Warn rather than Deny.
 - ~~**No etcd backups**~~ — ✅ nightly since 2026-10-08, 14 kept, guarded by
-  `verify.sh` T-14; restore not yet tested (PLAN.md §7). Still no
-  default-deny network policies, no file integrity monitoring. Image signing is **partial**: pulls are restricted to 8
+  `verify.sh` T-14; restore not yet tested (PLAN.md §7).
+  ~~No default-deny network policies~~ — ✅ ingress default-deny on all six
+  uncovered namespaces since 2026-10-08 (egress still open). Still no file
+  integrity monitoring. Image signing is **partial**: pulls are restricted to 8
   registries, but only the OpenShift release images are signature-verified
   (NVIDIA's index-only signing defeats CRI-O enforcement — see §6).
 
