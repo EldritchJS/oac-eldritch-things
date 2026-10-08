@@ -2,13 +2,13 @@
 
 *Read this one. Everything else is detail you can drill into if you want it.*
 
-Last updated 2026-10-07.
+Last updated 2026-10-08.
 
 ---
 
 ## What this is
 
-`jetty` is a 5-node baremetal OpenShift 4.22.14 cluster (3 masters, 2 workers)
+`jetty` is a 5-node baremetal OpenShift 4.22.16 cluster (3 masters, 2 workers)
 built with the Assisted Installer. The two workers are large — 512 CPU, 1.5 TB
 RAM, **4× NVIDIA H100** each.
 
@@ -51,7 +51,7 @@ output for `jetty`. Keep it outside this working tree.
 | Audit retention | ⚠️ 5.8 h — volume cut 73%, but still no forwarding |
 | Storage encryption | ✅ **All NFS traffic encrypted** — 18/18 PVCs on NFS-over-TLS |
 | CNV golden images | ✅ Fixed — all 6 imported, on encrypted storage |
-| HIPAA (ACS `HIPAA_164`) | ⚠️ First run 2026-10-08: 9/18 controls pass. Fixable: cluster upgrade, ACS notifier, egress policy — [STANDARDS.md](STANDARDS.md) §5 |
+| HIPAA (ACS `HIPAA_164`) | ⚠️ 9/18 controls pass (2026-10-08, unchanged by the 4.22.16 upgrade). Fixable: ACS notifier, egress policy. Fixable-CVE controls need a patch cadence, not a fix — [STANDARDS.md](STANDARDS.md) §5 |
 
 The headline: **the cluster is hardened and the GPUs survived it.** Platform
 and node remediation are applied — node failures went **377 → 2** — and both

@@ -102,8 +102,10 @@ drift past its certified version.
 **What to dig up** (this is the useful ask, more than the standard number):
 1. Active **FIPS 140-3 CMVP certificate numbers** for the RHEL 9 / RHCOS 9.8
    modules in use — kernel crypto API, OpenSSL, GnuTLS, NSS, libgcrypt.
-2. Whether the module **versions** on RHCOS `9.8.20260908-0` match the
-   certified versions.
+2. Whether the module **versions** on the running RHCOS (currently
+   `9.8.20260922-1`, since the 4.22.16 upgrade) match the certified
+   versions. This changes with **every** upgrade, so it is a recurring
+   check, not a one-time lookup.
 3. Whether your assessor wants those certificate numbers recorded in the SSP.
 
 Verify against the CMVP Validated Modules Search at csrc.nist.gov (Active and
@@ -197,7 +199,7 @@ any change worth measuring — results do not refresh on their own.
 
 | Cause | Controls | Where | Disposition |
 |---|---|---|---|
-| **124 running images have CVEs with fixes available** — 77 are the OpenShift release payload, 24 OpenShift Virtualization, 9 ACS, rest storage/sidecars. All NVIDIA images clean. | 306(e), 308(a)(6)(ii) | cluster | **Fix:** upgrade 4.22.14 → 4.22.16 (both newer z-streams are recommended in `stable-4.22`), plus operator updates. A rolling reboot of every node — schedule it, and re-run `verify.sh` after. |
+| **124 running images have CVEs with fixes available** — 77 are the OpenShift release payload, 24 OpenShift Virtualization, 9 ACS, rest storage/sidecars. All NVIDIA images clean. | 306(e), 308(a)(6)(ii) | cluster | **Standing condition, not fixable by us.** The 4.22.16 upgrade did not move it — see below. The control is a documented patch cadence. |
 | **No ACS policy has a notifier** — violations are detected and go nowhere | 308(a)(6)(ii), 314(a)(2)(i)(C) | cluster | **Fix:** needs a destination (email, webhook, SIEM). Same open decision as audit log forwarding — likely the same answer. |
 | **No egress NetworkPolicy** | 308(a)(4)(ii)(B), 308(a)(6)(ii), 312(c), 312(e), 312(e)(1) | 31 of our deployments (GPU operator, Portworx, ACS, tlshd, etcd-backup); 59 platform | **Fix (ours):** the egress round deferred from the ingress work. Platform: Red Hat's to own. |
 | **Host networking** (bypasses NetworkPolicy) | same | `tlshd`, `etcd-backup`, Portworx `px-pure-csi-node`; 54 platform | **Document:** inherent to node-level agents. No fix exists short of not running them. |
@@ -215,3 +217,50 @@ Notes for reading these numbers:
 - **These are technical safeguards only.** HIPAA's administrative and
   physical safeguards — risk analysis, workforce training, BAAs, facility
   controls — are outside what any scanner sees, and usually the larger part.
+
+### Rerun after the 4.22.16 upgrade (2026-10-08) — the CVE finding did not move
+
+Upgraded 4.22.14 → 4.22.16 specifically to clear 306(e). Rerun result:
+**still 9/18, still 124 images**, 77 of them release payload. ACS is not
+stale: 115 of the 116 flagged digests are images running *now*, i.e. the
+new 4.22.16 payload. Every operator subscription was already at its latest
+CSV, so there is no further update available to apply.
+
+Why a newer z-stream does not help: ACS calls a CVE "fixable" when **any**
+newer version of the component exists upstream — for a Go module, a newer
+`golang.org/x/crypto` tag; for an RPM, a newer RHEL erratum. Vendor images
+are rebuilt on the vendor's schedule, so at any moment a fresh release
+carries components that already have newer versions somewhere. The count
+resets with each release and refills.
+
+Severity snapshot across the 116 flagged images (distinct CVEs):
+
+| Severity | Distinct CVEs | Image × CVE |
+|---|---|---|
+| Critical | 12 | 345 |
+| Important | 101 | 1006 |
+| Moderate | 103 | 922 |
+| Low | 18 | 291 |
+| Unknown | 25 | 880 |
+
+The criticals are almost all **one library**: `golang.org/x/crypto`
+(CVE-2026-39830/32/33/34, -42508, -46595), each in ~54 images. The top
+importants are `google.golang.org/grpc` and OpenTelemetry. These are
+**language-module** findings matched by version; whether the vulnerable
+code path is reachable in each binary is not something ACS determines —
+Red Hat's own security data (VEX) is the authority on whether a given
+OpenShift image is affected. RPM-level findings (`openssl-libs`,
+`libxml2`, `libcurl-minimal`, `libevent`) are smaller in count.
+
+**What satisfies 306(e) / 308(a)(6)(ii) in practice** is not a zero count,
+which no cluster running vendor images will reach, but:
+
+1. A **written patch cadence** — e.g. apply recommended z-streams within N
+   days of release, operators on `Automatic` approval (already the case for
+   all seven).
+2. **Evidence of following it** — this upgrade, with before/after
+   `verify.sh` runs, is the first instance.
+3. Optionally, an **ACS policy** flagging fixable Critical/Important CVEs in
+   *our own* namespaces (`vms-test`, `nfs-tls`, `etcd-backup`), where we
+   control the image and can actually act on it. Pairs naturally with the
+   notifier once a destination exists.

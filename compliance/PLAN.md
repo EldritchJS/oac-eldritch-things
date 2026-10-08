@@ -8,7 +8,8 @@
 > `./remediate.sh status`. Current state of record: [README.md](README.md).
 
 Cluster: `jetty` / `https://<cluster-api-fqdn>:6443`
-OpenShift 4.22.14, baremetal (Assisted Installer), 3 masters + 2 workers.
+OpenShift 4.22.16 (from 4.22.14, 2026-10-08), baremetal (Assisted
+Installer), 3 masters + 2 workers.
 Kubeconfig: **not in this repo** — set `KUBECONFIG` to a cluster-admin
 kubeconfig for `jetty`. See [README.md](README.md) § Prerequisites.
 
@@ -515,6 +516,19 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
   images were refused. Nothing pulled in that window. Full account:
   FEASIBILITY.md §3 #2.
 
+- **Cluster upgraded 4.22.14 → 4.22.16 on 2026-10-08** (17:28Z → 18:51Z,
+  1h23m). Fresh etcd backup taken first (`etcd-backup-preupgrade`). One
+  reboot per node; the compliance MachineConfigs carried through. RHCOS
+  `9.8.20260908-0` → `9.8.20260922-1`, kubelet 1.35.6 → 1.35.8. FIPS still
+  on all 5 nodes, GPUs back on `u15` without intervention, no Failing
+  condition at any point. Fresh rescans match the baseline exactly;
+  `verify.sh` **49 PASS / 0 FAIL / 2 WARN**, identical to pre-upgrade.
+
+  **It did not clear the HIPAA CVE finding** — still 124 images, 77 of them
+  the new release payload, now correctly scanned. The prediction that a
+  z-stream would clear it was wrong; see STANDARDS.md §5 for why and what
+  that control actually needs.
+
 ### Standards confirmed: NIST 800-171 + HIPAA + FIPS
 
 Full mapping, baseline results, FIPS 140-3 position, and the mixed-VM-tenancy
@@ -536,9 +550,11 @@ tenant. Rationale and the alternatives considered: STANDARDS.md §4.
    destination first. **The same destination should take ACS policy
    notifications** — HIPAA 308(a)(6)(ii) and 314(a)(2)(i)(C) fail because
    ACS violations go nowhere (STANDARDS.md §5).
-2. **Cluster upgrade 4.22.14 → 4.22.16** — clears the bulk of 124 images with
-   fixable CVEs (77 are release payload; HIPAA 306(e)). A rolling reboot of
-   every node: schedule it, check GPU modalities and `tlshd` after.
+2. **Fixable CVEs (HIPAA 306(e)) are a standing condition, not a task.**
+   Staying on current z-streams and operator versions is the control; the
+   upgrade did that and the count did not move (STANDARDS.md §5). What
+   remains to decide is a **patch cadence** to write into the SSP, and
+   whether to add an ACS policy enforcing a severity floor on *our* images.
 3. **Identity provider** (gaps #4, #5). Sequencing note that matters: **wire
    an IdP and verify login before removing kubeadmin**, or you lose cluster
    access. Also unblocks flipping the GPU-switch policy to `Deny`.
