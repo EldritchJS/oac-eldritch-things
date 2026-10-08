@@ -123,6 +123,11 @@ Measured on `moc-r4pcc02u15`, 2026-10-02, idle cluster:
 | `container` → `vm-passthrough` | **73s** |
 | `vm-passthrough` → `container` | **208s** |
 
+Re-measured 2026-10-08, after hardening and with default-deny NetworkPolicies
+in `nvidia-gpu-operator`: **68s** / **247s**. The return leg's extra time is
+in the driver pod's kernel-module build and load, not the network — treat
+~3.5–4 minutes as the realistic figure for that direction.
+
 **No reboot in either direction.** The asymmetry is expected: going to
 passthrough only unloads the driver and binds `vfio-pci`; coming back has to
 load the driver and start the toolkit, device plugin, and validators.

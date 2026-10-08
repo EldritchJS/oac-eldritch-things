@@ -451,9 +451,17 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
   Portworx pods unchanged, a fresh PVC provisioned and mounted over TLS.
   Each namespace rolls back with `oc delete networkpolicy --all -n <ns>`.
 
-  Known limits: ingress only (egress open). The GPU allows are proven at
-  steady state, not across a modality switch, which starts pods not running
-  today. The check passes on ANY NetworkPolicy — these are real, but the
+  **Modality switch under the policies, same day:** `gpu-switch-timing.sh` on
+  u15, both directions — 68s / 247s (baseline 73s / 208s). Every pod the
+  switch creates came up Ready; all 3 scrape targets `up`, 4 GPUs reporting,
+  T-06/T-07 pass. The return leg's extra ~40s is all in the driver pod
+  building and loading the kernel module (node-local, no network) —
+  variance, not blocked traffic. dcgm-exporter crashed twice while DCGM was
+  still starting, then came up cleanly; it reaches DCGM through the
+  in-namespace Service, which the same-namespace rule covers.
+
+  Known limits: ingress only (egress open). The check passes on ANY
+  NetworkPolicy — these are real, but the
   scanner cannot tell. Side findings: the Portworx data-path pods
   (`px-pure-csi-node`) are hostNetwork, so no NetworkPolicy can protect
   them; the Portworx operator makes undocumented outbound HTTPS to the
