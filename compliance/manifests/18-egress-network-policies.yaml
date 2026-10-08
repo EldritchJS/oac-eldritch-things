@@ -1,0 +1,262 @@
+# Default-deny EGRESS NetworkPolicies -- the egress half of manifests/17-*
+# (800-53 SC-7 / SC-7(5); HIPAA 164.308(a)(4)(ii)(B), 312(c), 312(e) as
+# evaluated by ACS HIPAA_164). Same six namespaces as 17-*, plus stackrox,
+# whose ACS-shipped policies are ingress-only.
+#
+# HOW THE ALLOW RULES WERE DERIVED (2026-10-08), not guessed:
+#   - ACS observed network graph since 2026-10-02: 72 distinct egress flows
+#     from these namespaces. The window includes GPU modality switches and
+#     the 4.22.16 upgrade (every pod restarted, GPU driver rebuilt).
+#   - Live sockets (/proc/net/tcp) in central, scanner-v4-matcher,
+#     px-pure-csi-controller and portworx-operator, to resolve what ACS
+#     reports only as "INTERNAL_ENTITIES:443" -- it is the kubernetes
+#     Service (172.31.0.1:443), i.e. the API server.
+#   - FlashBlade management endpoint: classified as 10/8 from px-pure-secret
+#     without recording it. px-pure-csi-controller only connects while
+#     provisioning, so it never showed in a socket snapshot.
+#
+# API SERVER = port 6443, not 443. OVN-Kubernetes evaluates egress policy
+# after Service DNAT, so pods dialling 172.31.0.1:443 are matched as
+# <master>:6443. This is the pattern Red Hat uses in ~70 openshift-*
+# namespaces (e.g. openshift-nmstate/allow-operator-egress-api-6443).
+# DNS likewise: 53 to anywhere, plus 5353 to the openshift-dns pods.
+#
+# WHAT STAYS OPEN TO THE INTERNET, and why:
+#   - stackrox central + scanner-v4-indexer, 443: vulnerability definitions
+#     and image-registry metadata/layers for scanning. Observed endpoints are
+#     CDNs (Google, Amazon, Cloudflare), so no stable CIDR exists;
+#     NetworkPolicy cannot match hostnames. An EgressFirewall with dnsName
+#     rules could narrow it later (one per namespace, cluster-external only).
+#   - Nothing else. Notably portworx-operator is NOT allowed out: its
+#     outbound HTTPS is the version-manifest fetch from install.portworx.com
+#     (which component images to run). Blocked, it keeps the manifest it has.
+#     For a Portworx upgrade, either allow it temporarily or use Portworx's
+#     air-gapped px-versions ConfigMap.
+#
+# hostNetwork pods are unaffected by NetworkPolicy: tlshd (nfs-tls), the
+# etcd-backup job, px-pure-csi-node. ACS keeps flagging those three; that is
+# the documented hostNetwork cause in STANDARDS.md §5, not a gap here. The
+# policies in nfs-tls and etcd-backup cover anything added there later.
+#
+# PROBES are unaffected: kubelet -> pod is ingress, and OVN admits it
+# (proven in 17-*). Replies to allowed ingress are stateful, not egress.
+#
+# APPLY ORDER (lowest risk first), verifying after each:
+#   1. etcd-backup, nfs-tls        inert today (hostNetwork only)
+#   2. rhacs-operator              proves the 6443 API rule on one pod
+#   3. nvidia-gpu-operator         GPUs still advertised, DCGM still scraped
+#   4. portworx                    provision + delete a test PVC
+#   5. stackrox                    Central/Sensor healthy, a scan completes
+# Rollback for any step: oc delete -f on that namespace's documents.
+---
+# ---- etcd-backup ---------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: etcd-backup
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+---
+# ---- nfs-tls -------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: nfs-tls
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+---
+# ---- rhacs-operator ------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: rhacs-operator
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-api-dns
+  namespace: rhacs-operator
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - ports:
+        - {protocol: TCP, port: 6443}
+    - ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        - {protocol: UDP, port: 5353}
+        - {protocol: TCP, port: 5353}
+---
+# ---- nvidia-gpu-operator -------------------------------------------------
+# Observed: gpu-operator, mig-manager, node-status-exporter -> API;
+# dcgm-exporter -> nvidia-dcgm:5555. Nothing external, including during the
+# post-upgrade driver rebuild (Driver Toolkit image, no package downloads).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: nvidia-gpu-operator
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-api-dns
+  namespace: nvidia-gpu-operator
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - ports:
+        - {protocol: TCP, port: 6443}
+    - ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        - {protocol: UDP, port: 5353}
+        - {protocol: TCP, port: 5353}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-same-namespace
+  namespace: nvidia-gpu-operator
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {}
+---
+# ---- portworx ------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: portworx
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-api-dns
+  namespace: portworx
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - ports:
+        - {protocol: TCP, port: 6443}
+    - ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        - {protocol: UDP, port: 5353}
+        - {protocol: TCP, port: 5353}
+---
+# FlashBlade management REST API. The array's address is in 10/8; the
+# rule names the range, not the address (public repo).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-csi-controller-to-array
+  namespace: portworx
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: controller-plugin
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - {protocol: TCP, port: 443}
+---
+# ---- stackrox -------------------------------------------------------------
+# Adds to the operator-managed ingress policies; does not modify them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: stackrox
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-api-dns
+  namespace: stackrox
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - ports:
+        - {protocol: TCP, port: 6443}
+    - ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        - {protocol: UDP, port: 5353}
+        - {protocol: TCP, port: 5353}
+---
+# sensor/admission-control/collector/config-controller -> central:8443,
+# central -> scanners and central-db, scanners -> their DBs. The existing
+# ingress policies still decide which of these each target accepts.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-same-namespace
+  namespace: stackrox
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-https-feeds
+  namespace: stackrox
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app, operator: In, values: [central, scanner-v4-indexer]}
+  policyTypes: [Egress]
+  egress:
+    - ports:
+        - {protocol: TCP, port: 443}

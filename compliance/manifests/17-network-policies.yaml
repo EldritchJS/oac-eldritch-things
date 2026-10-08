@@ -23,11 +23,10 @@
 #     ServiceMonitors are inert; rhacs-operator is labelled but has no
 #     ServiceMonitor, so nothing scrapes it either (PLAN.md gap #12).
 #
-# INGRESS ONLY. Egress is untouched in this round: denying egress risks API
-# server and DNS access for operators, for less SC-7 value. Known egress worth
-# a decision: portworx-operator makes outbound HTTPS to the internet (ACS
-# attributes it to Google Cloud us-west1) -- likely Portworx telemetry/licence
-# call-home. Undocumented outbound flow from the storage operator.
+# INGRESS ONLY. Egress is in manifests/18-egress-network-policies.yaml
+# (applied the same day, after this file). The portworx-operator outbound
+# HTTPS noted here turned out to be its version-manifest fetch from
+# install.portworx.com, not telemetry; 18-* blocks it.
 #
 # KUBELET PROBES: OVN-Kubernetes admits traffic from the node's management
 # port to local pods, so liveness/readiness probes are not blocked by these
