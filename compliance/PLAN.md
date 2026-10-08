@@ -249,12 +249,12 @@ fixing** — these need deliberate work.
 | 4 | **Identity provider** | **none configured** | Auth is via `kubeadmin` only — a shared break-glass account. No per-user attribution, which breaks accountability controls (AC-2, IA-2). |
 | 5 | **kubeadmin still present** | secret exists | Standard hardening says remove it once a real IdP works. Do *not* remove before step 4 or you lose access. |
 | 6 | **TLS security profile** | unset (Intermediate default) | FIPS-aligned deployments usually pin `Modern` or an explicit `Custom` profile. |
-| 7 | ~~**etcd backup**~~ | ✅ **CLOSED 2026-10-08** — nightly CronJob, 14 retained | `manifests/15-etcd-backup.yaml`; `tests/verify.sh` T-14 guards it. Backups hold the `aesgcm` key, so the volume is Secret-grade. Same array as the cluster's data (no off-array copy yet), and **restore is untested**. |
+| 7 | ~~**etcd backup**~~ | ✅ **CLOSED 2026-10-08** — nightly CronJob, 14 retained | `manifests/15-etcd-backup.yaml`; `tests/verify.sh` T-14 guards it. Backups hold the `aesgcm` key, so the volume is Secret-grade. Same array as the cluster's data (no off-array copy yet). **Restore rehearsed 2026-10-08** (`tests/etcd-restore-rehearsal.sh`); the full control-plane recovery procedure is not. |
 | 8 | ~~**NetworkPolicies**~~ | ✅ **CLOSED 2026-10-08, ingress and egress** | Default-deny ingress (`manifests/17-*`) and egress (`manifests/18-*`) with measured allows, on our six namespaces plus egress for `stackrox`; `openshift-*` namespaces largely ship their own. Internet egress remains only for ACS Central and scanner-v4-indexer (vulnerability feeds, registry scans). The Portworx version-manifest fetch is blocked. |
 | 9 | **Image provenance / signing** | **partial** (2026-10-08) | Registry allowlist in force (default `reject`, 8 registries). Signature-verified at runtime: OpenShift release images only. `nvcr.io` cannot be: NVIDIA signs the index, CRI-O verifies the platform manifest (FEASIBILITY.md §3 #2). Remaining options: ACS deploy-time signature checks; sign `ghcr.io/eldritchjs/tlshd` ourselves. |
 | 10 | **FIPS scope discipline** | cluster OK | Workloads must also use FIPS-validated crypto. A Go binary built without BoringCrypto on a FIPS cluster is still non-compliant — the cluster being FIPS does not make applications FIPS. |
 | 11 | ~~**NFS traffic to Pure is cleartext**~~ | ✅ **CLOSED 2026-10-07** | All NFS traffic is now encrypted (RFC 9289). `tests/verify.sh` T-13 reports no cleartext mounts remain; 18/18 PVCs on `nfs-over-tls`, which is also the default class. Proven by packet capture, not just by the mount succeeding. **No scanner checks this** — T-13 is the only guard. See **[NFS-TLS.md](NFS-TLS.md)**. |
-| 12 | **Metrics have no persistence** | Prometheus `retention=15d`, **no `volumeClaimTemplate`** | Monitoring data is on emptyDir, so it is lost whenever the pod restarts or reschedules — "15 days" is nominal. There is no `cluster-monitoring-config` ConfigMap at all. Pairs with gap #3: the AU workstream needs a destination for *metrics* as well as logs. **Also (measured 2026-10-08): Portworx and rhacs-operator metrics are scraped by nothing** — their namespaces lack the cluster-monitoring label (Portworx) or a ServiceMonitor (rhacs-operator), and user-workload monitoring is off. |
+| 12 | **Metrics have no persistence** | Prometheus `retention=15d`, **no `volumeClaimTemplate`** | Monitoring data is on emptyDir, so it is lost whenever the pod restarts or reschedules — "15 days" is nominal. There is no `cluster-monitoring-config` ConfigMap at all. Pairs with gap #3: the AU workstream needs a destination for *metrics* as well as logs. **Also (measured 2026-10-08): Portworx and rhacs-operator metrics are scraped by nothing** — their namespaces lack the cluster-monitoring label (Portworx) or a ServiceMonitor (rhacs-operator), and user-workload monitoring is off. **Owned elsewhere (2026-10-08):** another team is deciding how monitoring storage is done; not ours to change. Measurements handed over: 22.5k samples/s and 659k series per replica (apiserver 279k, kubelet 150k), 2.32 bytes/sample on disk → **~68 GB per replica for 15 days** (~140 GB for the pair). Only NFS StorageClasses exist (Prometheus upstream does not support NFS; Red Hat recommends block). Each GPU worker has an unpartitioned 7.68 TB NVMe (`nvme1n1`, no holders) that might suit LVM Storage, if the owner hasn't earmarked it — not checked from the host. |
 
 Also note: **non-technical controls** (policies, SSPs, access reviews, IR plans,
 training) are typically the larger share of an authorization package, and no
@@ -495,8 +495,8 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
   script refuses to run while a control-plane operator is Progressing — a
   night landing mid-rollout fails and retries. (c) Backups share the
   FlashBlade with everything else — they survive losing masters, not the
-  array. (d) **A restore has not been tested.** Integrity is proven; a
-  restore is a separate, disruptive exercise. T-14 fails if the newest
+  array. (d) A full control-plane restore has not been tested; the
+  backup itself was restore-rehearsed later the same day (below). T-14 fails if the newest
   successful backup is over 26h old; verified that it does fail.
 
 - **Stage 3 complete 2026-10-08: registry allowlist.**
@@ -564,6 +564,35 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
   On the way, Central's image API hung for ~20 minutes with no network
   cause found; a Central restart fixed it. Details: STANDARDS.md §5.
 
+- **etcd restore rehearsed 2026-10-08** (`tests/etcd-restore-rehearsal.sh`,
+  ~55 s end to end). The pre-upgrade backup (`2026-10-08T172636Z`, revision
+  8288126, 10,577 keys) restored with `etcdutl` in 2 s; a real etcd 3.6.13
+  served it 3 s after restore start, all inside one temporary pod with the
+  control plane untouched. Checked against live:
+  - 93 of 94 live resource types present; the missing one is
+    `certificatesigningrequests` (2 transient CSRs). Namespaces 86/86, CRDs
+    233/233. **Every other difference is explained by the work after the
+    backup:** NetworkPolicies +14 = exactly the 14 egress policies in
+    `manifests/18-*`; MachineConfigs +2 = the upgrade's new rendered
+    configs; images +740 = the 4.22.16 payload. All three confirmed exactly
+    by counting objects created after the backup timestamp. Events fell
+    (TTL); pods/replicasets churned with the upgrade.
+  - **Every Secret (387) and ConfigMap (678) in the backup is `aesgcm`
+    encrypted, all with key `1`, and that key is in the backup's own
+    encryption-config.** The backup can decrypt itself. Only key names were
+    read.
+  - Not proven: the full recovery procedure (`cluster-restore.sh` on a
+    master, static pods stopped, members re-added). It takes the API down;
+    do it on a disposable cluster.
+  - Two script bugs gave a false first run (`oc exec` without `-i`; a
+    `grep -m1` SIGPIPE), both now guarded — tests/README.md gotchas 8–9.
+
+  **Side finding: the backup CronJob still ran the 4.22.14 `cli` image**
+  (pinned by digest; the manifest says to refresh after an upgrade, and the
+  upgrade checklist did not). Manifest updated to the 4.22.16 digest
+  (`b36a4c…`); T-14 now WARNs when the job image differs from the current
+  release. **Not yet applied to the cluster** — see Open.
+
 ### Standards confirmed: NIST 800-171 + HIPAA + FIPS
 
 Full mapping, baseline results, FIPS 140-3 position, and the mixed-VM-tenancy
@@ -594,12 +623,18 @@ tenant. Rationale and the alternatives considered: STANDARDS.md §4.
    2026-10-08.** ACS matched a Go pseudo-version (`v0.0.0-20260921…`, a
    2026 commit) as older than the fixed 0.12.2. Remaining step: record an
    ACS exception carrying that reasoning (STANDARDS.md §5).
+3a. **Apply the refreshed etcd-backup CronJob** (`manifests/15-*`, image
+   digest only; `oc diff` shows that one line) and run one backup on it:
+   `oc apply -f manifests/15-etcd-backup.yaml`, then
+   `oc create job etcd-backup-postupgrade --from=cronjob/etcd-backup -n etcd-backup`.
+   T-14 WARNs until done.
 4. **Identity provider** (gaps #4, #5). Sequencing note that matters: **wire
    an IdP and verify login before removing kubeadmin**, or you lose cluster
    access. Also unblocks flipping the GPU-switch policy to `Deny`.
 5. Still unaddressed and invisible to scanners — the rest of the §6 gaps:
    TLS profile, image signature verification
-   beyond the release images (gap #9), metrics
+   beyond the release images (gap #9), metrics (owned by another team;
+   sizing in gap #12)
    persistence, plus the non-technical controls.
 
 ### Not covered by any of this

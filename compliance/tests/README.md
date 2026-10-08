@@ -62,6 +62,7 @@ lockout protection is not protection.
 | What | Where | Why separate |
 |---|---|---|
 | GPU switch turnaround | `./gpu-switch-timing.sh` | **Mutating** — unloads/reloads the driver |
+| etcd restore rehearsal | `./etcd-restore-rehearsal.sh` | Creates one temporary pod in `etcd-backup`; restores the newest backup into it, serves it, compares with live. Control plane untouched. |
 | VM networking / storage / migration | `../vms/test-vm*.sh` | Creates VMs |
 | GPU-to-VM end-to-end | `../vms/gpu/test-gpu-vm.sh` | Creates a GPU VM |
 
@@ -209,3 +210,11 @@ use, and listed together so nobody reintroduces them:
    checking `phase == DONE` returns instantly and reports stale results as
    fresh. This produced a bogus "nothing changed" comparison after stage 1.
    Gate on `endTimestamp` being newer than the moment you triggered the rescan.
+8. **`oc exec ... bash -s <<EOF` needs `-i`.** Without it `oc exec` sends no
+   stdin, so `bash -s` runs an empty script and exits 0. The first restore
+   rehearsal "completed" having done nothing; only the empty comparison
+   afterwards gave it away. Every in-pod block in
+   `etcd-restore-rehearsal.sh` now prints a sentinel that the caller checks.
+9. **`grep -m1` is the same SIGPIPE trap as #1** (`tar tzf | grep -m1` →
+   exit 141 under pipefail). Use a reader that consumes all input
+   (`| tail -1`).

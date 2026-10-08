@@ -502,6 +502,21 @@ print(int((datetime.datetime.now(datetime.timezone.utc)-t).total_seconds()//3600
   [ "${failed:-0}" -gt 0 ] && warn "$failed failed backup job(s) retained — check: oc get jobs -n $ns" \
     || true
 
+  # The job pins the release's cli image by digest; after an upgrade it must
+  # be refreshed (missed after 4.22.16 — found by the restore rehearsal work).
+  # The old image still runs, so WARN: drift, not breakage.
+  local img cur
+  img=$(jp cronjob etcd-backup "$ns" '{.spec.jobTemplate.spec.template.spec.containers[0].image}')
+  cur=$(oc adm release info --image-for=cli 2>/dev/null)
+  if [ -z "$cur" ]; then
+    warn "could not resolve the current release's cli image to compare"
+  elif [ "$img" = "$cur" ]; then
+    ok "backup job image is the current release's cli image"
+  else
+    warn "backup job image is not the current release's cli — refresh the digest in manifests/15-etcd-backup.yaml"
+    info "job: ${img##*@}"; info "now: ${cur##*@}"
+  fi
+
   local reclaim pv
   pv=$(jp pvc etcd-backup "$ns" '{.spec.volumeName}')
   reclaim=$(jp pv "$pv" "" '{.spec.persistentVolumeReclaimPolicy}')

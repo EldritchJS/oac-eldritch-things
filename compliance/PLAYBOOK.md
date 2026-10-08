@@ -4,8 +4,8 @@
 larger clusters. jetty is the worked example; this document is the method.*
 
 Status: **draft, in progress.** Sections marked *(pending)* will be filled as
-the remaining jetty work (TLS profile, metrics persistence, etcd restore
-rehearsal, audit forwarding, IdP) produces its lessons.
+the remaining jetty work (TLS profile, metrics persistence, audit forwarding,
+IdP) produces its lessons.
 
 How this relates to the other documents:
 
@@ -195,7 +195,18 @@ specific documents).
   Secrets. Protect it as Secret-grade and say so.
 - Verify integrity independently of the job (checksums, `etcdutl snapshot
   status` on the stored copy) and add a freshness test (T-14, < 26 h).
-- Restore: *(pending — rehearsal planned)*.
+- **Rehearse the restore without touching the control plane**
+  (`tests/etcd-restore-rehearsal.sh`): in a throwaway pod, `etcdutl snapshot
+  restore` the newest backup, start a real etcd on it (localhost only, in a
+  namespace with default-deny egress and ingress), compare key counts by
+  resource type with live etcd, and confirm every Secret/ConfigMap is
+  encrypted with a key the backup's own encryption-config holds. jetty: 167
+  MB snapshot, restore 2 s, serving at 3 s, ~55 s end to end. Explain every
+  difference from live (on jetty each one traced to a known change since
+  the backup) rather than accepting "close enough".
+- The **full recovery procedure** (`cluster-restore.sh`, static pods
+  stopped, members re-added) takes the API down. Rehearse it on a
+  disposable cluster of the same version; record the RTO.
 - Off-array copy: still needed; backups on the same array survive losing
   masters, not the array.
 
@@ -222,6 +233,10 @@ control:
    `HIPAA_164`.
 5. Re-check FIPS module versions against CMVP certificates (versions change
    with RHCOS).
+6. **Refresh every image pinned by digest to the release payload** (on
+   jetty: the etcd-backup job's `cli` image, from `oc adm release info
+   --image-for=cli`). The old image keeps working, which is why this is easy
+   to miss; jetty missed it and T-14 now checks.
 
 jetty: 4.22.14 → 4.22.16 in 1 h 23 min, compliance MachineConfigs carried
 through, identical results before and after.
@@ -315,6 +330,10 @@ outage.
   it will evict (ACS Central lived on a GPU node).
 - **Shell traps:** quote anything with `[` or `?` under zsh (glob); avoid
   relying on word-splitting in zsh; URL-encode ACS query parameters.
+- **Harness scripts can pass by doing nothing.** `oc exec pod -- bash -s
+  <<EOF` without `-i` runs an empty script and exits 0; `grep -q`/`grep -m1`
+  under `pipefail` fail a pipeline that matched. Make each remote block print
+  a sentinel and check for it, and sanity-check that results are non-empty.
 
 ---
 
@@ -346,7 +365,17 @@ jetty is 3 masters + 2 GPU workers. What changes on a larger cluster:
 | Evidence | PVCs on one array | Off-cluster, off-array evidence and backup copies. |
 | Verification | `verify.sh`, run by hand | Scheduled, with results shipped to the same destination as audit logs. |
 
-*(more pending: TLS profile impact on clients; monitoring storage sizing)*
+**Monitoring storage sizing.** Measure before choosing: per replica,
+`rate(prometheus_tsdb_head_samples_appended_total[1h])` × retention seconds ×
+on-disk bytes per sample (`prometheus_tsdb_storage_blocks_bytes` over the
+samples those blocks cover). jetty: 22.5k samples/s, 2.32 B/sample → ~68 GB
+per replica for 15 days, with the API server and kubelet producing two
+thirds of the series. Series count scales with nodes and pods, so expect
+this to grow roughly linearly. Prometheus needs block storage (NFS is not
+supported upstream), and keeping monitoring off the array it monitors means
+it still works when that array fails.
+
+*(more pending: TLS profile impact on clients)*
 
 ---
 
@@ -373,4 +402,5 @@ What it does produce is the technical evidence they cite: scan results,
 | GPU VM passthrough → container | 208–247 s | none (no reboot) |
 | z-stream upgrade 4.22.14 → 4.22.16 | 1 h 23 min | One reboot per node |
 | etcd backup | 24 s | none |
+| etcd restore rehearsal (restore 2 s, serving 3 s) | ~55 s | one temporary pod |
 | ACS `HIPAA_164` run | 6 s | none |

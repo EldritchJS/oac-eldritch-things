@@ -32,6 +32,8 @@
 # signature-verified by CRI-O. It only provides bash/coreutils -- the real
 # work runs on the host via chroot. Refresh the digest after an upgrade:
 #   oc adm release info --image-for=cli
+# (Missed after 4.22.16; refreshed 2026-10-08. tests/verify.sh T-14 now WARNs
+# on a mismatch.) Restore rehearsal: tests/etcd-restore-rehearsal.sh.
 #
 # Privileges mirror `oc debug node`: privileged, hostNetwork, hostPID, host /
 # mounted. cluster-backup.sh needs host podman (to pull etcdctl from the etcd
@@ -118,7 +120,7 @@ spec:
           priorityClassName: system-cluster-critical
           containers:
             - name: backup
-              image: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:b4e48cec3040a0f18fe5697e128d8deb1c9409c28b6b3249c789f7beaba10fea
+              image: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:b36a4c332f05bd71c5315b6cfe38987809bae09c2865217e1c7240fa6bfd813b
               securityContext:
                 privileged: true
                 runAsUser: 0

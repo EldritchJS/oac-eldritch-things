@@ -187,7 +187,8 @@ The scans flag configuration. These are real and mostly invisible to them:
   break-glass account, so no per-user attribution at all. Also why the
   GPU-switch admission policy ships in Warn rather than Deny.
 - ~~**No etcd backups**~~ — ✅ nightly since 2026-10-08, 14 kept, guarded by
-  `verify.sh` T-14; restore not yet tested (PLAN.md §7).
+  `verify.sh` T-14; a restore of the backup is rehearsed
+  (`tests/etcd-restore-rehearsal.sh`), the full control-plane recovery is not (PLAN.md §7).
   ~~No default-deny network policies~~ — ✅ ingress and egress default-deny
   since 2026-10-08; internet egress only for ACS's vulnerability feeds. Still no file
   integrity monitoring. Image signing is **partial**: pulls are restricted to 8
