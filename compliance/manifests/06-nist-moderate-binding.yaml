@@ -15,6 +15,10 @@
 #   ocp4-moderate-node  - node-level OpenShift configuration
 #   rhcos4-moderate     - the RHCOS operating system itself
 # Binding only the platform profile would leave the OS and nodes unassessed.
+#
+# The platform profile is the jetty TailoredProfile extending ocp4-moderate
+# (13-scc-capabilities-tailoring.yaml), which records the GPU/virt SCC
+# exception. The scan is therefore named jetty-ocp4-moderate.
 ---
 apiVersion: compliance.openshift.io/v1alpha1
 kind: ScanSettingBinding
@@ -23,8 +27,8 @@ metadata:
   namespace: openshift-compliance
 profiles:
   - apiGroup: compliance.openshift.io/v1alpha1
-    kind: Profile
-    name: ocp4-moderate
+    kind: TailoredProfile
+    name: jetty-ocp4-moderate
   - apiGroup: compliance.openshift.io/v1alpha1
     kind: Profile
     name: ocp4-moderate-node

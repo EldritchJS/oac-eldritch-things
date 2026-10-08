@@ -97,6 +97,11 @@ Progression:
 | `rhcos4-moderate-master` | 191 | 191 | 4 | **1** |
 | `rhcos4-moderate-worker` | 191 | 191 | 4 | **1** |
 
+Platform since then: 7 / 20, after the SCC capability exception
+(2026-10-08). Those scans are now named `jetty-ocp4-cis` and
+`jetty-ocp4-moderate`, because they run TailoredProfiles. The baseline file
+uses the new names.
+
 **Node failures: 377 -> 10 -> 4.** The four survivors are both genuinely
 manual: `sshd-limit-user-access` (no remediation is offered) and
 `reject-unsigned-images-by-default` (a stage 3 GPU-dangerous check,

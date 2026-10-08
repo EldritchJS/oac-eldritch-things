@@ -45,6 +45,12 @@ oc whoami >/dev/null 2>&1 || { echo "not logged in (set KUBECONFIG)" >&2; exit 2
 # Remediations that change cluster config objects rather than node config.
 # Deduplicated: the ocp4-cis and ocp4-moderate variants of the same rule make
 # the identical change, so applying both is idempotent but noisy.
+#
+# HISTORICAL on jetty: applied 2026-10-02. The platform scans were renamed to
+# jetty-ocp4-cis / jetty-ocp4-moderate on 2026-10-08 (TailoredProfiles), so
+# these objects no longer exist here and stage1 would report them missing.
+# The names are kept as the record, and are correct for a fresh cluster bound
+# to the stock profiles.
 STAGE1_REMEDIATIONS="
 ocp4-cis-api-server-encryption-provider-cipher-1
 ocp4-cis-audit-profile-set
@@ -214,6 +220,7 @@ case "$STAGE" in
   stage2) stage2 ;;
   stage3) hdr "STAGE 3 — not automated"
           note "ocp-allowed-registries, reject-unsigned-images, scc-limit-capabilities."
-          note "All manual, all can break GPU support. See FEASIBILITY.md §3." ;;
+          note "All manual, all can break GPU support. See FEASIBILITY.md §3."
+          note "scc-limit-capabilities: done 2026-10-08 (manifests/13-*)." ;;
   *) echo "usage: $0 {status|stage1|stage2|stage3} [--dry-run]" >&2; exit 2 ;;
 esac

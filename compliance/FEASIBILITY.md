@@ -207,6 +207,10 @@ kubevirt-controller           -> ['SYS_NICE','NET_BIND_SERVICE']
 In other words **this check is failing 100% because of GPU + virtualisation** —
 remove those two workloads and it passes. There is nothing else to fix.
 
+> ✅ **Done 2026-10-08** — `manifests/13-scc-capabilities-tailoring.yaml`,
+> matching the ten SCCs by exact name. The check now PASSes. See PLAN.md §7
+> for what binding a TailoredProfile does to scan names and result PVCs.
+
 The rule documents its own sanctioned fix: a **`TailoredProfile`** extending
 the regex variable to include these SCCs. That is the right mechanism — a
 recorded, version-controlled deviation rather than an undocumented exception.

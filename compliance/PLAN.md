@@ -414,6 +414,28 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
   were in use, so `tlshd` restarting cost nothing. After volume migration,
   every reboot has to wait for it.
 
+- **Stage 3, first check: SCC capability exception recorded 2026-10-08.**
+  `scc-limit-container-allowed-capabilities` now PASSes via TailoredProfiles
+  `jetty-ocp4-cis` / `jetty-ocp4-moderate` (`manifests/13-*`), which add the
+  nine NVIDIA SCCs and `kubevirt-controller` to the rule's allowlist **by
+  exact name** — a new SCC with capabilities still fails. No workload change,
+  no reboot. `ocp4-cis` 8 → **7**, `ocp4-moderate` 21 → **20**.
+
+  Binding the TailoredProfiles **renames the platform scans** (to
+  `jetty-ocp4-*`) and deletes the old ones. Measured consequences, worth
+  knowing before doing this anywhere else:
+  - The stage 1 ComplianceRemediation objects were owned by the old scans'
+    results and were garbage-collected. They carry no finalizers, so the
+    settings they applied **stayed** — etcd encryption, audit profile,
+    customRules and OAuth timeouts snapshotted before and after: identical.
+  - The operator **deletes the old scans' result PVCs**. Their PVs survived
+    only because they had been patched to `Retain` first. The evidence for
+    `ocp4-cis` and `ocp4-moderate` (both the 10-02 cleartext and 10-07 TLS
+    generations) is on `Released` PVs. All result PVs are now `Retain`.
+  - `manifests/03` had drifted from live (still named the cleartext
+    `pure-fb-nfsv4` class). Applying it unchecked would have moved evidence
+    back to unencrypted storage. `oc diff` before every `oc apply`.
+
 ### Standards confirmed: NIST 800-171 + HIPAA + FIPS
 
 Full mapping, baseline results, FIPS 140-3 position, and the mixed-VM-tenancy
@@ -436,7 +458,10 @@ tenant. Rationale and the alternatives considered: STANDARDS.md §4.
 2. **Identity provider** (gaps #4, #5). Sequencing note that matters: **wire
    an IdP and verify login before removing kubeadmin**, or you lose cluster
    access. Also unblocks flipping the GPU-switch policy to `Deny`.
-3. **Stage 3** — the three GPU-dangerous manual checks, individually.
+3. **Stage 3** — two GPU-dangerous manual checks remain, individually:
+   `reject-unsigned-images-by-default` (investigate `nvcr.io` signatures
+   first) and `ocp-allowed-registries` (last; reboots every node). The SCC
+   check is done.
 4. Still unaddressed and invisible to scanners — the rest of the §6 gaps: etcd
    backups, NetworkPolicies, TLS profile, image signing policy, metrics
    persistence, plus the non-technical controls.

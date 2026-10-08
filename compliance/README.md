@@ -62,9 +62,10 @@ remaining node failures are both genuinely manual (`sshd-limit-user-access`,
 which offers no remediation, and `reject-unsigned-images-by-default`, a stage
 3 GPU-dangerous check deliberately deferred).
 
-What remains is deliberate, not blocked: the three GPU-dangerous manual checks
-(stage 3) are untouched on purpose, and **audit log forwarding is now the one
-genuinely open gap.**
+What remains is deliberate, not blocked: two of the three GPU-dangerous manual
+checks (stage 3) are still untouched on purpose — the third, the SCC
+capability exception, was recorded 2026-10-08 — and **audit log forwarding is
+now the one genuinely open gap.**
 
 ---
 
@@ -126,12 +127,16 @@ response plan.
 
 Failure counts, as first measured and as they stand after remediation:
 
-| Scan | Initial | After stage 1 | **Now (after stage 2, both rounds)** |
+| Scan | Initial | After stage 1 | **Now** |
 |---|---|---|---|
-| `ocp4-cis` (platform) | 10 | 8 | **8** |
-| `ocp4-moderate` (platform) | 25 | 21 | **21** |
+| `ocp4-cis` (platform) | 10 | 8 | **7** |
+| `ocp4-moderate` (platform) | 25 | 21 | **20** |
 | Node-level OpenShift config | 4 master / 1 worker | 4 / 1 | **1 / 1** |
 | **RHCOS operating system** | **191 per node** | 191 | **1 per node** |
+
+The platform rows dropped by one each on 2026-10-08 when the SCC exception
+was recorded. Those two scans are now named `jetty-ocp4-cis` and
+`jetty-ocp4-moderate`, because they run the jetty TailoredProfiles.
 
 The RHCOS number looked frightening and mostly was not: 112 of the 191 were
 audit rules, 27 sysctls, 18 kernel modules — bulk, not depth, and nearly all
@@ -262,12 +267,13 @@ every image to carry a verifiable signature. Nobody has checked whether the
 driver, and the workaround weakens the control enough that it should be a
 recorded deviation rather than a quiet fix.
 
-**`scc-limit-container-allowed-capabilities` is failing entirely because of
-your own stack.** Exactly 10 security contexts fail it: **nine NVIDIA ones**
+**`scc-limit-container-allowed-capabilities` was failing entirely because of
+your own stack.** Exactly 10 security contexts failed it: **nine NVIDIA ones**
 (all granting `allowedCapabilities: ['*']` — every Linux capability) and
-`kubevirt-controller`. Nothing else. Remove GPUs and virtualisation and the
-check passes. The sanctioned fix is a TailoredProfile recording the exception,
-but be straight about it in the SSP: nine SCCs with blanket `*` is something an
+`kubevirt-controller`. Nothing else. ✅ **Recorded 2026-10-08** as a
+TailoredProfile exception (`manifests/13-scc-capabilities-tailoring.yaml`)
+that names those ten exactly, so any new SCC with capabilities still fails.
+Be straight about it in the SSP, though: nine SCCs with blanket `*` is something an
 assessor will ask about. The defensible argument is that they are
 vendor-shipped, namespace-scoped, needed for kernel module loading, and
 monitored at runtime by ACS.
@@ -362,6 +368,8 @@ Recommended order of work:
    `rhcos4-moderate-*` 4 → 1 each. 385/385 applied. Both GPU modalities and
    the tlshd storage path survived.
 5. **Stage 3** — the three GPU-dangerous manual checks, individually and last.
+   SCC exception **done 2026-10-08**; `reject-unsigned-images-by-default` and
+   `ocp-allowed-registries` remain.
 6. **Re-run `tests/verify.sh` after each stage** and re-save the baseline once
    the new numbers are the intended ones.
 

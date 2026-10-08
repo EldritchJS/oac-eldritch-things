@@ -1,0 +1,70 @@
+# Documented exception for scc-limit-container-allowed-capabilities
+# (800-53 CM-6 / CM-6(1); CIS-OCP 5.2.8).
+#
+# The rule fails when any SCC outside an allowlist sets allowedCapabilities.
+# On jetty exactly ten do, and every one belongs to the GPU or virtualisation
+# stack (measured 2026-10-08; tests/verify.sh T-11 re-checks the set):
+#
+#   nvidia-dcgm  nvidia-dcgm-exporter  nvidia-driver
+#   nvidia-gpu-feature-discovery  nvidia-mig-manager
+#   nvidia-node-status-exporter  nvidia-operator-validator
+#   nvidia-sandbox-validator  nvidia-vgpu-device-manager    -> ['*']
+#   kubevirt-controller                                     -> SYS_NICE, NET_BIND_SERVICE
+#
+# Justification for the SSP: vendor-shipped by the NVIDIA GPU Operator and
+# OpenShift Virtualization, namespace-scoped, required for kernel module
+# loading and device management, and monitored at runtime by ACS. The nine
+# NVIDIA SCCs grant EVERY capability ('*'); say so plainly to an assessor.
+#
+# This is the sanctioned mechanism from the rule's own help text: extend the
+# variable var-sccs-with-allowed-capabilities-regex rather than disabling the
+# rule. Names are matched EXACTLY (^name$), not by prefix -- a new SCC that
+# asks for capabilities, NVIDIA's included, still fails the scan and has to be
+# added here deliberately.
+#
+# The first part of the regex is the operator's shipped default (Compliance
+# Operator v1.10.0). If an operator upgrade changes that default, re-read it:
+#   oc get variables.compliance ocp4-var-sccs-with-allowed-capabilities-regex \
+#     -n openshift-compliance -o jsonpath='{.value}'
+#
+# Bound in place of the stock platform profiles by 03-scansetting-binding.yaml
+# and 06-nist-moderate-binding.yaml, so the scans are named jetty-ocp4-cis and
+# jetty-ocp4-moderate.
+---
+apiVersion: compliance.openshift.io/v1alpha1
+kind: TailoredProfile
+metadata:
+  name: jetty-ocp4-cis
+  namespace: openshift-compliance
+spec:
+  extends: ocp4-cis
+  title: CIS (jetty) — GPU/virt SCC capability exception
+  description: >-
+    Stock ocp4-cis with the ten GPU Operator and OpenShift Virtualization SCCs
+    added to the allowed-capabilities allowlist. See manifest header.
+  setValues:
+    - name: ocp4-var-sccs-with-allowed-capabilities-regex
+      rationale: >-
+        Vendor-shipped GPU Operator and OpenShift Virtualization SCCs, required
+        for kernel module loading and device management; namespace-scoped and
+        monitored at runtime by ACS. Matched by exact name.
+      value: ^privileged$|^hostnetwork-v2$|^restricted-v2$|^restricted-v3$|^nonroot-v2$|^insights-runtime-extractor-scc|^nested-container$|^nvidia-dcgm$|^nvidia-dcgm-exporter$|^nvidia-driver$|^nvidia-gpu-feature-discovery$|^nvidia-mig-manager$|^nvidia-node-status-exporter$|^nvidia-operator-validator$|^nvidia-sandbox-validator$|^nvidia-vgpu-device-manager$|^kubevirt-controller$
+---
+apiVersion: compliance.openshift.io/v1alpha1
+kind: TailoredProfile
+metadata:
+  name: jetty-ocp4-moderate
+  namespace: openshift-compliance
+spec:
+  extends: ocp4-moderate
+  title: NIST 800-53 Moderate (jetty) — GPU/virt SCC capability exception
+  description: >-
+    Stock ocp4-moderate with the ten GPU Operator and OpenShift Virtualization
+    SCCs added to the allowed-capabilities allowlist. See manifest header.
+  setValues:
+    - name: ocp4-var-sccs-with-allowed-capabilities-regex
+      rationale: >-
+        Vendor-shipped GPU Operator and OpenShift Virtualization SCCs, required
+        for kernel module loading and device management; namespace-scoped and
+        monitored at runtime by ACS. Matched by exact name.
+      value: ^privileged$|^hostnetwork-v2$|^restricted-v2$|^restricted-v3$|^nonroot-v2$|^insights-runtime-extractor-scc|^nested-container$|^nvidia-dcgm$|^nvidia-dcgm-exporter$|^nvidia-driver$|^nvidia-gpu-feature-discovery$|^nvidia-mig-manager$|^nvidia-node-status-exporter$|^nvidia-operator-validator$|^nvidia-sandbox-validator$|^nvidia-vgpu-device-manager$|^kubevirt-controller$
