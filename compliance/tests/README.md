@@ -144,13 +144,13 @@ Current state: **38 PASS, 0 FAIL, 3 WARN**, stable across repeated runs.
 
 - **T-02** — no CMVP certificate record yet. Paperwork, not a cluster problem.
 - **T-10** — `allowedRegistries` is unset, which is why `ocp-allowed-registries`
-  FAILs. Six registries are in use cluster-wide:
-  `docker.io`, `nvcr.io`, `quay.io`, `registry.connect.redhat.com`,
-  `registry.k8s.io`, `registry.redhat.io`. **All six must be in any allowlist**
-  — `docker.io` and `registry.k8s.io` are easy to miss if you only inspect the
-  GPU and CNV namespaces.
-- **T-13** — now clean: no cleartext NFS mounts remain. Expected until volumes are migrated off `pure-fb-nfsv4`;
-  `mountOptions` is immutable so they cannot be upgraded in place.
+  FAILs. Eight registries are in use cluster-wide (measured 2026-10-08):
+  `docker.io`, `ghcr.io`, `nvcr.io`, `quay.io`, `registry.access.redhat.com`,
+  `registry.connect.redhat.com`, `registry.k8s.io`, `registry.redhat.io`.
+  **All eight must be in any allowlist** — `docker.io` and `registry.k8s.io`
+  are easy to miss if you only inspect the GPU and CNV namespaces, `ghcr.io`
+  carries `tlshd`, which every TLS-backed NFS mount depends on, and
+  `registry.access.redhat.com` is the `tlshd` build's base image.
 - **T-12** — the GPU-switch admission policy is in `Warn`+`Audit`, not `Deny`.
   Deliberate: enforcing a node admission policy before an identity provider
   exists risks locking yourself out. Switch to `Deny` once an IdP is in place.

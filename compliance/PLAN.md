@@ -55,8 +55,8 @@ Both ProfileBundles (`ocp4`, `rhcos4`) parsed to **VALID**, yielding 48 profiles
 
 Manifests used are in `manifests/01-*` and `manifests/02-*` — re-appliable.
 
-**Only the operators are installed.** No ACS `Central`, no `SecuredCluster`, no
-`ScanSettingBinding` yet — all of those need storage (see §3).
+ACS `Central`, `SecuredCluster`, and the `ScanSettingBinding`s followed once
+storage worked (§3, §7) — all deployed and healthy.
 
 ### Available profiles (the standards menu)
 
@@ -86,17 +86,21 @@ profiles are relevant if VMs are in scope.
 
 ## 3. Storage — RESOLVED
 
-`pure-fb-nfsv4` (Portworx CSI → Pure FlashBlade NFSv4.1), default StorageClass.
-Was unusable for ~3h because the storage VLAN was not trunked to the Pure
-appliance; fixed 2026-10-02. Diagnostic record: **[STORAGE-ISSUE.md](STORAGE-ISSUE.md)**
+Portworx CSI → Pure FlashBlade NFSv4.1. Was unusable for ~3h because the
+storage VLAN was not trunked to the Pure appliance; fixed 2026-10-02.
+Diagnostic record: **[STORAGE-ISSUE.md](STORAGE-ISSUE.md)**
+
+The default StorageClass is now **`nfs-over-tls`**, and every PVC in use has
+been migrated to it from the original cleartext `pure-fb-nfsv4` (2026-10-07,
+see [NFS-TLS.md](NFS-TLS.md)).
 
 | Component | PVC | State |
 |---|---|---|
-| Compliance raw results | 10Gi ×3 | ✅ Bound, ARF archiving |
+| Compliance raw results | 10Gi, one per scan | ✅ Bound, ARF archiving |
 | ACS Central DB | 100Gi | ✅ Bound, Postgres healthy |
 | ACS Central DB backup | 200Gi | ✅ Bound (operator-created, not requested) |
 | ACS Scanner V4 DB | 50Gi | ✅ Bound |
-| CNV golden images | 30Gi RWX ×6 | ⚠️ Still `ImportScheduled` — see note |
+| CNV golden images | 30Gi RWX ×6 | ✅ Imported 2026-10-07 — see note |
 
 **Block storage is tabled permanently.** FlashBlade is file/object only and
 there is no FlashArray, so NFS is the only class there will ever be. Central DB
@@ -109,10 +113,12 @@ are correct for Postgres (`hard,vers=4.1,proto=tcp,local_lock=none`).
 > `central-db-backup` PVC that was not in our manifest. Worth knowing for
 > capacity planning.
 >
-> **Note — CNV imports.** The six golden-image DataVolumes are still
-> `ImportScheduled` with importer pods from the outage window. These are
-> leftovers that likely need a pod delete to retry. **Not our workload** —
-> flag to whoever owns CNV.
+> **Note — CNV imports.** The six golden-image DataVolumes sat in
+> `ImportScheduled` from cluster build. The cause was not the outage: CDI's
+> auto-detected storage profile advertised `Block` first, which FlashBlade NFS
+> cannot serve. Pinning `Filesystem` (`manifests/12-cdi-storageprofile.yaml`)
+> and deleting the stuck DataVolumes fixed all six. See
+> [README.md](README.md) §7.
 
 ---
 
@@ -414,21 +420,22 @@ Full mapping, baseline results, FIPS 140-3 position, and the mixed-VM-tenancy
 scope analysis: **[STANDARDS.md](STANDARDS.md)**
 
 Headline: 800-171 maps to `ocp4-moderate`/`rhcos4-moderate` (bound and run);
-HIPAA lives in ACS (`HIPAA_164`); **383 remediations now available, 377 of them
-MachineConfigs — i.e. a cluster-wide rolling reboot.** That must be scheduled
-around VM work.
+HIPAA lives in ACS (`HIPAA_164`). The 383 remediations initially available
+(377 of them MachineConfigs) — 385 once the dependency-gated usbguard ones
+surfaced — are all applied.
 
 ### Open
 
-1. **You:** decide the scope posture for mixed VM tenancy (STANDARDS.md §4),
-   and schedule the remediation reboot window.
-2. **Then** triage remediation. The ten failures are catalogued in §3b.
-   Sequencing note that matters: **wire an identity provider and verify login
-   before removing kubeadmin**, or you lose cluster access.
-3. **Someone else:** the six stuck CNV golden-image imports (§3).
-4. Still unaddressed and invisible to scanners — the §6 gaps: audit log
-   retention/forwarding, etcd backups, image signing policy, plus the
-   non-technical controls.
+1. **You:** decide the scope posture for mixed VM tenancy (STANDARDS.md §4).
+2. **Audit log forwarding** (gap #3, §6b) — the most urgent gap. Decide the
+   destination first.
+3. **Identity provider** (gaps #4, #5). Sequencing note that matters: **wire
+   an IdP and verify login before removing kubeadmin**, or you lose cluster
+   access. Also unblocks flipping the GPU-switch policy to `Deny`.
+4. **Stage 3** — the three GPU-dangerous manual checks, individually.
+5. Still unaddressed and invisible to scanners — the rest of the §6 gaps: etcd
+   backups, NetworkPolicies, TLS profile, image signing policy, metrics
+   persistence, plus the non-technical controls.
 
 ### Not covered by any of this
 

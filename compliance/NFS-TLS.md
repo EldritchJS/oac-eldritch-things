@@ -5,9 +5,12 @@
 > Angle-bracket values are redacted internal addresses. See the top-level
 > README § Conventions.
 
-## The gap (now closed for new volumes)
+## The gap (closed 2026-10-07)
 
-**All NFS traffic between the nodes and the FlashBlade is cleartext.** Live
+> This section and the next record the state **before** the fix, as measured.
+> All NFS traffic is now encrypted — see *Migration progress* below.
+
+**All NFS traffic between the nodes and the FlashBlade was cleartext.** Live
 mount options on a worker:
 
 ```
@@ -16,7 +19,7 @@ nfs4 rw,relatime,vers=4.1,rsize=524288,wsize=524288,hard,proto=tcp,
 ```
 
 `sec=sys`, and no `xprtsec=`. Everything crossing the storage VLAN — including
-data pulled from Pure to train models — is unencrypted on the wire.
+data pulled from Pure to train models — was unencrypted on the wire.
 
 This is a **control gap, not a feature request**: NIST 800-171 **3.13.8**
 (cryptographic mechanisms to prevent unauthorised disclosure of CUI in
@@ -85,7 +88,7 @@ is the one that needs the trust.
 |---|---|
 | Image built from the cluster's own RHEL entitlement | ✅ `ktls-utils-0.11-3.el9_6` |
 | Pushed to `ghcr.io/eldritchjs/tlshd`, pinned by digest | ✅ |
-| `tlshd` DaemonSet on both workers | ✅ 2/2 Ready |
+| `tlshd` DaemonSet on both workers | ✅ 2/2 Ready (since extended to every node — see below) |
 | `nfs-over-tls` StorageClass provisions | ✅ PVC Bound |
 | TLS handshake | ✅ `Handshake with <fb-data-vip> was successful` |
 | Mount carries `xprtsec=tls` | ✅ confirmed in `/proc/mounts` |
@@ -206,9 +209,7 @@ Two lessons, both now encoded:
 - **T-13 was polling workers only**, mirroring the same bad assumption, so it
   could not have caught this. It now checks all nodes.
 
-### Still to do
-
-### Migrating ACS: three operator behaviours that will stop you
+### Migrating ACS: four operator behaviours that will stop you
 
 Done 2026-10-07, Central offline ~40 minutes. The data was trivial —
 central-db was **292MB** and scanner-v4-db **20GB**, against 350Gi
@@ -239,21 +240,27 @@ Copy mechanics: `tar`, not `cp -a`. The FlashBlade export carries a read-only
 non-zero having copied fine. Assert on **file count**, not exit status —
 `ubi-minimal` has no `tar` at all, and a job that silently copied 0 files
 still reported success until the count check caught it.
-  `mountOptions` is immutable, so `pure-fb-nfsv4` cannot be upgraded in place:
-  each volume needs a new claim on `nfs-over-tls` and a data copy. This is the
-  bulk of the remaining work, and `tests/verify.sh` T-13 tracks the ratio.
+
+Why a copy at all: `mountOptions` is immutable, so `pure-fb-nfsv4` cannot be
+upgraded in place — each volume needs a new claim on `nfs-over-tls` and a data
+move.
+
+### Still to do
+
 - **Document the ACS exception** for the privileged DaemonSet.
-- **Consider making `nfs-over-tls` the default StorageClass** once migration
-  is done, so new volumes are encrypted without anyone having to remember.
+- **Delete the two rollback PVCs** (`central-db`, `scanner-v4-db` on
+  `pure-fb-nfsv4`) once satisfied the migration held. Their PVs are `Retain`.
 
 ## Manifests
 
 Jetty-adapted manifests are in **[manifests/11-nfs-tls/](manifests/11-nfs-tls/)**,
-with the four storage-team unknowns marked `REPLACE-ME`. All eight objects
-validate against the live API under a server-side dry-run; `kustomize build`
-deliberately fails until the FlashBlade certificate is supplied.
+deployed and live. `kustomize build` deliberately fails until the FlashBlade
+certificate is supplied locally — it is not in the repo.
 
 ## What jetty needs that the reference does not supply
+
+> Pre-deployment planning, kept as a checklist for the next cluster. On jetty
+> every item below has been resolved.
 
 | Item | Why |
 |---|---|

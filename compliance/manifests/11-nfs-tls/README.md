@@ -2,7 +2,7 @@
 
 **Status: WORKING.** Deployed 2026-10-06, verified end to end 2026-10-07.
 
-`tlshd` is 2/2 Ready on both workers, the `nfs-over-tls` StorageClass
+`tlshd` is Ready on every node, the `nfs-over-tls` StorageClass
 provisions, mounts carry `xprtsec=tls`, and a packet capture confirms the
 payload is encrypted (300 canary lines written, 0 occurrences in 3,454
 captured packets). See [../../NFS-TLS.md](../../NFS-TLS.md).
@@ -15,7 +15,6 @@ The storage team reissued with `subjectAltName = IP:<nfs-data-vip>`.
 **Migration complete 2026-10-07.** All 18 PVCs in use are on `nfs-over-tls`,
 which is also the default StorageClass; T-13 reports no cleartext NFS mounts
 remain.
-`files/pure-ca.crt`, `oc apply -k .`, and the mount should complete.
 
 Closes the cleartext-storage gap described in [../../NFS-TLS.md](../../NFS-TLS.md)
 (800-171 3.13.8 / SC-8). The kernel on this cluster already supports
@@ -27,14 +26,14 @@ environment. That repo is the upstream reference and is **not** vendored here.
 
 ---
 
-## Remaining prerequisites
+## Prerequisites
 
 | Item | Where | Status |
 |---|---|---|
 | TLS export policy | `storageclass.yaml` | ✅ `export-policy-tls` (2026-10-06) |
 | TLS NFS server name | `storageclass.yaml` | ✅ `nfs-server` — unchanged from the cleartext class |
 | FlashBlade certificate | `files/pure-ca.crt` | ⚠️ **gitignored, supply locally** — see [files/README.md](files/README.md) |
-| Container image | `daemonset.yaml` | ❌ `REPLACE-ME-IMAGE` — set after Phase 1 |
+| Container image | `daemonset.yaml` | ✅ `ghcr.io/eldritchjs/tlshd`, pinned by digest (built 2026-10-06) |
 
 `kustomize build` **fails loudly** until the certificate is in place.
 Deliberate: a missing or wrong trust anchor is worse than not deploying.
@@ -80,16 +79,15 @@ oc apply -f imagestream.yaml -f buildconfig.yaml
 oc start-build tlshd -n nfs-tls --follow
 ```
 
-> **Unvalidated step.** `ktls-utils` is almost certainly not in the UBI repos,
-> which is why the reference build registers a subscription. The entitlement
-> volume here should make it resolvable, but this has not been run on this
-> cluster. If `dnf` cannot find the package, add an explicit RHEL repo file to
-> the inline Dockerfile pointing at `cdn.redhat.com` with
-> `sslclientcert=/etc/pki/entitlement/*.pem`. Treat the first build as the
-> test of this assumption.
+> **Validated 2026-10-06.** `ktls-utils` is not in the UBI repos, which is why
+> the reference build registers a subscription. The mounted entitlement alone
+> was not enough: the Dockerfile also has to delete `/etc/rhsm-host` and add
+> an explicit RHEL BaseOS/AppStream repo file pointing at `cdn.redhat.com`
+> with the entitlement as client cert. With both, build `tlshd-4` installed
+> `ktls-utils-0.11-3.el9_6` with no activation key.
 
 If you would rather push to an org-owned quay repo, skip the ImageStream and
-BuildConfig and set `REPLACE-ME-IMAGE` directly. `quay.io` is already in use
+BuildConfig and set the DaemonSet image directly. `quay.io` is already in use
 cluster-wide, so it needs no new allowlist entry. The internal registry is
 currently `managementState: Removed`, and its only possible backing store here
 is NFS, which Red Hat does not recommend for the registry — fine for a
@@ -122,12 +120,13 @@ oc debug node/<worker> -q -- chroot /host \
 - **Existing PVCs stay cleartext.** `mountOptions` is immutable, so
   `pure-fb-nfsv4` cannot be upgraded in place. Every existing volume needs a
   new PVC on `nfs-over-tls` and a data copy. This is the bulk of the work.
+  *Done 2026-10-07 — all 18; see NFS-TLS.md § Migration progress.*
 - **Document the ACS exception** for the privileged DaemonSet rather than
-  silencing the policy.
+  silencing the policy. *Still open.*
 - **Add a `verify.sh` check** asserting `tlshd` is Running on every eligible
   node *and* that TLS-backed mounts carry `xprtsec`. Without it this
   regresses silently — which is exactly how the gap went unnoticed to begin
-  with, since no scanner inspects CSI mount options.
+  with, since no scanner inspects CSI mount options. *Done — T-13.*
 
 ---
 
@@ -135,7 +134,7 @@ oc debug node/<worker> -q -- chroot /host \
 
 | Change | Why |
 |---|---|
-| `nodeSelector: worker` | Masters carry the control-plane taint and mount **zero** NFS (measured). Running a privileged host-network pod there buys nothing and widens the blast radius. To extend later, drop the selector and add a control-plane toleration. |
+| `tolerations: [{operator: Exists}]` — every node | Originally `nodeSelector: worker`, because masters mounted zero NFS when measured. Wrong: compliance result-server pods schedule onto masters, and their TLS mounts failed with no `tlshd` to answer. A daemon in the storage data path belongs everywhere storage can be mounted. See NFS-TLS.md § *The mistake worth not repeating*. |
 | `priorityClassName: system-node-critical` | This sits in the storage data path. On reboot nothing can mount a TLS volume until `tlshd` is up, and `remediate.sh` stage 2 reboots every node serially. |
 | liveness + readiness probes | The reference has neither. If `tlshd` dies, mounts fail with `ESRCH` and nothing notices. |
 | resource requests/limits | Required for a predictable QoS class on a node-critical daemon. |

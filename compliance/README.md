@@ -53,8 +53,8 @@ output for `jetty`. Keep it outside this working tree.
 | CNV golden images | ✅ Fixed — all 6 imported, on encrypted storage |
 
 The headline: **the cluster is hardened and the GPUs survived it.** Platform
-and node remediation are applied — node failures went **377 → 10** — and both
-GPU modalities still work after a full rolling reboot. That was the central
+and node remediation are applied — node failures went **377 → 4** — and both
+GPU modalities still work after two full rolling reboots. That was the central
 open question and it is now answered with a measurement, not a prediction.
 
 Node hardening is finished: all 385 remediations are applied and the four
@@ -126,25 +126,28 @@ response plan.
 
 Failure counts, as first measured and as they stand after remediation:
 
-| Scan | Initial | After stage 1 | **Now (after stage 2)** |
+| Scan | Initial | After stage 1 | **Now (after stage 2, both rounds)** |
 |---|---|---|---|
 | `ocp4-cis` (platform) | 10 | 8 | **8** |
 | `ocp4-moderate` (platform) | 25 | 21 | **21** |
 | Node-level OpenShift config | 4 master / 1 worker | 4 / 1 | **1 / 1** |
-| **RHCOS operating system** | **191 per node** | 191 | **4 per node** |
+| **RHCOS operating system** | **191 per node** | 191 | **1 per node** |
 
 The RHCOS number looked frightening and mostly was not: 112 of the 191 were
 audit rules, 27 sysctls, 18 kernel modules — bulk, not depth, and nearly all
-auto-remediable. **Node failures went 377 → 10.**
+auto-remediable. **Node failures went 377 → 4.**
 
 Getting there meant 377 MachineConfigs and a rolling reboot of every node, one
 at a time. That was the single biggest operational fact in this document, and
 it has now been paid: all 5 nodes rebooted on 2026-10-05, one went Degraded
-mid-run and recovered on its own.
+mid-run and recovered on its own. A second, smaller round on 2026-10-07
+applied 6 usbguard remediations that only became eligible after the first
+round's rescan, taking failures 10 → 4.
 
-The 10 survivors: 8 usbguard rules (6 of which just need another remediation
-pass — see §8) and 2 × `reject-unsigned-images-by-default`, which is a stage 3
-GPU-dangerous check deliberately left alone.
+The 4 survivors are two rules, each failing on both pools, and both genuinely
+manual: `sshd-limit-user-access` (no remediation offered) and
+`reject-unsigned-images-by-default`, a stage 3 GPU-dangerous check deliberately
+left alone.
 
 Raw ARF evidence is archived to persistent storage, so these results are
 durable audit artefacts rather than a transient read.
@@ -242,13 +245,16 @@ thinking.
 **`ocp-allowed-registries` is a one-shot foot-gun.** It restricts which
 registries the container runtime may pull from. Miss an entry and you get
 cluster-wide `ImagePullBackOff` — and it rewrites a node config file, so it
-reboots everything too. **Six** registries are actually in use cluster-wide:
+reboots everything too. **Eight** registries are actually in use cluster-wide:
 `nvcr.io` (all nine NVIDIA images), `quay.io`, `registry.redhat.io`,
-`registry.connect.redhat.com`, `docker.io`, `registry.k8s.io`. **All six must
-be in any allowlist** — `docker.io` and `registry.k8s.io` are easy to miss if
-you only inspect the GPU and CNV namespaces. Leave out `nvcr.io` and the GPU
-stack dies in both modalities. `verify.sh` T-10 re-measures this live; re-run
-it immediately before applying, since the list is a snapshot.
+`registry.connect.redhat.com`, `docker.io`, `registry.k8s.io`, `ghcr.io`
+(the `tlshd` image), and `registry.access.redhat.com` (the `tlshd` build's
+base image). **All eight must be in any allowlist** — `docker.io` and
+`registry.k8s.io` are easy to miss if you only inspect the GPU and CNV
+namespaces. Leave out `nvcr.io` and the GPU stack dies in both modalities.
+Leave out `ghcr.io` and the next reboot takes encrypted storage with it: no
+`tlshd`, no TLS mounts, on any node. `verify.sh` T-10 re-measures this live;
+re-run it immediately before applying, since the list is a snapshot.
 
 **`reject-unsigned-images-by-default` has an open question.** It would require
 every image to carry a verifiable signature. Nobody has checked whether the
@@ -276,7 +282,8 @@ central open question of the whole feasibility assessment.
 
 What does break is **VM USB passthrough** — `usb-storage`, `bluetooth`, `sctp`
 and friends all get disabled. Design around that rather than discovering it
-later. Note the 8 remaining usbguard failures point the same direction.
+later. `usbguard` points the same direction: it is now enforcing, with only
+HID devices and hubs allowed.
 
 One more, easy to miss: **flipping the GPU modality label is a node write**,
 which is effectively cluster-admin. Under 800-171's access control family an

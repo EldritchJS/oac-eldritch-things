@@ -8,11 +8,10 @@
 # which exceeds the 256KB annotation limit. See README.md for the exact
 # command (it strips server-side metadata first, which `create` requires).
 #
-# UNVALIDATED: ktls-utils is almost certainly not in the UBI repos -- that is
-# why the reference build registers a subscription. Mounting the entitlement
-# should make it resolvable, but this has NOT been run here. If dnf cannot
-# find the package, add an explicit RHEL repo pointing at cdn.redhat.com with
-# sslclientcert=/etc/pki/entitlement/*.pem. Treat the first build as the test.
+# Validated 2026-10-06 (build tlshd-4): ktls-utils is not in the UBI repos, and
+# mounting the entitlement alone does not make it resolvable -- the Dockerfile
+# below also removes /etc/rhsm-host and adds an explicit cdn.redhat.com repo
+# file using the entitlement as client cert. Both steps are required.
 apiVersion: build.openshift.io/v1
 kind: BuildConfig
 metadata:
