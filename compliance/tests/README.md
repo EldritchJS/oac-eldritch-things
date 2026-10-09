@@ -32,7 +32,7 @@ they flag things needing a human, not broken things.
 | ID | Test | Catches |
 |---|---|---|
 | T-01 | FIPS mode on every node | `fips=1`, `fips_enabled=1`, crypto policy `FIPS`. FIPS cannot be enabled post-install, so a failure means drift or a rebuilt node. |
-| T-02 | FIPS *validation* | Informational. Mode ≠ validation; 140-2 went Historical 2026-09-21. WARNs until `fips-cmvp-certificates.md` exists. |
+| T-02 | FIPS *validation* | Reads `fips-cmvp-certificates.md`: WARNs if the running RHCOS differs from the one the record was reviewed against (re-review every upgrade), and compares each node's running OpenSSL FIPS provider version (read via the machine-config-daemon pods) with the certified one. Currently WARNs: the nodes run a post-certification security build. |
 | T-03 | Scan freshness + regression | Suites `DONE`, results < 48h, FAIL counts not above `baseline-fail-counts.txt`. **This is the main hardening regression check.** |
 | T-04 | Raw ARF archived | `rawResultStorage.enabled` and bound PVCs — i.e. durable audit evidence actually exists. |
 | T-05 | RHACS healthy | Central + SecuredCluster Available, all pods ready, collector on every node. |

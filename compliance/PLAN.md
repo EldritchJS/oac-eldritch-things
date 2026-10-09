@@ -641,6 +641,18 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
   AIDE DaemonSet is privileged with host `/` mounted: another ACS
   exception to document.
 
+- **FIPS 140-3 certificate status recorded 2026-10-09**
+  ([tests/fips-cmvp-certificates.md](tests/fips-cmvp-certificates.md)).
+  For RHEL 9.8 / OpenShift 4.22 only the OpenSSL FIPS provider has a
+  certificate (#4857) — and all 5 nodes run a later security build
+  (`3.0.7-cda111b5812c30d4`, not the certified `3.0.7-395c1a240fbfffd8`).
+  Kernel crypto API, GnuTLS and libgcrypt have no certificate for this
+  build; GnuTLS and a new OpenSSL provider are in CMVP's in-process list.
+  NFS-over-TLS depends on the two uncertified ones. T-02 rewritten: it now
+  compares each node's running provider (via the MCD pods) and RHCOS with
+  the record, and WARNs on drift. Fixed a stale STANDARDS.md line that
+  still said etcd encryption was off.
+
 ### Standards confirmed: NIST 800-171 + HIPAA + FIPS
 
 Full mapping, baseline results, FIPS 140-3 position, and the mixed-VM-tenancy
@@ -681,6 +693,11 @@ tenant. Rationale and the alternatives considered: STANDARDS.md §4.
    `oc apply -f manifests/15-etcd-backup.yaml`, then
    `oc create job etcd-backup-postupgrade --from=cronjob/etcd-backup -n etcd-backup`.
    T-14 WARNs until done.
+3b. **Ask Red Hat** whether OpenSSL FIPS provider module
+   `3.0.7-cda111b5812c30d4` (`openssl-fips-provider-3.0.7-11.el9_8`,
+   RHCOS 9.8.20260922-1) is covered by #4857 or is the submission in
+   process, and for the RHEL 9 kernel crypto API roadmap. Record the answer
+   in `tests/fips-cmvp-certificates.md`.
 4. **Identity provider** (gaps #4, #5). Sequencing note that matters: **wire
    an IdP and verify login before removing kubeadmin**, or you lose cluster
    access. Also unblocks flipping the GPU-switch policy to `Deny`.

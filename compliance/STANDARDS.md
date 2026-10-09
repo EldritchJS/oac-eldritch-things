@@ -111,6 +111,24 @@ drift past its certified version.
 Verify against the CMVP Validated Modules Search at csrc.nist.gov (Active and
 Historical are separate searchable views).
 
+### Result (2026-10-09): validation is partial — see the record
+
+Full detail and SSP wording: **[tests/fips-cmvp-certificates.md](tests/fips-cmvp-certificates.md)**,
+which `verify.sh` T-02 now checks against every node.
+
+| Module (RHEL 9.8 / RHCOS 9.8.20260922-1) | Status |
+|---|---|
+| OpenSSL FIPS Provider | Certificate **#4857** (140-3 L1, Active to 2029-10-28) for module `3.0.7-395c1a240fbfffd8`. **jetty runs `3.0.7-cda111b5812c30d4`** (`-11.el9_8`), a later security build; a new RHEL 9 provider is in CMVP Comment Resolution. Ask Red Hat whether it is this build. |
+| Kernel Crypto API | No 9.8 certificate; no RHEL 9 submission in process |
+| GnuTLS | No 9.8 certificate; RHEL 9 gnutls in CMVP Review (2026-10-07) |
+| libgcrypt | No certificate for this build |
+
+The consequence that matters most: **NFS-over-TLS** (the 3.13.8 / 3.13.11
+storage control) uses GnuTLS for the handshake and the kernel crypto API
+for bulk encryption — the two modules with no certificate for this
+release. FIPS mode restricts them to approved algorithms; it does not make
+them validated.
+
 ### Where FIPS binds in each framework
 
 - **800-171 3.13.11** — employ FIPS-validated cryptography to protect CUI.
@@ -118,9 +136,9 @@ Historical are separate searchable views).
   guidance treats FIPS 140-validated encryption as the bar, and it provides
   **breach-notification safe harbour** under HITECH for encrypted ePHI.
 
-> That safe harbour makes **etcd encryption (currently OFF)** materially more
-> important than its "medium" severity suggests. Kubernetes Secrets sit
-> unencrypted in etcd today.
+> That safe harbour is why etcd encryption mattered more than its "medium"
+> severity suggested. It was off at the baseline and has been on (`aesgcm`)
+> since stage 1, 2026-10-02.
 
 ---
 

@@ -98,17 +98,45 @@ run_t01() {
 # --------------------------------------------------------------- T-02 ------
 run_t02() {
   hdr "T-02  FIPS validation (CMVP 140-3)"
-  info "FIPS *mode* (T-01) is not FIPS *validation*."
-  info "140-2 certificates became Historical on 2026-09-21; only 140-3 is Active."
-  local img
-  img=$(oc get nodes -o jsonpath='{.items[0].status.nodeInfo.osImage}' 2>/dev/null)
-  info "RHCOS: ${img:-unknown}"
-  if [ -f ./fips-cmvp-certificates.md ]; then
-    ok "CMVP certificate record present (fips-cmvp-certificates.md)"
+  info "FIPS *mode* (T-01) is not FIPS *validation*. Record: ./fips-cmvp-certificates.md"
+  local rec=./fips-cmvp-certificates.md reviewed certified img p n v
+  if [ ! -f "$rec" ]; then
+    warn "No CMVP certificate record ($rec). Document the 140-3 status of the"
+    info "RHEL modules (OpenSSL FIPS provider, kernel crypto API, GnuTLS, libgcrypt)."
+    return
+  fi
+  ok "CMVP certificate record present"
+  reviewed=$(sed -n 's/^REVIEWED_RHCOS=//p' "$rec")
+  certified=$(sed -n 's/^CERTIFIED_OPENSSL_PROVIDER_VERSION=//p' "$rec")
+
+  # Every node must run the RHCOS the record was reviewed against; module
+  # versions move with RHCOS, so a new one means the record is stale.
+  img=$(oc get nodes -o jsonpath='{range .items[*]}{.status.nodeInfo.osImage}{"\n"}{end}' | sort -u)
+  if [ "$img" = "$reviewed" ]; then
+    ok "record reviewed against the running RHCOS ($img)"
   else
-    warn "No CMVP certificate record. Document active 140-3 cert numbers for the"
-    info "RHEL 9 modules (kernel crypto API, OpenSSL, GnuTLS, NSS, libgcrypt) and"
-    info "confirm the running module versions match. Manual task, not automatable."
+    warn "RHCOS changed since the record was reviewed — re-review it"
+    info "reviewed: $reviewed"; info "running:  $(printf '%s' "$img" | tr '\n' ';')"
+  fi
+
+  # Running OpenSSL FIPS provider version, per node, read through the
+  # machine-config-daemon pods (host / at /rootfs) so no debug pods are made.
+  local mismatch="" seen=""
+  for p in $(oc get pods -n openshift-machine-config-operator -l k8s-app=machine-config-daemon -o name 2>/dev/null); do
+    n=$(oc get "$p" -n openshift-machine-config-operator -o jsonpath='{.spec.nodeName}')
+    v=$(oc exec -n openshift-machine-config-operator "$p" -c machine-config-daemon -- \
+        chroot /rootfs sh -c 'openssl list -providers 2>/dev/null' 2>/dev/null \
+        | awk '/fips/{f=1} f&&/version:/{print $2; exit}')
+    seen="$seen $n=${v:-unknown}"
+    [ "$v" = "$certified" ] || mismatch="$mismatch $n(${v:-unknown})"
+  done
+  if [ -z "$seen" ]; then
+    warn "could not read the OpenSSL FIPS provider version from any node"
+  elif [ -z "$mismatch" ]; then
+    ok "OpenSSL FIPS provider is the certified version ($certified) on all nodes"
+  else
+    warn "OpenSSL FIPS provider is NOT the certified version $certified on:$mismatch"
+    info "See fips-cmvp-certificates.md §1 — validation of the running build in process."
   fi
 }
 

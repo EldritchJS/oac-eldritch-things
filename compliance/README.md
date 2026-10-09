@@ -89,8 +89,12 @@ assessor, not the install-config.
 And the distinction that actually matters: **FIPS mode is not FIPS validation.**
 We proved the OS runs in FIPS mode. That is not the same as proving the
 cryptographic modules carry active CMVP certificates — those are tied to
-specific module *versions*, which can drift. Getting the 140-3 certificate
-numbers for the RHEL 9 modules is a documentation task nobody has done yet.
+specific module *versions*, which can drift. **Checked 2026-10-09
+([tests/fips-cmvp-certificates.md](tests/fips-cmvp-certificates.md)):** for
+RHEL 9.8 (OpenShift 4.22) only the OpenSSL FIPS provider has a certificate
+(#4857), and the nodes run a later security build of it whose validation is
+in process; the kernel crypto API and GnuTLS — which carry NFS-over-TLS —
+have no 9.8 certificate. Normal for a current release, but say it plainly.
 
 → Detail: [STANDARDS.md](STANDARDS.md) §3
 

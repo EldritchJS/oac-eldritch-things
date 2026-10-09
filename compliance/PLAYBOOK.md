@@ -67,6 +67,7 @@ does, how to verify it, how to roll it back, and what it cost on jetty.
 
 | Item | Why now |
 |---|---|
+| **FIPS validation status** | Know before you promise "FIPS validated": for the RHEL minor your OpenShift version maps to, which modules have Active 140-3 certificates? On OpenShift 4.22 / RHEL 9.8 only the OpenSSL provider does — not the kernel crypto API or GnuTLS, which carry NFS-over-TLS, IPsec and kTLS. If a requirement demands validated modules for a specific data path, pick the platform version and design around what is certified. |
 | **FIPS mode at install time** | Cannot be turned on afterwards. On Assisted Installer clusters it appears as `99-*-fips` MachineConfigs, not in install-config, so cite node-level evidence (`fips=1` on the kernel cmdline, `/proc/sys/crypto/fips_enabled`, crypto policy `FIPS`). |
 | **Working persistent storage** | Compliance Operator raw results, ACS Central DB and etcd backups all need it. jetty lost most of day one to an untrunked storage VLAN (STORAGE-ISSUE.md). Test with a real database on the real StorageClass (`manifests/canary-postgres-on-nfs.yaml`), not just a mount. |
 | **Encrypted storage transport** | If storage is NFS, decide on NFS-over-TLS *before* data lands; `mountOptions` is immutable, so retrofitting means copying every volume (NFS-TLS.md). |
@@ -410,7 +411,7 @@ Some controls are never "done":
 | Control | Why it never reaches zero | What satisfies it |
 |---|---|---|
 | HIPAA 306(e), 308(a)(6)(ii) — fixable CVEs | ACS calls a CVE fixable if *any* newer component version exists upstream. Each vendor release refills the count. | A written patch cadence, evidence of following it (each upgrade's before/after runs), and an ACS policy scoped to images *we* build, since those are the only ones we can rebuild. Template: [PATCHING.md](PATCHING.md). Split the timelines by class (platform, operators, own images) — the remedies differ. |
-| FIPS module validation | CMVP certificates name module versions, which change with RHCOS. | Re-check per upgrade. |
+| FIPS module validation | CMVP certificates name module versions, which change with RHCOS, and validation lags releases by a year or more. A security fix to a certified module yields an uncertified binary until revalidation. | Record per upgrade which modules are certified for the RHEL minor OpenShift maps to, compare the *running* module version (`openssl list -providers`), and state "validation in process" plainly in the SSP. jetty: [tests/fips-cmvp-certificates.md](tests/fips-cmvp-certificates.md), checked by T-02. |
 | Scan freshness | Results describe the cluster at scan time. | Nightly scans + T-03 freshness test. |
 | Backup freshness | — | T-14 freshness test, periodic restore test. |
 
