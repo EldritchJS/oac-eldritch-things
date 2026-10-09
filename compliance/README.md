@@ -68,7 +68,9 @@ auto-remediation), was closed 2026-10-09 with an `AllowUsers core` drop-in
 rolled out **without a reboot** (`manifests/21-*`).
 
 What remains is not hardening: **audit log forwarding is the one genuinely
-open gap**, followed by the identity provider.
+open gap**, followed by the identity provider. Everything left — decisions,
+vendor questions, and items blocked on other teams — is in one table:
+**[PLAN.md → Open](PLAN.md#open--what-remains-what-it-needs-and-from-whom)**.
 
 ---
 

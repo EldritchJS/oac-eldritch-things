@@ -724,43 +724,49 @@ surfaced — are all applied.
 The entire cluster is in scope for 800-171 — no split by MachineConfigPool or
 tenant. Rationale and the alternatives considered: STANDARDS.md §4.
 
-### Open
+### Open — what remains, what it needs, and from whom
 
-1. **Audit log forwarding** (gap #3, §6b) — the most urgent gap. Decide the
-   destination first. **The same destination should take ACS policy
-   notifications** — HIPAA 308(a)(6)(ii) and 314(a)(2)(i)(C) fail because
-   ACS violations go nowhere (STANDARDS.md §5).
-2. **Fixable CVEs (HIPAA 306(e)) are a standing condition, not a task.**
-   Staying on current z-streams and operator versions is the control; the
-   upgrade did that and the count did not move (STANDARDS.md §5). What
-   remains to decide is a **patch cadence** to write into the SSP, and
-   whether to add an ACS policy enforcing a severity floor on *our* images.
-   **Drafted 2026-10-08: [PATCHING.md](PATCHING.md)** — day counts to
-   decide, a scoped ACS policy and an exception to approve. Found on the
-   way: our own `tlshd` image has a fixable Important openssl CVE
-   (CVE-2026-84782); **remediated 2026-10-09** (next entry list, and
-   PATCHING.md §3). Day counts still **[decide]**.
-3. ~~CVE-2025-23266 / -23267 in `mig-parted`~~ **False positive, resolved
-   2026-10-08.** ACS matched a Go pseudo-version (`v0.0.0-20260921…`, a
-   2026 commit) as older than the fixed 0.12.2. Remaining step: record an
-   ACS exception carrying that reasoning (STANDARDS.md §5).
-3a. **Apply the refreshed etcd-backup CronJob** (`manifests/15-*`, image
-   digest only; `oc diff` shows that one line) and run one backup on it:
-   `oc apply -f manifests/15-etcd-backup.yaml`, then
-   `oc create job etcd-backup-postupgrade --from=cronjob/etcd-backup -n etcd-backup`.
-   T-14 WARNs until done.
-3b. **Ask Red Hat** whether OpenSSL FIPS provider module
-   `3.0.7-cda111b5812c30d4` (`openssl-fips-provider-3.0.7-11.el9_8`,
-   RHCOS 9.8.20260922-1) is covered by #4857 or is the submission in
-   process, and for the RHEL 9 kernel crypto API roadmap. Record the answer
-   in `tests/fips-cmvp-certificates.md`.
-4. **Identity provider** (gaps #4, #5). Sequencing note that matters: **wire
-   an IdP and verify login before removing kubeadmin**, or you lose cluster
-   access. Also unblocks flipping the GPU-switch policy to `Deny`.
-5. Still unaddressed and invisible to scanners — the rest of the §6 gaps:
-   image signature verification beyond the release images (gap #9),
-   metrics persistence (owned by another team; sizing in gap #12), plus
-   the non-technical controls.
+*Consolidated 2026-10-09. Everything that can be done without a decision or
+input from someone else is done; every row below is waiting on a person.*
+
+**Decisions for the cluster owner**
+
+| # | Item | Needed | Unblocks / closes | Detail |
+|---|---|---|---|---|
+| D1 | Patch-cadence day counts | Pick the numbers marked **[decide]** (z-stream, minor, own images, exception expiry, review interval) | The written policy half of HIPAA 306(e) / 308(a)(6)(ii); SSP text | [PATCHING.md](PATCHING.md) §1 |
+| D2 | Route IP allowlist (F5) | The source ranges users reach the cluster from (VPN pool, campus) | `route-ip-whitelist` (moderate 8 → 7) | triage entry above; `manifests/23-*` |
+| D3 | Signing key for our image | Who holds a cosign key for `ghcr.io/eldritchjs/tlshd` | Gap #9 for our image: signature-verified at runtime | gap #9 |
+| D4 | GPU-claim prevention (optional) | Approve: `vms-test` GPU quota → 0, and an admission policy rejecting GPU requests outside an allowlist | Turns T-17's detection into prevention (billing) | T-17 entry above |
+| D5 | Old build cleanup (optional) | Approve `oc delete build tlshd-4 tlshd-5 tlshd-6 -n nfs-tls` | Removes privileged completed pods from ACS's view | [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md) #2 |
+| D6 | Publish the playbook (optional) | Say where / to whom | — | [PLAYBOOK.md](PLAYBOOK.md) |
+
+**Questions for vendors** (whoever holds the support relationship)
+
+| # | Ask | Of | Record the answer in |
+|---|---|---|---|
+| V1 | Is OpenSSL FIPS provider module `3.0.7-cda111b5812c30d4` (`openssl-fips-provider-3.0.7-11.el9_8`, RHCOS 9.8.20260922-1) covered by #4857, or the submission in process? Roadmap for a RHEL 9 kernel crypto API certificate? | Red Hat | [tests/fips-cmvp-certificates.md](tests/fips-cmvp-certificates.md) (clears T-02 WARN) |
+| V2 | A least-privilege ClusterRole for the Portworx operator (today `*` on everything) | Pure / Portworx | [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md) #8 |
+| V3 | Fix ETA for OCPBUGS-126610 (audit-log-path rule) | Red Hat | `manifests/13-*` (re-enable the rule) |
+
+**Blocked on other teams or infrastructure**
+
+| # | Item | Needed, from | Closes | Detail |
+|---|---|---|---|---|
+| B1 | **Audit log forwarding** — the most urgent gap | A destination (SIEM/syslog endpoint, or FlashBlade S3 for LokiStack) — infrastructure/security owner | AU-9 / AU-4 (retention today ~6 h on masters); `audit-log-forwarding-enabled`, `-uses-tls` (3 results) | §6b |
+| B2 | **Alert routing** — ACS notifier + Alertmanager receiver | Same destination as B1 (or email/webhook) | HIPAA 308(a)(6)(ii), 314(a)(2)(i)(C); makes FIM and ACS alerts reach a person | STANDARDS.md §5; `manifests/20-*` |
+| B3 | **Identity provider** | IdP details (OIDC/LDAP) and group mapping — identity owner | `idp-is-configured`, then `kubeadmin-removed` (4 results); GPU-switch policy to `Deny` (T-12 WARN); separate requester/approver for ACS exceptions. **Wire and test login before removing kubeadmin.** | gaps #4, #5 |
+| B4 | Ingress certificate and CA | A certificate from the organisation's CA | `ingress-controller-certificate`, `default-ingress-ca-replaced` (2 results) | — |
+| B5 | Egress proxy | A proxy, if the organisation requires one | `cluster-wide-proxy-set` (documented gap) | triage entry above |
+| B6 | Metrics persistence | Another team's design | Gap #12; then measured requests/limits for the vendor DaemonSets (revisit E1) | gap #12 |
+| B7 | Off-array backup copy | An off-array target (S3 or another site) | CP-9 resilience: backups survive losing the array | gap #7 |
+| B8 | Full control-plane restore test | A disposable cluster of the same version | Measured RTO for etcd recovery | §7 restore entry |
+| B9 | Non-technical controls | SSP, policies, access reviews, IR plan, training, risk analysis, BAAs | Usually the larger share of an authorization package | below |
+
+**Standing work (no owner needed, recurs):** re-review
+`tests/fips-cmvp-certificates.md` and `PRIVILEGED-WORKLOADS.md` at every
+upgrade; re-check disabled/exempted rules after Compliance Operator and
+vendor operator upgrades; rebuild `tlshd` per the patch cadence; run
+`verify.sh` before and after every change.
 
 ### Not covered by any of this
 
