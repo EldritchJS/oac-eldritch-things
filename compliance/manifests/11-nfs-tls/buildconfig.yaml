@@ -71,6 +71,11 @@ spec:
         'sslclientkey=/etc/pki/entitlement/entitlement-key.pem' \
         > /etc/yum.repos.d/rhel9-entitled.repo
 
+      # Apply current RHEL errata to the base. ubi9:latest lags the RHEL repos:
+      # build tlshd-6 (2026-10-09) rebuilt "fresh" and still shipped
+      # openssl 3.5.8-1 with a fixable Important CVE, because nothing here
+      # upgraded it. A rebuild only patches what the build actually updates.
+      RUN dnf upgrade -y --refresh
       RUN dnf install -y ktls-utils \
        || { echo "=== install failed; repos dnf could see: ==="; dnf repolist --all; exit 1; }
       RUN dnf clean all && rm -rf /var/cache/dnf

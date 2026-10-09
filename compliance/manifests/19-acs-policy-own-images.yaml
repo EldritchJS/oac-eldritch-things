@@ -1,0 +1,59 @@
+# ACS policy: fixable Important+ CVEs in images WE build (PATCHING.md §4).
+#
+# The ACS default "Fixable Severity at least Important" matches the whole
+# cluster: 187 violations on 2026-10-08, 164 of them OpenShift's own images,
+# which we cannot rebuild -- as an alert source it is noise. This copy is
+# scoped to the namespaces whose images we build, so a violation here means
+# "rebuild within the class (c) timeline in PATCHING.md". Keep the default
+# enabled as the inventory of vendor exposure.
+#
+# Scope today: nfs-tls (ghcr.io/eldritchjs/tlshd, built by
+# manifests/11-nfs-tls/buildconfig.yaml). Add a scope entry for each
+# namespace that gains an image we build. etcd-backup is NOT in scope: it runs
+# the release payload's cli image, remediated by upgrading the platform.
+#
+# Policy as code: ACS's config-controller (stackrox namespace) syncs this CR
+# into Central; the policy is then locked against UI edits. Inform-only.
+# Notifier: none yet -- add `notifiers:` once the audit/alert destination
+# exists (PLAN.md Open #1); that is what closes HIPAA 308(a)(6)(ii).
+#
+# Verify: oc get securitypolicy -n stackrox  -> ACCEPTED true, a policyId.
+# Rollback: oc delete -f this file (Central deletes the policy).
+apiVersion: config.stackrox.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: jetty-own-images-fixable-important
+  namespace: stackrox
+spec:
+  policyName: "jetty: our images - fixable Important+"
+  description: >-
+    Fixable vulnerabilities rated Important or Critical in container images
+    built by this project (not vendor images).
+  rationale: >-
+    We control these images, so a fixable finding is remediated by a rebuild
+    within the timeline in PATCHING.md (class c).
+  remediation: >-
+    Rebuild the image from current RHEL content (for tlshd:
+    oc start-build tlshd -n nfs-tls), pin the new digest in the manifest,
+    roll it out, and confirm this violation clears.
+  categories:
+    - Vulnerability Management
+  lifecycleStages:
+    - BUILD
+    - DEPLOY
+  eventSource: NOT_APPLICABLE
+  severity: HIGH_SEVERITY
+  scope:
+    - cluster: jetty
+      namespace: ^nfs-tls$
+  policySections:
+    - sectionName: fixable-important
+      policyGroups:
+        - fieldName: Fixed By
+          booleanOperator: OR
+          values:
+            - value: .*
+        - fieldName: Severity
+          booleanOperator: OR
+          values:
+            - value: ">= IMPORTANT"

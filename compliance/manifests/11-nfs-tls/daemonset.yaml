@@ -60,7 +60,7 @@ spec:
           # identical to what was reviewed, and the tag cannot move underneath
           # a node that reboots. Built by BuildConfig tlshd-4 on 2026-10-06
           # from ktls-utils-0.11-3.el9_6 (rhel-9-for-x86_64-baseos-rpms).
-          image: ghcr.io/eldritchjs/tlshd@sha256:ec0458d18da724d12c4083c64866c248d509fa100210cbbb3b9e067649063e13
+          image: ghcr.io/eldritchjs/tlshd@sha256:f8bcab63ea0cd9bfe28e84e127391c95fe9470d9b5f1cf2f97d87f99cf50e50b
           securityContext:
             privileged: true
             seccompProfile:

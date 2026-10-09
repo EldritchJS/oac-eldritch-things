@@ -322,6 +322,22 @@ outage.
   fix date, then record an exception with the reasoning.
 - **"Fixable" never reaches zero** (§4).
 
+### Patching our own images
+
+- **A rebuild is not a patch.** Rebuilding on `ubi9:latest` reproduced the
+  vulnerable openssl because the base lagged the RHEL repos. The build must
+  run `dnf upgrade` (or pin a fixed base), and the new image must be
+  scanned or inspected *before* rollout.
+- **Default-deny egress breaks in-cluster builds** (and any Job or CronJob
+  that wasn't running during validation). Validate egress policies against
+  every kind of workload a namespace runs, not just what is running now.
+- **Check how a manifest was applied before re-applying it.** A kustomize
+  directory (`oc apply -k`) with a `configMapGenerator` produces hashed
+  names; `oc apply -f` on one file from it silently re-points references.
+  `oc diff` caught it.
+- ACS raises "Exec into Pod" alerts for verification `oc exec`s — expected,
+  and proof the runtime detection works; note them rather than silence them.
+
 ### Storage
 
 - A storage daemon scoped to "where pods currently run" broke the first time
@@ -338,6 +354,11 @@ outage.
   fixed it immediately. **If the image API hangs, restart Central first.**
 - After restarting Central, check that its definitions download completed;
   a truncated one (`unexpected EOF`) preceded the hang.
+- It recurred the next day as a per-image stall: Central sat at "Getting
+  metadata" for one new ghcr.io digest (established connection, no block)
+  while other scans worked. Do not make a rollout depend on ACS alone;
+  have an independent check (`rpm -q` in the pod, the build's package
+  transaction).
 
 ### Process
 

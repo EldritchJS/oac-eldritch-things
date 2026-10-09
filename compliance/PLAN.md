@@ -603,6 +603,18 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
   etcd :2379 refused TLS 1.2 to the probe, most likely because it requires
   a client certificate; not included in T-15.
 
+- **Patch cadence drafted, first class-(c) remediation done 2026-10-09.**
+  [PATCHING.md](PATCHING.md). Scoped ACS policy applied as code
+  (`manifests/19-*`); `mig-parted` false positive recorded as ACS exceptions.
+  `tlshd` rebuilt for CVE-2026-84782 (openssl 3.5.8-1 → -2) and rolled
+  out 01:51–01:56Z; verified in every pod, T-13 4/4, live session survived,
+  fresh TLS mount on u16 OK. Took three builds: (1) the new `nfs-tls`
+  default-deny egress blocked builds — `allow-egress-builds` added to
+  `manifests/18-*`; (2) a plain rebuild kept the stale `ubi9:latest`
+  openssl — Dockerfile now runs `dnf upgrade`; (3) fixed. **ACS has not
+  yet rescanned the new digest** (Central stalls fetching ghcr metadata,
+  no network cause), so its alerts stay active until it does.
+
 ### Standards confirmed: NIST 800-171 + HIPAA + FIPS
 
 Full mapping, baseline results, FIPS 140-3 position, and the mixed-VM-tenancy
@@ -632,7 +644,8 @@ tenant. Rationale and the alternatives considered: STANDARDS.md §4.
    **Drafted 2026-10-08: [PATCHING.md](PATCHING.md)** — day counts to
    decide, a scoped ACS policy and an exception to approve. Found on the
    way: our own `tlshd` image has a fixable Important openssl CVE
-   (CVE-2026-84782); rebuild proposed there.
+   (CVE-2026-84782); **remediated 2026-10-09** (next entry list, and
+   PATCHING.md §3). Day counts still **[decide]**.
 3. ~~CVE-2025-23266 / -23267 in `mig-parted`~~ **False positive, resolved
    2026-10-08.** ACS matched a Go pseudo-version (`v0.0.0-20260921…`, a
    2026 commit) as older than the fixed 0.12.2. Remaining step: record an

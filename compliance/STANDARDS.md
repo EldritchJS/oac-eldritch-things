@@ -319,6 +319,13 @@ The general lesson: **a Go pseudo-version (`v0.0.0-<date>-<commit>`) in a
 scanner finding means "built from an untagged commit", not "version 0".**
 Check the commit date against the fix date before treating it as real.
 
+**Second occurrence, 2026-10-09:** scans of a new `ghcr.io/eldritchjs/tlshd`
+digest stalled at the enricher's "Getting metadata" step for 25+ minutes,
+three times, with Central holding an established connection to GitHub's
+registry; other scans (cached Red Hat image, 2 s) worked meanwhile. So the
+hang is per-image metadata fetch with no client-side timeout, not a
+blocked network. Not restarted this time; see PATCHING.md §3.
+
 **Incident during this work:** before the integration could be tested,
 Central stopped answering image scans and integration changes (reads still
 worked) for ~20 minutes. No egress was being dropped: no `SYN_SENT`

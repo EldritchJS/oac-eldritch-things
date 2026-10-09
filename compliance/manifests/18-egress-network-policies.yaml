@@ -69,6 +69,38 @@ spec:
   podSelector: {}
   policyTypes: [Egress]
 ---
+# In-cluster builds of the tlshd image (manifests/11-nfs-tls/buildconfig.yaml).
+# Added 2026-10-08 after default-deny above hung build tlshd-5: its first
+# container sat in SYN_SENT to the API service. Missed when 18-* was applied
+# because no build ran in the validation window. Build pods exist only while a
+# build runs; they need the API, DNS, and HTTPS to registry.access.redhat.com
+# (ubi9 base), cdn.redhat.com (entitled RHEL repos) and ghcr.io (push).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-builds
+  namespace: nfs-tls
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: openshift.io/build.name, operator: Exists}
+  policyTypes: [Egress]
+  egress:
+    - ports:
+        - {protocol: TCP, port: 6443}
+    - ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        - {protocol: UDP, port: 5353}
+        - {protocol: TCP, port: 5353}
+    - ports:
+        - {protocol: TCP, port: 443}
+---
 # ---- rhacs-operator ------------------------------------------------------
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

@@ -55,10 +55,13 @@ sections above.
 > with the baseline; the ACS `HIPAA_164` standard re-run. Results are kept
 > as evidence.
 >
-> *Exceptions.* A finding that does not apply (a false positive, or code
-> not reachable in this deployment) is recorded as an ACS vulnerability
-> exception with the reasoning and an expiry of at most **90 days
-> [decide]**, then reviewed. Findings are not deleted.
+> *Exceptions.* A finding that does not apply is recorded as an ACS
+> vulnerability exception with the reasoning; findings are not deleted.
+> A **false positive** (the scanner is wrong about the version or
+> component) is recorded as such and needs no expiry. A **deferral** (the
+> finding is real but accepted for now) expires in at most **90 days
+> [decide]** and is reviewed before it lapses. Requester and approver are
+> different people (enforceable once the cluster has an identity provider).
 >
 > *Review.* Fixable Important/Critical findings in class (c) are reviewed
 > **weekly [decide]**; the whole policy annually.
@@ -74,8 +77,8 @@ sections above.
 | Operators automatic | ✅ all 7 subscriptions `Automatic`, each at its channel's latest CSV | `oc get sub -A` |
 | Every registry scanned | ✅ since 2026-10-08 (`nvcr.io` had no integration before) | STANDARDS.md §5 |
 | Scan freshness | ✅ ACS `30-Day Scan Age`: 0 violations | ACS |
-| **Our images current** | ❌ **`tlshd` has a fixable Important CVE** — see §3 | ACS alert |
-| Exceptions recorded | ⚠️ the `mig-parted` false positive is documented but not yet an ACS exception | STANDARDS.md §5 |
+| **Our images current** | ✅ `tlshd` rebuilt and rolled out 2026-10-09 (found 2026-10-08 14:51Z, fixed 01:56Z) — see §3 | `rpm -q` in every pod |
+| Exceptions recorded | ✅ `mig-parted` false positive: ACS exceptions `AA-261009-1`, `-2` | ACS |
 | Written cadence | ❌ this draft | — |
 
 The patch-cadence control is evidenced by the record, so start the record
@@ -95,18 +98,40 @@ The image was built 2026-10-06 (build `tlshd-4`). `tlshd` itself uses
 GnuTLS, not OpenSSL, so reachability is doubtful — but this is our own image
 and the fix is a rebuild, so rebuild rather than argue it.
 
-**Remediation (needs approval; it touches the storage data path):**
+**Remediated 2026-10-09 — the first run of the class (c) procedure.**
+It took three builds, and each failure is a lesson:
 
-```sh
-oc start-build tlshd -n nfs-tls --follow       # rebuilds from RHEL repos, pushes ghcr.io/eldritchjs/tlshd:latest
-# take the new digest from the build, pin it in manifests/11-nfs-tls/daemonset.yaml,
-# then oc diff / oc apply. The DaemonSet rolls one node at a time (maxUnavailable 1).
-```
+1. **`tlshd-5` hung** in its first container: `SYN_SENT` to the API service.
+   The default-deny egress added to `nfs-tls` that day (`manifests/18-*`)
+   blocks build pods; validation had missed it because no build ran in the
+   window. Fixed with `allow-egress-builds` in `manifests/18-*` — API, DNS
+   and HTTPS for pods labelled `openshift.io/build.name` only. `tlshd`
+   itself stays deny-all.
+2. **`tlshd-6` built and pushed, but did not fix the CVE.** A rebuild only
+   patches what the build updates: the Dockerfile installed `ktls-utils`
+   on `ubi9:latest`, which still ships `openssl 3.5.8-1`. Caught by
+   scanning before rollout. The Dockerfile now runs `dnf upgrade -y
+   --refresh` first (`manifests/11-nfs-tls/buildconfig.yaml`).
+3. **`tlshd-7`** upgraded `openssl`/`openssl-libs` to `3.5.8-2.el9_8` (plus
+   glibc and tzdata errata). Digest `sha256:f8bcab63…`, pinned in
+   `manifests/11-nfs-tls/daemonset.yaml`, applied with `oc apply -k`
+   (the DaemonSet references a kustomize-generated ConfigMap; `-f` would
+   have pointed it at a ConfigMap that does not exist).
 
-Risk is bounded: `tlshd` only performs handshakes; established NFS sessions
-are held by kernel TLS and survive a `tlshd` restart (a reconnect that
-lands in the restart window waits for the new pod). Verify with T-13, a
-fresh mount (canary), and the ACS alert clearing.
+Rollout 01:51–01:56Z, one node at a time. Verified:
+- `rpm -q openssl-libs` = `3.5.8-2.el9_8` in all 5 running pods;
+- T-13 4/4; the established kernel-TLS session on u15 survived the restart
+  (no new handshake, no decrypt errors);
+- a fresh PVC on u16 (no session there) handshook through the new `tlshd`,
+  mounted with `xprtsec=tls`, wrote and read back, then deleted.
+
+**Not yet confirmed by ACS.** Central could not scan the new image: three
+attempts since 01:10Z stall at "Getting metadata" from ghcr.io, with an
+established connection to GitHub and no network block — the same no-cause
+pattern as the 2026-10-08 image-API hang (STANDARDS.md §5). The fixable-CVE
+alerts on `nfs-tls` stay active until Central scans the new digest. The
+previous build's image (`tlshd-6`) scanned fine on a second try, so this is
+intermittent rather than ghcr being unreachable.
 
 Note: the ACS image *list* endpoint reported `fixableCves: 0` for this image
 while the image detail and the alert both show two fixable rows. Read the
@@ -125,13 +150,17 @@ Already enabled (ACS defaults, inform-only at deploy, **no notifier**):
 | `30-Day Scan Age` | 0 | — |
 
 The cluster-wide policy is mostly vendor images we cannot rebuild, so as an
-alert source it is noise. **Proposal** (not applied):
+alert source it is noise. Items 1 and 4 **applied 2026-10-09**; 2 waits on a
+destination:
 
 1. **New policy `jetty: our images — fixable Important+`**: same criteria as
    the default (`Fixed By` any, `Severity >= IMPORTANT`), scoped to the
    namespaces where we build the image (today `nfs-tls`; add others as
    images are added), stages BUILD + DEPLOY, inform-only. This is the one
-   whose alerts mean "act within the class (c) timeline".
+   whose alerts mean "act within the class (c) timeline". **Applied** as
+   policy-as-code, `manifests/19-acs-policy-own-images.yaml` (a
+   `SecurityPolicy` CR synced by ACS's config-controller; Central accepted
+   it). It fired on the old `tlshd` image as intended.
 2. **Attach the notifier to it** once the audit/alert destination exists —
    the same open decision as audit forwarding (PLAN.md Open #1). Notifiers
    on this policy plus the runtime policies are what close HIPAA
@@ -139,8 +168,12 @@ alert source it is noise. **Proposal** (not applied):
 3. **Keep the default policy enabled** as the inventory of vendor exposure;
    no notifier on it.
 4. **Record the `mig-parted` false positive** (CVE-2025-23266/-23267) as an
-   ACS vulnerability exception with the pseudo-version reasoning and a
-   90-day expiry.
+   ACS vulnerability exception with the pseudo-version reasoning.
+   **Applied:** `AA-261009-1` (mig-manager), `AA-261009-2`
+   (vgpu-device-manager), type FALSE_POSITIVE (no expiry), via
+   `POST /v2/vulnerability-exceptions/false-positive` then `/approve`. ACS
+   let the same admin account request and approve them — separation of
+   duties needs real user accounts (IdP).
 
 Optional later: a `verify.sh` check that fails when a fixable Important+
 finding in our namespaces is older than the class (c) timeline.
