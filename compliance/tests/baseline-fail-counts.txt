@@ -1,8 +1,8 @@
-jetty-ocp4-cis 4
-jetty-ocp4-moderate 13
+jetty-ocp4-cis 3
+jetty-ocp4-moderate 8
 ocp4-cis-node-master 0
 ocp4-cis-node-worker 0
 ocp4-moderate-node-master 0
 ocp4-moderate-node-worker 0
-rhcos4-moderate-master 1
-rhcos4-moderate-worker 1
+rhcos4-moderate-master 0
+rhcos4-moderate-worker 0

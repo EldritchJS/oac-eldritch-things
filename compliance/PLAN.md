@@ -144,7 +144,7 @@ Every failure is cluster/platform configuration:
 | Severity | Check | Matches gap |
 |---|---|---|
 | **high** | `configure-network-policies-namespaces` | #8 |
-| **high** | `openshift-api-server-audit-log-path` | #3 |
+| **high** | `openshift-api-server-audit-log-path` | ~~#3~~ scanner bug OCPBUGS-126610 (2026-10-09) |
 | medium | `api-server-encryption-provider-cipher` | #1 etcd encryption |
 | medium | `audit-log-forwarding-enabled` | #3 |
 | medium | `audit-profile-set` | #2 |
@@ -652,6 +652,41 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
   compares each node's running provider (via the MCD pods) and RHCOS with
   the record, and WARNs on drift. Fixed a stale STANDARDS.md line that
   still said etcd encryption was off.
+
+- **Compliance failure triage 2026-10-09.** All 17 remaining failures read
+  and sorted. Results: `jetty-ocp4-moderate` 13 → **8**, `jetty-ocp4-cis`
+  4 → **3**, `rhcos4-moderate-{master,worker}` 1 → **0** each. `verify.sh`
+  **64 PASS / 0 FAIL / 2 WARN**; baseline re-saved.
+  - **F1 `openshift-api-server-audit-log-path` (high, both profiles) was a
+    scanner bug**, OCPBUGS-126610: the content reads the kube-apiserver
+    ConfigMap and expects the openshift-apiserver path, so it cannot pass.
+    The real setting is correct. At baseline it was filed under gap #3
+    without checking — wrong. Disabled in both TailoredProfiles with that
+    rationale; T-03 now checks the real value. Re-enable when fixed.
+  - **F2 `sshd-limit-user-access`**: `AllowUsers core` via MachineConfig
+    (`manifests/21-*`) with a **nodeDisruptionPolicy** that restarts sshd
+    instead of rebooting (by default the MCO reboots for that path). Both
+    pools in ~3 min, boot IDs unchanged, `sshd -T` shows the setting on all
+    5. **The File Integrity Operator re-initialised AIDE after the MCO
+    update by itself** — the behaviour FIM item (c) was waiting to observe.
+  - **F3 `resource-requests-quota`**: ResourceQuotas on the 7 non-platform
+    namespaces (`manifests/22-*`) — object counts and storage only, no
+    cpu/memory (those would reject the request-less NVIDIA/Portworx pods).
+    Proven by restarting a request-less NVIDIA pod: admitted. `vms-test`
+    also caps GPUs (billable).
+  - **F4 `routes-rate-limit`**: TCP rate limits on the two ACS Central
+    routes (`manifests/23-*.sh`); the operator kept the annotations across a
+    forced reconcile, and HAProxy's config shows them enforced.
+  - **E1 `resource-requests-limits-in-{deployment,daemonset}`**: exempted
+    `nvidia-gpu-operator` and `portworx` via the rules' own variables in the
+    moderate TailoredProfile — every offender is vendor operator-managed, and
+    a wrong limit OOM-kills the GPU driver or storage CSI. Exception, not
+    fix; revisit once metrics persist.
+  - **Left, by design:** `route-ip-whitelist` (F5 — needs the source
+    ranges users come from); `cluster-wide-proxy-set` (no egress proxy
+    exists — a real gap, documented, not tailored away). **Blocked:** audit
+    forwarding (2 moderate + 1 CIS), IdP (1+1), kubeadmin (1+1), ingress
+    certificate and CA (2, need the organisation's CA).
 
 ### Standards confirmed: NIST 800-171 + HIPAA + FIPS
 

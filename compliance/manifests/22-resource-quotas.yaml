@@ -1,0 +1,111 @@
+# ResourceQuotas for every non-platform namespace (800-53 SC-6 / CM-6;
+# closes jetty-ocp4-moderate-resource-requests-quota). The rule wants a
+# ResourceQuota in each namespace outside openshift-*, kube-*, default and
+# rhacs-operator -- on jetty these seven (measured 2026-10-09).
+#
+# OBJECT COUNTS AND STORAGE ONLY -- deliberately no cpu/memory. A quota on
+# requests.cpu / requests.memory / limits.* makes the API server REJECT any
+# pod that does not declare those values, and the NVIDIA and Portworx pods
+# declare none (see E1, manifests/13-*). Such a quota would turn the next
+# GPU-driver or CSI pod restart into an outage. Count and storage limits
+# still bound runaway creation, and NodePort/LoadBalancer are pinned to 0.
+#
+# Sizes: measured usage with headroom for rolling updates (maxSurge), ACS's
+# HPAs (scanner, scanner-v4-indexer and -matcher go to 5 each), DaemonSets
+# growing with nodes, and GPU modality switches (old and new pods overlap).
+#
+# Measured 2026-10-09 (running pods / PVCs / storage):
+#   assisted-installer 0/0/0   etcd-backup 0/1/10Gi   nfs-tls 5/0/0
+#   nvidia-gpu-operator 13/0/0 portworx 9/0/0         stackrox 20/4/450Gi
+#   vms-test 0/0/0
+#
+# vms-test also caps GPUs (both modalities). Extended-resource quotas only
+# constrain pods that request the resource, so nothing else is affected --
+# and GPU time on MOC is billable.
+#
+# A namespace added later (outside openshift-*/kube-*) fails the rule until
+# it gets a quota; that is the point of the rule.
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: jetty-objects, namespace: assisted-installer}
+spec:
+  hard:   # installer residue: one completed Job, nothing should run here
+    pods: "1"
+    persistentvolumeclaims: "0"
+    services: "0"
+    services.nodeports: "0"
+    services.loadbalancers: "0"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: jetty-objects, namespace: etcd-backup}
+spec:
+  hard:   # nightly job + manual/pre-upgrade runs + restore-rehearsal pod
+    pods: "4"
+    persistentvolumeclaims: "2"
+    requests.storage: 50Gi
+    services: "0"
+    services.nodeports: "0"
+    services.loadbalancers: "0"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: jetty-objects, namespace: nfs-tls}
+spec:
+  hard:   # tlshd DaemonSet (one per node) + an image build + canary
+    pods: "20"
+    persistentvolumeclaims: "2"
+    requests.storage: 10Gi
+    services: "2"
+    services.nodeports: "0"
+    services.loadbalancers: "0"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: jetty-objects, namespace: nvidia-gpu-operator}
+spec:
+  hard:   # ~6-8 DaemonSet pods per GPU node; modality switch overlaps them
+    pods: "50"
+    persistentvolumeclaims: "0"
+    services: "10"
+    services.nodeports: "0"
+    services.loadbalancers: "0"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: jetty-objects, namespace: portworx}
+spec:
+  hard:   # operator + CSI controllers + one CSI node pod per node
+    pods: "30"
+    persistentvolumeclaims: "2"
+    requests.storage: 10Gi
+    services: "10"
+    services.nodeports: "0"
+    services.loadbalancers: "0"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: jetty-objects, namespace: stackrox}
+spec:
+  hard:   # 20 now; ~29 at HPA max plus collectors per node and surge
+    pods: "45"
+    persistentvolumeclaims: "8"
+    requests.storage: 1Ti
+    services: "20"
+    services.nodeports: "0"
+    services.loadbalancers: "0"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: jetty-objects, namespace: vms-test}
+spec:
+  hard:   # tenant/test namespace for VMs
+    pods: "20"
+    persistentvolumeclaims: "20"
+    requests.storage: 1Ti
+    services: "10"
+    services.nodeports: "0"
+    services.loadbalancers: "0"
+    requests.nvidia.com/gpu: "4"
+    requests.nvidia.com/GH100_H100_SXM5_80GB: "4"

@@ -216,6 +216,17 @@ print(int((datetime.datetime.now(datetime.timezone.utc)-t).total_seconds()//3600
     cat "$cur" | sed 's/^/       /'
   fi
   rm -f "$cur"
+
+  # Rules disabled in the jetty TailoredProfiles as SCANNER FALSE POSITIVES
+  # are checked here directly, so disabling the rule does not stop testing
+  # the control. ocp4-openshift-api-server-audit-log-path (OCPBUGS-126610):
+  # the content reads the wrong ConfigMap; this reads the right one.
+  local oas_path
+  oas_path=$(oc get configmap config -n openshift-apiserver -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
+    | python3 -c 'import json,sys; print((json.load(sys.stdin).get("apiServerArguments",{}).get("audit-log-path") or [""])[0])' 2>/dev/null)
+  [ "$oas_path" = "/var/log/openshift-apiserver/audit.log" ] \
+    && ok "openshift-apiserver audit-log-path set ($oas_path) — checked here; scanner rule disabled (OCPBUGS-126610)" \
+    || bad "openshift-apiserver audit-log-path is '${oas_path:-unset}', expected /var/log/openshift-apiserver/audit.log"
 }
 
 # --------------------------------------------------------------- T-04 ------

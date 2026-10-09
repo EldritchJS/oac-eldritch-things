@@ -280,7 +280,30 @@ Hardening guides say "pin `Modern` or a `Custom` TLS profile". Measure first:
 4. The compliance check for notification passes when the alert rule
    exists. Wire an Alertmanager receiver, or the alert reaches nobody.
 
-### Phase 13 — Remaining controls *(pending)*
+### Phase 13 — Triage what the scanners still report
+
+After the remediation stages, read every remaining failure's instructions
+and sort it into fixable, exception, or blocked. On jetty this took
+moderate 13 → 8 and the node scans to 0 in an afternoon:
+
+- **Suspect the scanner too.** A high-severity failure with a correctly set
+  value was a content bug (OCPBUGS-126610: wrong ConfigMap). Disable it in
+  the TailoredProfile with the bug as rationale, and test the real value in
+  your own harness so the control is still checked.
+- **Avoid reboots with a nodeDisruptionPolicy.** A one-file MachineConfig
+  (sshd `AllowUsers`) reboots every node by default; a policy that restarts
+  just `sshd` made it a 3-minute, reboot-free rollout.
+- **ResourceQuotas: counts and storage, not cpu/memory,** wherever vendor
+  pods declare no requests — a cpu/memory quota rejects them on their next
+  restart. Prove it by restarting one.
+- **Operator-owned routes:** add annotations and force a reconcile to see if
+  they stick, then read the router's `haproxy.config` to see them enforced.
+- **Use the rules' own exemption variables** for vendor-managed workloads you
+  cannot safely change, with a rationale and a revisit condition.
+- **Do not tailor away real gaps** (no egress proxy): leave them failing and
+  documented.
+
+### Phase 14 — Remaining controls *(pending)*
 
 Metrics persistence (another team's decision on jetty), audit forwarding,
 identity provider and kubeadmin removal. To be written as jetty does them. The one

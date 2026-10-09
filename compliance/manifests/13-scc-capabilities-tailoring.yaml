@@ -27,6 +27,26 @@
 #   oc get variables.compliance ocp4-var-sccs-with-allowed-capabilities-regex \
 #     -n openshift-compliance -o jsonpath='{.value}'
 #
+# THIRD TAILORING (2026-10-09, moderate only -- CIS lacks these rules):
+# resource-requests-limits-in-{deployment,daemonset} exempt the two vendor
+# namespaces, nvidia-gpu-operator and portworx, through the rules' own
+# exemption variables. Every offender there is operator-managed (ClusterPolicy,
+# PureStorageCluster, CSV); setting limits through those CRs is possible but a
+# wrong memory limit OOM-kills the GPU driver or storage CSI, and without
+# persistent metrics there is no usage history to size from. An exception,
+# not a fix: revisit with measured limits once metrics persist. Our own
+# workloads (tlshd, etcd-backup) already set requests and limits.
+#
+# SECOND TAILORING (2026-10-09): ocp4-openshift-api-server-audit-log-path is
+# DISABLED as a scanner false positive -- OCPBUGS-126610. The rule's content
+# reads the openshift-KUBE-apiserver config ConfigMap but expects the
+# openshift-apiserver path, so it fails on every correctly configured
+# cluster. jetty's real setting is correct (openshift-apiserver
+# audit-log-path = /var/log/openshift-apiserver/audit.log), and
+# tests/verify.sh T-03 checks that value directly so the control is still
+# tested. Remove this disableRules entry once the Compliance Operator ships
+# the fixed content (check: the rule passes when re-enabled).
+#
 # Bound in place of the stock platform profiles by 03-scansetting-binding.yaml
 # and 06-nist-moderate-binding.yaml, so the scans are named jetty-ocp4-cis and
 # jetty-ocp4-moderate.
@@ -42,6 +62,13 @@ spec:
   description: >-
     Stock ocp4-cis with the ten GPU Operator and OpenShift Virtualization SCCs
     added to the allowed-capabilities allowlist. See manifest header.
+  disableRules:
+    - name: ocp4-openshift-api-server-audit-log-path
+      rationale: >-
+        Scanner false positive, OCPBUGS-126610: the content checks the
+        kube-apiserver ConfigMap for the openshift-apiserver path. The real
+        openshift-apiserver audit-log-path is set and is verified directly by
+        tests/verify.sh T-03. Re-enable when fixed content ships.
   setValues:
     - name: ocp4-var-sccs-with-allowed-capabilities-regex
       rationale: >-
@@ -61,6 +88,13 @@ spec:
   description: >-
     Stock ocp4-moderate with the ten GPU Operator and OpenShift Virtualization
     SCCs added to the allowed-capabilities allowlist. See manifest header.
+  disableRules:
+    - name: ocp4-openshift-api-server-audit-log-path
+      rationale: >-
+        Scanner false positive, OCPBUGS-126610: the content checks the
+        kube-apiserver ConfigMap for the openshift-apiserver path. The real
+        openshift-apiserver audit-log-path is set and is verified directly by
+        tests/verify.sh T-03. Re-enable when fixed content ships.
   setValues:
     - name: ocp4-var-sccs-with-allowed-capabilities-regex
       rationale: >-
@@ -68,3 +102,19 @@ spec:
         for kernel module loading and device management; namespace-scoped and
         monitored at runtime by ACS. Matched by exact name.
       value: ^privileged$|^hostnetwork-v2$|^restricted-v2$|^restricted-v3$|^nonroot-v2$|^insights-runtime-extractor-scc|^nested-container$|^nvidia-dcgm$|^nvidia-dcgm-exporter$|^nvidia-driver$|^nvidia-gpu-feature-discovery$|^nvidia-mig-manager$|^nvidia-node-status-exporter$|^nvidia-operator-validator$|^nvidia-sandbox-validator$|^nvidia-vgpu-device-manager$|^kubevirt-controller$
+    - name: ocp4-var-deployment-limit-namespaces-exempt-regex
+      rationale: >-
+        E1 (2026-10-09): every deployment lacking requests/limits outside the
+        platform is vendor operator-managed (Portworx operator via its CSV,
+        px-pure-csi-controller via PureStorageCluster). A wrong memory limit on
+        the storage CSI is an outage; usage cannot yet be sized (no metrics
+        persistence). Revisit with measured limits once metrics persist.
+      value: ^nvidia-gpu-operator$|^portworx$
+    - name: ocp4-var-daemonset-limit-namespaces-exempt-regex
+      rationale: >-
+        E1 (2026-10-09): every daemonset lacking requests/limits outside the
+        platform is vendor operator-managed (14 NVIDIA GPU Operator DaemonSets
+        from ClusterPolicy, px-pure-csi-node from PureStorageCluster). A wrong
+        memory limit on the GPU driver or storage CSI node plugin is an
+        outage; usage cannot yet be sized. Revisit with measured limits.
+      value: ^nvidia-gpu-operator$|^portworx$

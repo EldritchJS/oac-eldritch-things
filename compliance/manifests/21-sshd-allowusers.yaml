@@ -1,0 +1,71 @@
+# sshd: allow only the `core` user (800-53 AC-3 / AC-17; closes
+# rhcos4-moderate-{master,worker}-sshd-limit-user-access, the last two node
+# scan failures). The rule has no auto-remediation because user names are
+# site-specific. On RHCOS `core` is the only login account; root login and
+# password authentication are already off (measured 2026-10-09). Console
+# access is unaffected -- this is sshd only.
+#
+# NO REBOOT: by default the MCO reboots for any file it has no policy for,
+# and on 4.22 there is none for /etc/ssh/sshd_config.d/ (measured:
+# machineconfiguration/cluster nodeDisruptionPolicyStatus). The
+# nodeDisruptionPolicy below makes this one file a `systemctl restart
+# sshd` instead. It must be in place BEFORE the MachineConfigs, so apply this
+# file in document order (the MachineConfiguration is first) and check
+# `oc get machineconfiguration cluster -o jsonpath='{.status.nodeDisruptionPolicyStatus}'`
+# lists the path before the MachineConfigs render.
+#
+# Side effect on file integrity monitoring: the drop-in lands in /etc, which
+# AIDE watches. The File Integrity Operator is documented to re-initialise
+# after MCO node updates; this rollout is the first chance to observe it.
+#
+# Rollback: delete the two MachineConfigs (the file is removed with the same
+# sshd restart), then the nodeDisruptionPolicy entry.
+---
+apiVersion: operator.openshift.io/v1
+kind: MachineConfiguration
+metadata:
+  name: cluster
+spec:
+  nodeDisruptionPolicy:
+    files:
+      - path: /etc/ssh/sshd_config.d/10-jetty-allowusers.conf
+        actions:
+          - type: Restart
+            restart:
+              serviceName: sshd.service
+---
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  name: 76-master-sshd-allowusers
+  labels:
+    machineconfiguration.openshift.io/role: master
+spec:
+  config:
+    ignition:
+      version: 3.4.0
+    storage:
+      files:
+        - path: /etc/ssh/sshd_config.d/10-jetty-allowusers.conf
+          mode: 384     # 0600; decimal, since YAML octal parsing varies
+          overwrite: true
+          contents:
+            source: data:,%23%20Managed%20by%20MachineConfig%2076-*-sshd-allowusers%20(compliance%2Fmanifests%2F21-*)%0AAllowUsers%20core%0A
+---
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  name: 76-worker-sshd-allowusers
+  labels:
+    machineconfiguration.openshift.io/role: worker
+spec:
+  config:
+    ignition:
+      version: 3.4.0
+    storage:
+      files:
+        - path: /etc/ssh/sshd_config.d/10-jetty-allowusers.conf
+          mode: 384     # 0600; decimal, since YAML octal parsing varies
+          overwrite: true
+          contents:
+            source: data:,%23%20Managed%20by%20MachineConfig%2076-*-sshd-allowusers%20(compliance%2Fmanifests%2F21-*)%0AAllowUsers%20core%0A

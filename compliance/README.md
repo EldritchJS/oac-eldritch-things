@@ -50,21 +50,22 @@ output for `jetty`. Keep it outside this working tree.
 | Storage | ✅ Working (was broken most of the day; fixed) |
 | GPU — container mode | ✅ Live on `u15` |
 | GPU — VM passthrough | ✅ Live on `u16` |
-| **Cluster hardening** | ✅ **Complete.** 385/385 remediations applied, stage 3 done; node failures 377 → 2 |
+| **Cluster hardening** | ✅ **Complete.** 385/385 remediations applied, stage 3 done; node failures 377 → **0**; platform `ocp4-moderate` 25 → **8**, `ocp4-cis` 10 → **3** — every remaining failure is blocked on others or a documented gap (PLAN.md §7, triage 2026-10-09) |
 | Audit retention | ⚠️ 5.8 h — volume cut 73%, but still no forwarding |
 | Storage encryption | ✅ **All NFS traffic encrypted** — 18/18 PVCs on NFS-over-TLS |
 | CNV golden images | ✅ Fixed — all 6 imported, on encrypted storage |
 | HIPAA (ACS `HIPAA_164`) | ⚠️ 9/18 controls pass (2026-10-08, unchanged by the 4.22.16 upgrade). Egress done (28/31 of ours now pass; 3 are hostNetwork). NVIDIA images now scanned (were never scanned before; the one Critical, CVE-2025-23266, is a scanner false positive). Fixable: ACS notifier. Fixable-CVE controls need a patch cadence, not a fix — [STANDARDS.md](STANDARDS.md) §5 |
 
 The headline: **the cluster is hardened and the GPUs survived it.** Platform
-and node remediation are applied — node failures went **377 → 2** — and both
+and node remediation are applied — node failures went **377 → 0** — and both
 GPU modalities still work after two full rolling reboots. That was the central
 open question and it is now answered with a measurement, not a prediction.
 
 Node hardening is finished: all 385 remediations are applied, and so are the
 three GPU-dangerous manual checks (stage 3, 2026-10-08) — without breaking
-either GPU modality. The two remaining node failures are one rule on both
-pools, `sshd-limit-user-access`, which offers no remediation.
+either GPU modality. The last node rule, `sshd-limit-user-access` (no
+auto-remediation), was closed 2026-10-09 with an `AllowUsers core` drop-in
+rolled out **without a reboot** (`manifests/21-*`).
 
 What remains is not hardening: **audit log forwarding is the one genuinely
 open gap**, followed by the identity provider.
@@ -152,7 +153,7 @@ only high-severity platform finding (`manifests/17-*`).
 
 The RHCOS number looked frightening and mostly was not: 112 of the 191 were
 audit rules, 27 sysctls, 18 kernel modules — bulk, not depth, and nearly all
-auto-remediable. **Node failures went 377 → 2.**
+auto-remediable. **Node failures went 377 → 0.**
 
 Getting there meant 377 MachineConfigs and a rolling reboot of every node, one
 at a time. That was the single biggest operational fact in this document, and
