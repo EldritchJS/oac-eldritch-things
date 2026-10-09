@@ -47,7 +47,7 @@ output for `jetty`. Keep it outside this working tree.
 | FIPS | ✅ Verified at runtime, all 5 nodes |
 | Compliance Operator | ✅ v1.10.0 — CIS and NIST scans running nightly |
 | RHACS (StackRox) | ✅ v4.11.4 — fully deployed, all components healthy |
-| Storage | ✅ Working (was broken most of the day; fixed) |
+| Storage | ✅ Working |
 | GPU — container mode | ✅ Live on `u15` |
 | GPU — VM passthrough | ✅ Live on `u16` |
 | **Cluster hardening** | ✅ **Complete.** 385/385 remediations applied, stage 3 done; node failures 377 → **0**; platform `ocp4-moderate` 25 → **8**, `ocp4-cis` 10 → **3** — every remaining failure is blocked on others or a documented gap (PLAN.md §7, triage 2026-10-09) |
