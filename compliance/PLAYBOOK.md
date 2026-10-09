@@ -1,10 +1,15 @@
 # Playbook: hardening an OpenShift cluster for NIST 800-171, HIPAA and FIPS
 
-*Written from the jetty engagement (2026-10-02 → 2026-10-08) to be reused on
+*Written from the jetty engagement (2026-10-02 → 2026-10-09) to be reused on
 larger clusters. jetty is the worked example; this document is the method.*
 
-Status: **draft, in progress.** Sections marked *(pending)* will be filled as
-the remaining jetty work (audit forwarding, IdP) produces its lessons.
+Status: **draft, reviewed 2026-10-09.** Phase 14 is *pending*: audit
+forwarding, the identity provider and metrics persistence were blocked on
+other people on jetty, and will be written up when they happen.
+
+Where jetty ended (2026-10-09): `ocp4-moderate` 25 → 8, `ocp4-cis` 10 → 3,
+node scans 377 → 0 failures; every remaining failure is blocked on another
+team or is a documented gap. Both GPU modalities intact throughout.
 
 How this relates to the other documents:
 
@@ -28,7 +33,7 @@ a mistake that this engagement either made or nearly made.
 1. **Measure, then change.** Every allow rule, allowlist entry and exception
    on jetty came from a measurement of the live cluster (observed flows, live
    sockets, running images, scheduled pods), not from documentation or
-   expectation. Where we guessed, we were wrong at least once (see §5).
+   expectation. Where we guessed, we were wrong at least once (see §3).
 2. **Design → approve → apply, one change at a time.** Write the change and
    its verification and rollback *before* touching the cluster. Apply in
    ascending order of risk. Verify after each step, not at the end.
@@ -46,15 +51,47 @@ a mistake that this engagement either made or nearly made.
    unencrypted storage.
 6. **Set evidence volumes to `Retain` before anything can delete their
    claims.** Operators delete PVCs as a side effect of renames and
-   migrations (§5).
-7. **A scanner's silence is not a pass.** Check that the tool actually looked:
-   that the scan ran, that the image was scanned, that the check evaluates
-   what you think it does.
+   migrations (§3).
+7. **Scanners are wrong in both directions.** Silence is not a pass: check
+   that the scan ran and the image was actually scanned (jetty's NVIDIA images
+   showed clean for six days because nothing scanned them). And a FAIL is not
+   proof: one high-severity check read the wrong ConfigMap, and a Critical CVE
+   was a Go pseudo-version mis-sorted. Read what each check evaluates.
 8. **Record wrong predictions and failed attempts.** They are the most useful
    content for the next cluster. PLAN.md keeps them in line with the
    successes.
-9. **Public-repo hygiene from day one.** No credentials, no kubeconfigs (`.gitignore` them), internal addresses as ranges or placeholders.
+9. **Public-repo hygiene from day one.** No credentials, no kubeconfigs
+   (`.gitignore` them), internal addresses as ranges or placeholders.
    Hostnames are fine.
+10. **Prefer changes that do not reboot.** Many controls that look like node
+    changes are not: the registry allowlist is a CRI-O reload, and a
+    `nodeDisruptionPolicy` turns a one-file MachineConfig into a service
+    restart. Check `machineconfiguration/cluster` before assuming a reboot.
+
+---
+
+## Checklist
+
+One line per phase; the detail is in §2. "Done when" is the evidence, not
+the action.
+
+| Phase | Done when | jetty |
+|---|---|---|
+| 0 Decisions before install | FIPS on at install; storage proven with a real DB; scope, IdP and log/alert destination have owners | IdP and destination were not owned → longest-blocked items |
+| 1 Tools | Scans `DONE`, ARF on Retain PVs, ACS all `HEALTHY` | ✓ |
+| 2 Baseline + harness | Fail counts recorded; `verify.sh` green; HIPAA_164 run once | ✓ |
+| 3 Platform remediation | Rescan shows the 6 rules PASS; audit volume measured and tuned | ✓ 22 min, no reboot |
+| 4 Node hardening | Node failures only the manual rules; GPUs re-verified | ✓ 377 → 4, two rounds |
+| 5 Storage encryption | Packet capture shows no plaintext; no cleartext mounts on any node | ✓ 18/18 PVCs |
+| 6 Workload-dangerous checks | Each applied singly with an uncached pull / GPU check after | ✓ (signature policy reverted) |
+| 7 NetworkPolicies | Each namespace proven by a restarted pod doing its job, incl. builds/jobs | ✓ (builds missed, fixed later) |
+| 8 Backups | Freshness test; restore rehearsed; off-array copy | ✓ except off-array |
+| 9 HIPAA in ACS | Every registry scanned; findings split ours/platform; notifier | ✓ except notifier |
+| 10 Upgrades | Before/after `verify.sh` identical; rescans; pinned digests refreshed | ✓ 4.22.14 → .16 |
+| 11 TLS posture | Handshake probes on every endpoint (T-15) | ✓ no change needed |
+| 12 File integrity | Canary detected, alert fired, per-node re-init clean | ✓ (no receiver) |
+| 13 Triage | Every remaining failure is fixed, an exception with rationale, or blocked with an owner | ✓ moderate 13 → 8 |
+| 14 Identity, logging, metrics | — | pending |
 
 ---
 
@@ -81,7 +118,7 @@ does, how to verify it, how to roll it back, and what it cost on jetty.
    encrypted storage and whose PVs are `Retain`. Raw ARF results are the
    audit evidence.
 2. RHACS (Central + SecuredCluster). Pin Central's DBs to encrypted storage
-   from the start (§5, "ACS operator").
+   from the start (§3, "Operators and OLM").
 3. Bind the profiles: `ocp4-cis`, `ocp4-moderate`, `rhcos4-moderate` (800-171
    maps to 800-53 Moderate; neither tool ships an 800-171 profile). HIPAA is
    ACS's `HIPAA_164` standard.
@@ -131,14 +168,16 @@ Several hundred MachineConfigs (377 on jetty).
   passthrough breaks.
 
 jetty: ~2 h per round on 5 nodes. One node went Degraded mid-run and
-recovered on its own (normal MCO drain retry). Node failures 377 → 4.
+recovered on its own (normal MCO drain retry). Node failures 377 → 4; the
+registry allowlist (Phase 6) took it to 2 and `sshd AllowUsers` (Phase 13)
+to 0.
 
 ### Phase 5 — Storage encryption in transit
 
 See NFS-TLS.md for the full procedure. Points to copy:
 
 - The handshake daemon (`tlshd`) runs on **every node that can mount
-  storage**, including masters (§5).
+  storage**, including masters (§3, "Storage").
 - The array certificate needs an **IP SAN** if mounted by IP.
 - Prove with a packet capture containing a canary string, not by the mount
   succeeding.
@@ -155,14 +194,15 @@ the analysis. In order:
    exactly. Record the exception honestly in the SSP (`allowedCapabilities:
    ['*']` is every capability). Binding a TailoredProfile **renames the
    scans**, which garbage-collects old remediation objects and **deletes old
-   result PVCs** (§5).
+   result PVCs** (§3, "Compliance Operator").
 2. **Registry allowlist** (`image.config` `allowedRegistries`). Inventory from
    *everything* that can pull: running pods, CronJobs, scaled-to-zero
    workloads, CSV `relatedImages`, ImageStreams, BuildConfigs. On 4.22 this is
    a CRI-O reload, not a reboot. The same change satisfies
    `reject-unsigned-images-by-default`.
 3. **Signature verification** (`ClusterImagePolicy`). Test with a real
-   uncached pull through CRI-O before trusting it (§5, NVIDIA).
+   uncached pull through CRI-O before trusting it (§3, "Images and
+   signatures").
 
 ### Phase 7 — NetworkPolicies, ingress then egress
 
@@ -177,7 +217,9 @@ the analysis. In order:
    egress after Service DNAT); DNS is 53 anywhere plus 5353 to
    `openshift-dns`. Copy `manifests/18-*`.
 4. Apply one namespace at a time, least critical first, and prove each with a
-   restarted pod doing its real job.
+   restarted pod doing its real job. Include the workloads that are *not*
+   running at the time — builds, Jobs, CronJobs. jetty's egress policy
+   silently broke in-cluster image builds two days later.
 5. Internet egress stays only where unavoidable (ACS feeds, registry scans).
    NetworkPolicy cannot match hostnames; an `EgressFirewall` with `dnsName`
    rules can narrow it later.
@@ -219,7 +261,13 @@ specific documents).
 2. Run `HIPAA_164`; split findings into ours vs platform (`openshift-*` is
    most of the raw count and is Red Hat's to own).
 3. Attach a **notifier** to policies once a destination exists.
-4. Treat "fixable CVEs" as a standing condition (§4).
+4. Treat "fixable CVEs" as a standing condition (§4). Scope an alerting
+   policy to the images *you build* — the cluster-wide default is mostly
+   vendor images you cannot rebuild (187 violations, 164 platform). Keep it
+   as code (`SecurityPolicy` CR, synced by ACS's config-controller).
+5. Record scanner false positives as ACS vulnerability exceptions with the
+   reasoning (not by deleting findings). ACS lets one account request and
+   approve; separation of duties needs real user accounts.
 
 ### Phase 10 — Upgrades are compliance events
 
@@ -233,7 +281,7 @@ control:
    the pre-upgrade run, **rescan** and compare fail counts, re-run
    `HIPAA_164`.
 5. Re-check FIPS module versions against CMVP certificates (versions change
-   with RHCOS).
+   with RHCOS); T-02 WARNs until the record is re-reviewed (§4).
 6. **Refresh every image pinned by digest to the release payload** (on
    jetty: the etcd-backup job's `cli` image, from `oc adm release info
    --image-for=cli`). The old image keeps working, which is why this is easy
@@ -277,6 +325,8 @@ Hardening guides say "pin `Modern` or a `Custom` TLS profile". Measure first:
    (`file-integrity.openshift.io/re-init=<node>`) must clear it. jetty:
    baselines 1–2 min per node, detection within one scan interval (15 min)
    plus the alert delay.
+   MachineConfig rollouts need no manual step: the operator re-initialised
+   every node by itself after an MCO update (observed on jetty).
 4. The compliance check for notification passes when the alert rule
    exists. Wire an Alertmanager receiver, or the alert reaches nobody.
 
@@ -306,9 +356,11 @@ moderate 13 → 8 and the node scans to 0 in an afternoon:
 ### Phase 14 — Remaining controls *(pending)*
 
 Metrics persistence (another team's decision on jetty), audit forwarding,
-identity provider and kubeadmin removal. To be written as jetty does them. The one
-ordering rule already known: **an IdP must be working and tested before
-kubeadmin is removed**, or the cluster is locked out.
+identity provider and kubeadmin removal, route IP allowlists (need the
+users' source ranges), and an egress proxy if one is required. To be written
+as jetty does them. The one ordering rule already known: **an IdP must be
+working and tested before kubeadmin is removed**, or the cluster is locked
+out. Sizing data for the audit and metrics destinations is in §5.
 
 ---
 
@@ -321,6 +373,12 @@ outage.
 
 - **Rescan polling:** wait for a new `endTimestamp` later than the trigger,
   not for phase `DONE` — the old scan is already `DONE`.
+- **Rescan the `ComplianceScan`, not the `ComplianceSuite`.** The rescan
+  annotation on a suite is accepted and silently ignored.
+- **Content bugs exist.** `openshift-api-server-audit-log-path` reads the
+  kube-apiserver ConfigMap (OCPBUGS-126610) and cannot pass. Disable such a
+  rule in the TailoredProfile with the bug as rationale, test the real value
+  yourself, and re-check after each Compliance Operator upgrade.
 - **TailoredProfiles rename scans.** Old `ComplianceRemediation` objects are
   garbage-collected (settings stay applied — they have no finalizers) and old
   result PVCs are deleted. Set PVs to `Retain` first.
@@ -418,8 +476,10 @@ outage.
   behind explicit flags.
 - **Node selection in tests.** A test that cordons or drains must check what
   it will evict (ACS Central lived on a GPU node).
-- **Shell traps:** quote anything with `[` or `?` under zsh (glob); avoid
-  relying on word-splitting in zsh; URL-encode ACS query parameters.
+- **Shell traps:** quote anything with `[` or `?` under zsh (glob); zsh does
+  not word-split `$VAR`, so `for s in $S` iterates once over the whole string
+  (a rescan "ran" against a scan that does not exist) — use bash for loops;
+  macOS has no `timeout`; URL-encode ACS query parameters.
 - **Harness scripts can pass by doing nothing.** `oc exec pod -- bash -s
   <<EOF` without `-i` runs an empty script and exits 0; `grep -q`/`grep -m1`
   under `pipefail` fail a pipeline that matched. Make each remote block print
@@ -437,6 +497,8 @@ Some controls are never "done":
 | FIPS module validation | CMVP certificates name module versions, which change with RHCOS, and validation lags releases by a year or more. A security fix to a certified module yields an uncertified binary until revalidation. | Record per upgrade which modules are certified for the RHEL minor OpenShift maps to, compare the *running* module version (`openssl list -providers`), and state "validation in process" plainly in the SSP. jetty: [tests/fips-cmvp-certificates.md](tests/fips-cmvp-certificates.md), checked by T-02. |
 | Scan freshness | Results describe the cluster at scan time. | Nightly scans + T-03 freshness test. |
 | Backup freshness | — | T-14 freshness test, periodic restore test. |
+| File integrity baseline | Every intended change to watched paths (e.g. a GPU modality switch touching `/etc/crio`) reports as a change. | Re-init the node after intended changes; investigate everything else. T-16. |
+| Disabled / exempted rules | Content gets fixed; vendors start setting limits. | Re-check each tailoring's revisit condition after Compliance Operator and vendor operator upgrades. |
 
 ---
 
@@ -446,7 +508,9 @@ jetty is 3 masters + 2 GPU workers. What changes on a larger cluster:
 
 | Area | jetty | Larger cluster |
 |---|---|---|
-| Node hardening rollout | ~2 h per round, one node at a time | Raise `maxUnavailable` per pool deliberately; budget for PodDisruptionBudgets; schedule maintenance windows per pool. |
+| Node hardening rollout | ~2 h per round, one node at a time | Raise `maxUnavailable` per pool deliberately; budget for PodDisruptionBudgets; schedule maintenance windows per pool. Add `nodeDisruptionPolicy` entries so later single-file changes restart a service instead of rebooting every node. |
+| Quotas | 7 namespaces, counts + storage | Per-tenant quotas from a template; cpu/memory quotas only where every pod declares requests (enforce that with a LimitRange first). |
+| File integrity | AIDE on 5 nodes, manual re-init | Script the per-node re-init into the procedures that intentionally change watched files (modality switches, manual fixes); alert routing is mandatory at scale. |
 | Scope | Whole cluster | Separate MachineConfigPools for in-scope vs general workers become meaningful; the control plane stays in scope regardless. Unhardened tenants belong on another cluster. |
 | Audit volume | 24.7 GB/day after tuning | Scales with API traffic, mostly operators. Tune `customRules` early; size the forwarding destination from measured bytes. |
 | NetworkPolicies | 7 namespaces, hand-derived | Template per tenant (default-deny + API/DNS + same-namespace) and derive the exceptions from ACS's graph per namespace; consider `AdminNetworkPolicy` for cluster-wide baselines. |
@@ -497,3 +561,7 @@ What it does produce is the technical evidence they cite: scan results,
 | etcd backup | 24 s | none |
 | etcd restore rehearsal (restore 2 s, serving 3 s) | ~55 s | one temporary pod |
 | ACS `HIPAA_164` run | 6 s | none |
+| One-file MachineConfig with `nodeDisruptionPolicy` (sshd) | ~3 min, both pools | sshd restart, no reboot |
+| File Integrity Operator: install → first clean scan | ~1 min install, 1–2 min baselines, first scan at +15 min | none |
+| FIM canary → alert firing | ~17.5 min (scan interval + alert delay) | none |
+| Own-image rebuild (`tlshd`) → rollout to 5 nodes | ~8 min build, ~5.5 min rollout | storage handshakes briefly per node; live sessions unaffected |
