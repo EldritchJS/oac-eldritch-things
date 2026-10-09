@@ -17,8 +17,8 @@ compliant `jetty` — it is **transferable method**: measured numbers, reusable
 manifests and scripts, and a written record of the traps, so the clusters that
 matter don't have to rediscover them.
 
-Experiments that are expensive on a production GPU cluster are cheap here. Run
-them here, write down what happened.
+Experiments that are expensive on a production GPU cluster are cheaper here. We run
+them here and note what happened.
 
 ## Conventions
 
