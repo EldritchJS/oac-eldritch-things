@@ -438,6 +438,7 @@ automated way to prove it still works on the other side.
 | [PLAYBOOK.md](PLAYBOOK.md) | **The method, generalised** — order of operations, cautions, scaling beyond jetty |
 | [NFS-TLS.md](NFS-TLS.md) | Storage encryption in transit (closed 2026-10-07) — the gap, the evidence, the fix |
 | [PATCHING.md](PATCHING.md) | Patch cadence — draft SSP text, current state, ACS policy proposal |
+| [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md) | Exception register for every privileged / host-access workload and wildcard-RBAC operator |
 | `manifests/` | Everything applied, in numeric order |
 | [tests/README.md](tests/README.md) | **Verification suite** — run before and after hardening |
 | `remediate.sh` | **Staged hardening runbook** — `status`, `stage1`, `stage2`, all with `--dry-run` |

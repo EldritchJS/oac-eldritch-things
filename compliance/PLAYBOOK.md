@@ -22,6 +22,7 @@ How this relates to the other documents:
 | [FEASIBILITY.md](FEASIBILITY.md) | GPU × compliance interaction; the GPU-dangerous checks. |
 | [NFS-TLS.md](NFS-TLS.md) | Storage encryption in transit, end to end. |
 | [PATCHING.md](PATCHING.md) | Patch cadence: draft SSP text, current state, ACS policy proposal. |
+| [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md) | Exception register for privileged workloads and wildcard-RBAC operators. |
 
 ---
 
@@ -352,6 +353,11 @@ moderate 13 → 8 and the node scans to 0 in an afternoon:
   cannot safely change, with a rationale and a revisit condition.
 - **Do not tailor away real gaps** (no egress proxy): leave them failing and
   documented.
+- **Write the privileged-workload register from a measurement**, not from
+  the ACS alert list: enumerate privileged/host-namespace/hostPath pods with
+  their admitting SCC, and every wildcard ClusterRoleBinding to a service
+  account. On jetty this surfaced findings no alert names — an operator
+  allowed to `use` any SCC, and pods admitted under another vendor's SCC.
 
 ### Phase 14 — Remaining controls *(pending)*
 

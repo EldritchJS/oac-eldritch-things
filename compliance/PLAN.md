@@ -688,6 +688,18 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
     forwarding (2 moderate + 1 CIS), IdP (1+1), kubeadmin (1+1), ingress
     certificate and CA (2, need the organisation's CA).
 
+- **Privileged-workload exception register 2026-10-09**
+  ([PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md)): nine entries — our
+  `tlshd`, its builds, `etcd-backup`, AIDE; ACS collector; the NVIDIA stack
+  (14 DaemonSets); Portworx CSI node; and the two operators with
+  cluster-wide `*` RBAC (`portworx-operator`, `rhacs-operator`). Each has
+  why / what it touches / compensating controls / revisit. New findings
+  recorded there: the GPU operator's (and NFD's) ClusterRole may `use` any
+  SCC, and `nvidia-node-status-exporter` runs under OpenShift
+  Virtualization's `linux-bridge` SCC (most-restrictive-match across
+  vendors; not an escalation). Recommendation: no ACS exclusions; route only
+  runtime and our-images policies once a destination exists.
+
 ### Standards confirmed: NIST 800-171 + HIPAA + FIPS
 
 Full mapping, baseline results, FIPS 140-3 position, and the mixed-VM-tenancy
