@@ -700,6 +700,15 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
   vendors; not an escalation). Recommendation: no ACS exclusions; route only
   runtime and our-images policies once a destination exists.
 
+- **No GPU claimed — checked and guarded 2026-10-09** (GPUs are billed while
+  claimed). Both GPU nodes 0/4 allocated; no pod, workload template, Job,
+  CronJob or VM requests an `nvidia.com/*` resource; everything on u15/u16
+  is cluster infrastructure. New `verify.sh` T-17 (`lib/gpu-claims.py`)
+  FAILs on any claim or latent claim; `GPU_CLAIM_ALLOW_NS` for approved
+  namespaces. Negative-tested offline. Not done (would need approval):
+  dropping the `vms-test` GPU quota to 0 and an admission policy rejecting
+  GPU requests outside an allowlist.
+
 ### Standards confirmed: NIST 800-171 + HIPAA + FIPS
 
 Full mapping, baseline results, FIPS 140-3 position, and the mixed-VM-tenancy

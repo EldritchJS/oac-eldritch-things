@@ -637,13 +637,51 @@ run_t16() {
     || bad "PrometheusRule file-integrity missing"
 }
 
+# --------------------------------------------------------------- T-17 ------
+# No GPU claimed (billing). GPUs on MOC are charged while claimed by user
+# pods, so any claim -- or anything that could claim one later (a template
+# scaled to zero, a CronJob, a VM with a GPU) -- FAILs unless its namespace
+# is listed in GPU_CLAIM_ALLOW_NS (regex), which downgrades it to WARN.
+# Also cross-checks each GPU node's own allocation count.
+# Logic: ../lib/gpu-claims.py.
+run_t17() {
+  hdr "T-17  No GPU claimed or requested (billing)"
+  local d pods wl vms out n alloc
+  d=$(mktemp -d); pods="$d/pods.json"; wl="$d/wl.json"; vms="$d/vms.json"
+  oc get pods -A -o json > "$pods" 2>/dev/null \
+    && oc get deploy,sts,ds,rs,job,cronjob -A -o json > "$wl" 2>/dev/null \
+    || { bad "could not list pods/workloads"; rm -rf "$d"; return; }
+  oc get vm,vmi -A -o json > "$vms" 2>/dev/null || echo '{"items":[]}' > "$vms"
+
+  out=$(python3 ../lib/gpu-claims.py "$pods" "$wl" "$vms" "${GPU_CLAIM_ALLOW_NS:-}")
+  rm -rf "$d"
+  if [ -z "$out" ]; then
+    ok "no pod, workload template or VM requests a GPU"
+  else
+    while IFS=$'\t' read -r lvl what detail; do
+      case "$lvl" in
+        FAIL) bad "GPU requested: $what — $detail" ;;
+        *)    warn "GPU requested (allowed/transient): $what — $detail" ;;
+      esac
+    done <<< "$out"
+  fi
+
+  # The nodes' own view: allocated nvidia.com/* per GPU node, from kubelet's
+  # accounting (describe), independent of the pod scan above.
+  for n in $(oc get nodes -l nvidia.com/gpu.present=true -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+    alloc=$(oc describe node "$n" 2>/dev/null | sed -n '/Allocated resources/,/Events/p' \
+      | awk '$1 ~ /^nvidia\.com\// && $2 != "0" {printf "%s=%s ", $1, $2}')
+    [ -z "$alloc" ] && ok "$n: 0 GPUs allocated" || bad "$n: GPUs allocated: $alloc"
+  done
+}
+
 # ---------------------------------------------------------------- main -----
 command -v oc >/dev/null || { echo "oc not found" >&2; exit 2; }
 oc whoami >/dev/null 2>&1 || { echo "not logged in (set KUBECONFIG)" >&2; exit 2; }
 
 printf '%sjetty verification%s  —  %s  —  %s\n' "$B" "$N" "$(oc whoami --show-server)" "$(date -u '+%Y-%m-%d %H:%M UTC')"
 
-ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12 t13 t14 t15 t16"
+ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12 t13 t14 t15 t16 t17"
 RUN="${ONLY:-$ALL}"
 for t in ${RUN//,/ }; do
   if declare -f "run_$t" >/dev/null; then "run_$t"; else echo "no such test: $t" >&2; fi
