@@ -629,6 +629,10 @@ tenant. Rationale and the alternatives considered: STANDARDS.md §4.
    upgrade did that and the count did not move (STANDARDS.md §5). What
    remains to decide is a **patch cadence** to write into the SSP, and
    whether to add an ACS policy enforcing a severity floor on *our* images.
+   **Drafted 2026-10-08: [PATCHING.md](PATCHING.md)** — day counts to
+   decide, a scoped ACS policy and an exception to approve. Found on the
+   way: our own `tlshd` image has a fixable Important openssl CVE
+   (CVE-2026-84782); rebuild proposed there.
 3. ~~CVE-2025-23266 / -23267 in `mig-parted`~~ **False positive, resolved
    2026-10-08.** ACS matched a Go pseudo-version (`v0.0.0-20260921…`, a
    2026 commit) as older than the fixed 0.12.2. Remaining step: record an

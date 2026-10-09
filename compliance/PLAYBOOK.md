@@ -16,6 +16,7 @@ How this relates to the other documents:
 | [STANDARDS.md](STANDARDS.md) | Framework mapping, FIPS position, scope, HIPAA results. |
 | [FEASIBILITY.md](FEASIBILITY.md) | GPU × compliance interaction; the GPU-dangerous checks. |
 | [NFS-TLS.md](NFS-TLS.md) | Storage encryption in transit, end to end. |
+| [PATCHING.md](PATCHING.md) | Patch cadence: draft SSP text, current state, ACS policy proposal. |
 
 ---
 
@@ -361,7 +362,7 @@ Some controls are never "done":
 
 | Control | Why it never reaches zero | What satisfies it |
 |---|---|---|
-| HIPAA 306(e), 308(a)(6)(ii) — fixable CVEs | ACS calls a CVE fixable if *any* newer component version exists upstream. Each vendor release refills the count. | A written patch cadence, evidence of following it (each upgrade's before/after runs), optionally an ACS policy on images *we* build. |
+| HIPAA 306(e), 308(a)(6)(ii) — fixable CVEs | ACS calls a CVE fixable if *any* newer component version exists upstream. Each vendor release refills the count. | A written patch cadence, evidence of following it (each upgrade's before/after runs), and an ACS policy scoped to images *we* build, since those are the only ones we can rebuild. Template: [PATCHING.md](PATCHING.md). Split the timelines by class (platform, operators, own images) — the remedies differ. |
 | FIPS module validation | CMVP certificates name module versions, which change with RHCOS. | Re-check per upgrade. |
 | Scan freshness | Results describe the cluster at scan time. | Nightly scans + T-03 freshness test. |
 | Backup freshness | — | T-14 freshness test, periodic restore test. |
