@@ -324,7 +324,8 @@ digest stalled at the enricher's "Getting metadata" step for 25+ minutes,
 three times, with Central holding an established connection to GitHub's
 registry; other scans (cached Red Hat image, 2 s) worked meanwhile. So the
 hang is per-image metadata fetch with no client-side timeout, not a
-blocked network. Not restarted this time; see PATCHING.md §3.
+blocked network. Not restarted this time: it completed on its own after
+~3 h (04:15Z). So waiting works; a restart is the faster fix.
 
 **Incident during this work:** before the integration could be tested,
 Central stopped answering image scans and integration changes (reads still

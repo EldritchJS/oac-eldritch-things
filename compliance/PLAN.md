@@ -611,9 +611,35 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
   fresh TLS mount on u16 OK. Took three builds: (1) the new `nfs-tls`
   default-deny egress blocked builds — `allow-egress-builds` added to
   `manifests/18-*`; (2) a plain rebuild kept the stale `ubi9:latest`
-  openssl — Dockerfile now runs `dnf upgrade`; (3) fixed. **ACS has not
-  yet rescanned the new digest** (Central stalls fetching ghcr metadata,
-  no network cause), so its alerts stay active until it does.
+  openssl — Dockerfile now runs `dnf upgrade`; (3) fixed. ACS stalled
+  fetching the new digest's metadata from ghcr for ~3 h (no network
+  cause), then scanned it at 04:15Z on its own; the fixable-CVE alerts
+  cleared. `verify.sh` afterwards: **58 PASS / 0 FAIL / 2 WARN**.
+
+- **File integrity monitoring 2026-10-09** (SI-7; `manifests/20-*`). File
+  Integrity Operator v1.5.0 (FIPS-annotated), AIDE on **all 5 nodes**
+  (the default is workers only), default config: `/boot`, `/root`, `/usr`,
+  `/etc`, sha512. Baselines built in 1–2 min per node; first scans clean.
+  `jetty-ocp4-moderate` 15 → **13** (`file-integrity-exists`,
+  `file-integrity-notification-enabled`). No reboots.
+
+  **Proven by canary, not by object state:** a file written to `/etc` on
+  master `s1a` at 12:02Z → AIDE reported exactly that one added file;
+  `NodeHasIntegrityFailure` fired at 12:19:57Z (scan interval + alert
+  delay); Alertmanager held it; T-16 FAILed. Canary removed, `s1a`
+  re-initialised alone via the per-node re-init annotation; next scan
+  clean, alert resolved. `verify.sh` **61 PASS / 0 FAIL / 2 WARN**;
+  baseline re-saved.
+
+  Known limits: (a) the notification rule passes on the alert rule
+  *existing* — Alertmanager has no receiver, so an alert reaches nobody
+  until the destination exists (PLAN.md Open #1). (b) The GPU toolkit's
+  `/etc/crio/crio.conf.d/99-nvidia.conf` is deliberately watched; if a
+  modality switch adds or removes it, re-init that node afterwards. Not
+  yet observed — check at the next switch. (c) The operator's re-init after
+  MachineConfig rollouts is documented, not yet observed on jetty. (d) The
+  AIDE DaemonSet is privileged with host `/` mounted: another ACS
+  exception to document.
 
 ### Standards confirmed: NIST 800-171 + HIPAA + FIPS
 

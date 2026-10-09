@@ -566,13 +566,45 @@ run_t15() {
   done
 }
 
+# --------------------------------------------------------------- T-16 ------
+# File integrity monitoring (SI-7). The two compliance rules only check that
+# a FileIntegrity object and its PrometheusRule EXIST; this checks AIDE is
+# actually running and clean on every node. A Failed node means a watched
+# file under /boot, /root, /usr or /etc changed since the baseline -- an
+# intended change (GPU modality switch, manual fix) needs a re-init, anything
+# else needs investigating. Manifest: ../manifests/20-file-integrity.yaml.
+run_t16() {
+  hdr "T-16  File integrity monitoring on every node (SI-7)"
+  local ns=openshift-file-integrity phase nodes n res bad_nodes=""
+  phase=$(jp fileintegrity all-nodes "$ns" '{.status.phase}')
+  if [ -z "$phase" ]; then
+    bad "no FileIntegrity 'all-nodes' in $ns — no file integrity monitoring"
+    return
+  fi
+  [ "$phase" = Active ] && ok "FileIntegrity all-nodes Active" || bad "FileIntegrity all-nodes phase '$phase'"
+  nodes=$(oc get nodes -o jsonpath='{.items[*].metadata.name}')
+  for n in $nodes; do
+    res=$(oc get fileintegritynodestatuses -n "$ns" -o jsonpath="{.items[?(@.nodeName==\"$n\")].lastResult.condition}" 2>/dev/null)
+    case "$res" in
+      Succeeded) ;;
+      "")        bad_nodes="$bad_nodes $n(no-result)" ;;
+      *)         bad_nodes="$bad_nodes $n($res)" ;;
+    esac
+  done
+  [ -z "$bad_nodes" ] && ok "AIDE clean on all $(echo $nodes | wc -w | tr -d ' ') nodes" \
+    || bad "AIDE not clean:$bad_nodes — oc get fileintegritynodestatuses -n $ns"
+  jp prometheusrule file-integrity "$ns" '{.metadata.name}' | grep -q . \
+    && ok "alert rule file-integrity present (NB: Alertmanager has no receiver yet)" \
+    || bad "PrometheusRule file-integrity missing"
+}
+
 # ---------------------------------------------------------------- main -----
 command -v oc >/dev/null || { echo "oc not found" >&2; exit 2; }
 oc whoami >/dev/null 2>&1 || { echo "not logged in (set KUBECONFIG)" >&2; exit 2; }
 
 printf '%sjetty verification%s  —  %s  —  %s\n' "$B" "$N" "$(oc whoami --show-server)" "$(date -u '+%Y-%m-%d %H:%M UTC')"
 
-ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12 t13 t14 t15"
+ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12 t13 t14 t15 t16"
 RUN="${ONLY:-$ALL}"
 for t in ${RUN//,/ }; do
   if declare -f "run_$t" >/dev/null; then "run_$t"; else echo "no such test: $t" >&2; fi

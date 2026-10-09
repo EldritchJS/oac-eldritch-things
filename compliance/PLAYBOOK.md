@@ -260,7 +260,26 @@ Hardening guides say "pin `Modern` or a `Custom` TLS profile". Measure first:
    support. Adopt it when a requirement names TLS 1.3, after inventorying
    clients — not by default.
 
-### Phase 12 — Remaining controls *(pending)*
+### Phase 12 — File integrity monitoring (SI-7)
+
+1. Install the File Integrity Operator; create **one FileIntegrity for all
+   nodes** — its default nodeSelector is workers only, and masters hold
+   etcd, the API server and the audit logs. Tolerate the master taint.
+2. Start from the operator's default AIDE config (`/boot`, `/root`, `/usr`,
+   `/etc`; `/var` and platform-rewritten `/etc` paths excluded). Before
+   tailoring, inventory what your add-ons write to the host: on jetty the
+   GPU toolkit writes a CRI-O drop-in under `/etc/crio`. Keep such files
+   watched — runtime config is what an attacker would change — and
+   re-initialise the node after an intended change instead.
+3. Prove it with a canary file in `/etc` on one node: the node must report
+   exactly that file, the alert must fire, and a per-node re-init
+   (`file-integrity.openshift.io/re-init=<node>`) must clear it. jetty:
+   baselines 1–2 min per node, detection within one scan interval (15 min)
+   plus the alert delay.
+4. The compliance check for notification passes when the alert rule
+   exists. Wire an Alertmanager receiver, or the alert reaches nobody.
+
+### Phase 13 — Remaining controls *(pending)*
 
 Metrics persistence (another team's decision on jetty), audit forwarding,
 identity provider and kubeadmin removal. To be written as jetty does them. The one
@@ -299,6 +318,13 @@ outage.
   (no `size`/`storageClassName`); renaming the DB claim orphans its backup
   PVC; Helm-reconciled PVCs need Helm ownership labels and annotations.
   NFS-TLS.md has the exact errors.
+- **Operators installed for all namespaces copy their CSV into every
+  namespace.** A wait loop on "any CSV Succeeded" in a new namespace
+  returns at once on the copy. Select the CSV by name or display name.
+- **Server-side dry run cannot validate objects in a namespace the same
+  file creates** (and cannot validate a CR whose CRD the operator has not
+  installed yet). Apply namespace → OperatorGroup/Subscription → wait for
+  the CSV → custom resources.
 
 ### Networking
 

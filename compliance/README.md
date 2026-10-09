@@ -192,8 +192,9 @@ The scans flag configuration. These are real and mostly invisible to them:
   ~~No default-deny network policies~~ — ✅ ingress and egress default-deny
   since 2026-10-08; internet egress only for ACS's vulnerability feeds.
   ~~TLS profile unset~~ — ✅ measured instead of changed: FIPS already limits
-  every endpoint to TLS 1.3 / 1.2 AES-GCM (`verify.sh` T-15). Still no file
-  integrity monitoring. Image signing is **partial**: pulls are restricted to 8
+  every endpoint to TLS 1.3 / 1.2 AES-GCM (`verify.sh` T-15).
+  ~~No file integrity monitoring~~ — ✅ AIDE on all nodes since 2026-10-09,
+  canary-tested (`verify.sh` T-16); alerts have no receiver yet. Image signing is **partial**: pulls are restricted to 8
   registries, but only the OpenShift release images are signature-verified
   (NVIDIA's index-only signing defeats CRI-O enforcement — see §6).
 

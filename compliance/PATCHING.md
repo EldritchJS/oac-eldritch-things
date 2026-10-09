@@ -133,6 +133,11 @@ alerts on `nfs-tls` stay active until Central scans the new digest. The
 previous build's image (`tlshd-6`) scanned fine on a second try, so this is
 intermittent rather than ghcr being unreachable.
 
+**Resolved without intervention:** Central completed the scan at 04:15Z
+(~3 h after the first attempt, no restart) and both fixable-CVE alerts on
+`nfs-tls` cleared. Class (c) cycle closed: found 2026-10-08 14:51Z, fixed
+in production 01:56Z, confirmed by ACS 04:15Z.
+
 Note: the ACS image *list* endpoint reported `fixableCves: 0` for this image
 while the image detail and the alert both show two fixable rows. Read the
 detail or the alerts, not the list summary.

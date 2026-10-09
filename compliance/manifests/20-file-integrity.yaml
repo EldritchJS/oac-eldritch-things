@@ -1,0 +1,97 @@
+# File integrity monitoring (800-53 SI-7, SI-7(1); 800-171 3.14.1/3.14.6/3.14.7)
+# via the File Integrity Operator, which runs AIDE on every node.
+# Applied 2026-10-09 11:43Z. Proven by a canary (PLAN.md §7): a file written
+# to /etc on a master was reported by AIDE as the only change, the alert
+# fired ~17.5 min later (one scan interval + the rule's `for`), and a
+# per-node re-init cleared it. tests/verify.sh T-16 guards it.
+#
+# RE-INIT ONE NODE after an intended change (e.g. a GPU modality switch):
+#   oc annotate fileintegrity all-nodes -n openshift-file-integrity \
+#     file-integrity.openshift.io/re-init=<node-name> --overwrite
+# Only that node re-initialises; the operator removes the annotation.
+#
+# APPLY ORDER: namespace/OperatorGroup/Subscription first, wait for the CSV,
+# then the FileIntegrity (its CRD comes with the operator). A server-side
+# dry run of the whole file fails: objects in a not-yet-created namespace.
+#
+# Closes jetty-ocp4-moderate:
+#   file-integrity-exists                  (a FileIntegrity object exists)
+#   file-integrity-notification-enabled    (the operator's `file-integrity`
+#                                           PrometheusRule exists)
+# The second passes on the rule EXISTING. Alertmanager has no receiver on
+# jetty, so the NodeHasIntegrityFailure alert reaches nobody until the
+# alert destination exists (same open decision as audit forwarding, PLAN.md
+# Open #1). Say so in the SSP.
+#
+# WHAT AIDE WATCHES (operator default config, kept as-is to start):
+# /boot, /root, /usr, /etc on the host, sha512 content + perms/owner/SELinux.
+# /var is excluded, as are /etc paths the platform rewrites (kubernetes
+# manifests, CNI, machine-config-daemon, NFD features, compliance-operator).
+# The database lives on each host at /etc/kubernetes/aide.db.gz (excluded).
+#
+# EXPECTED NOISE, measured before applying:
+#   - /etc/crio/crio.conf.d/99-nvidia.conf -- written by the GPU toolkit on
+#     container-mode nodes. Deliberately NOT excluded: it configures the
+#     container runtime's NVIDIA hooks, exactly the kind of file whose
+#     tampering matters. If a modality switch adds/removes it, the node
+#     reports a change; re-initialise that node's database after an
+#     intended switch (see PLAN.md), rather than blinding AIDE to it.
+#   - MachineConfig rollouts rewrite /etc. The operator is documented to
+#     re-initialise after MCO node updates; verify at the next MC change.
+#
+# Scope: ALL nodes. The FileIntegrity default nodeSelector is workers only;
+# masters hold etcd, the API server and the audit logs, so they are in.
+#
+# FIPS: the CSV is annotated fips-compliant; AIDE uses sha512.
+# No reboots; no node config change. The DaemonSet is privileged and mounts
+# host / read-only -- another entry for the ACS exception list.
+#
+# Rollback: oc delete fileintegrity --all -n openshift-file-integrity, then
+# delete the Subscription, CSV and namespace. The per-host
+# /etc/kubernetes/aide.* files remain and can be removed by hand.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-file-integrity
+  labels:
+    openshift.io/cluster-monitoring: "true"    # platform Prometheus loads its alert rule
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: file-integrity-operator
+  namespace: openshift-file-integrity
+spec:
+  targetNamespaces:
+    - openshift-file-integrity
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: file-integrity-operator
+  namespace: openshift-file-integrity
+spec:
+  channel: stable
+  name: file-integrity-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Automatic     # same as the other 7 operators (PATCHING.md class b)
+---
+apiVersion: fileintegrity.openshift.io/v1alpha1
+kind: FileIntegrity
+metadata:
+  name: all-nodes
+  namespace: openshift-file-integrity
+spec:
+  nodeSelector:
+    kubernetes.io/os: linux
+  tolerations:
+    - {key: node-role.kubernetes.io/master, operator: Exists, effect: NoSchedule}
+    - {key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule}
+  config:
+    gracePeriod: 900     # seconds between scans (operator default)
+    maxBackups: 5
