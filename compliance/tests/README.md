@@ -42,6 +42,7 @@ they flag things needing a human, not broken things.
 | T-11 | SCC exceptions known | The 10 privileged SCCs are the expected NVIDIA/KubeVirt set — a *new* one fails the test. |
 | T-13 | Storage traffic encrypted | `tlshd` Ready on every eligible node, `nfs-over-tls` requests `xprtsec=tls`, and reports the TLS-vs-cleartext mount ratio. **The only check for this** — no scanner inspects CSI mount options. |
 | T-14 | etcd backups running | CronJob present and not suspended, newest **successful** job ≤ `BACKUP_MAX_AGE_HOURS` (26) old, backup PV `Retain`. Reads job completion times, not `lastSuccessfulTime`, so manual runs count. No scanner checks for backups at all. |
+| T-15 | Effective TLS | Handshakes against the API server, ingress, OAuth and every kubelet (`../lib/tls-probe.py`). PASS only if TLS 1.3 and TLS 1.2 ECDHE+AES-GCM are accepted and TLS 1.0/1.1, CBC, ChaCha20 and static-RSA are **refused by the server**. A probe that could not be made is a WARN, never a PASS. Config checks cannot see this; only a handshake shows what FIPS actually leaves on offer. |
 | T-12 | GPU switch is delegated & constrained | `gpu-modality-switcher` can patch only the GPU nodes (verified by SubjectAccessReview), cannot touch masters or delete nodes, and the admission policy exists. WARNs while the policy is non-enforcing. |
 
 ### Unit test — no cluster needed

@@ -4,8 +4,7 @@
 larger clusters. jetty is the worked example; this document is the method.*
 
 Status: **draft, in progress.** Sections marked *(pending)* will be filled as
-the remaining jetty work (TLS profile, metrics persistence, audit forwarding,
-IdP) produces its lessons.
+the remaining jetty work (audit forwarding, IdP) produces its lessons.
 
 How this relates to the other documents:
 
@@ -241,10 +240,29 @@ control:
 jetty: 4.22.14 → 4.22.16 in 1 h 23 min, compliance MachineConfigs carried
 through, identical results before and after.
 
-### Phase 11 — Remaining controls *(pending)*
+### Phase 11 — TLS posture: measure before changing the profile
 
-TLS security profile, metrics persistence, audit forwarding, identity
-provider and kubeadmin removal. To be written as jetty does them. The one
+Hardening guides say "pin `Modern` or a `Custom` TLS profile". Measure first:
+
+1. Check the compliance results (`oc get compliancecheckresult | grep -iE
+   'tls|cipher'`). On jetty all 31 already passed on the default profile.
+2. Probe the real endpoints by handshake (`lib/tls-probe.py`, `verify.sh`
+   T-15): API server, ingress, OAuth, every kubelet. Treat only a
+   server-sent TLS alert as "refused"; a probe that could not be made is not
+   a pass. Negative-test the probe against a deliberately weak server.
+3. On a FIPS cluster the default Intermediate profile is already narrowed:
+   jetty offers only TLS 1.3 and TLS 1.2 ECDHE+AES-GCM; ChaCha20 and CBC,
+   which Intermediate lists, are refused. That meets NIST SP 800-52r2.
+4. `Modern` (TLS 1.3 only) then buys only "no TLS 1.2", at the cost of a
+   kubelet rolling reboot and the risk of breaking TLS 1.2-only clients you
+   cannot enumerate; the 4.22 docs also contradict themselves on ingress
+   support. Adopt it when a requirement names TLS 1.3, after inventorying
+   clients — not by default.
+
+### Phase 12 — Remaining controls *(pending)*
+
+Metrics persistence (another team's decision on jetty), audit forwarding,
+identity provider and kubeadmin removal. To be written as jetty does them. The one
 ordering rule already known: **an IdP must be working and tested before
 kubeadmin is removed**, or the cluster is locked out.
 
@@ -375,7 +393,10 @@ this to grow roughly linearly. Prometheus needs block storage (NFS is not
 supported upstream), and keeping monitoring off the array it monitors means
 it still works when that array fails.
 
-*(more pending: TLS profile impact on clients)*
+**TLS profile.** The probe-first method in Phase 11 scales unchanged; on a
+large cluster the client inventory before `Modern` is the expensive part
+(external integrations, appliances, older CLIs), and a kubelet profile
+change is a full rolling reboot of every pool.
 
 ---
 

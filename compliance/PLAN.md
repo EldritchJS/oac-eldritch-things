@@ -248,7 +248,7 @@ fixing** — these need deliberate work.
 | 3 | **Audit log retention/forwarding** | **still open** — no logging stack. Retention measured at **1.6 h**, cut to **5.8 h** by the volume work below | Audit logs stay on masters and **rotate away**. Nothing on the audited host satisfies AU-9 at any retention. Needs forwarding off-cluster (no object storage required) or LokiStack (needs FlashBlade S3, not currently provisioned). **The single most urgent remaining gap.** See §6b. |
 | 4 | **Identity provider** | **none configured** | Auth is via `kubeadmin` only — a shared break-glass account. No per-user attribution, which breaks accountability controls (AC-2, IA-2). |
 | 5 | **kubeadmin still present** | secret exists | Standard hardening says remove it once a real IdP works. Do *not* remove before step 4 or you lose access. |
-| 6 | **TLS security profile** | unset (Intermediate default) | FIPS-aligned deployments usually pin `Modern` or an explicit `Custom` profile. |
+| 6 | ~~**TLS security profile**~~ | ✅ **CLOSED BY MEASUREMENT 2026-10-08** — profile still unset (Intermediate), deliberately | All 31 TLS compliance checks already PASS. Handshake probes of the API server, ingress, OAuth and all 5 kubelets: only TLS 1.3 and TLS 1.2 ECDHE+AES-GCM are accepted; TLS 1.0/1.1, CBC, ChaCha20 and static-RSA key exchange are refused — FIPS mode strips what Intermediate would otherwise allow. That meets NIST SP 800-52r2. `verify.sh` T-15 guards it (negative-tested against a weak server). `Modern` (TLS 1.3 only) was not adopted: the only gain is dropping TLS 1.2, it costs a full rolling reboot for the kubelet, the 4.22 docs contradict themselves on ingress support, and TLS 1.2-only clients cannot be ruled out. Revisit if a requirement names TLS 1.3. |
 | 7 | ~~**etcd backup**~~ | ✅ **CLOSED 2026-10-08** — nightly CronJob, 14 retained | `manifests/15-etcd-backup.yaml`; `tests/verify.sh` T-14 guards it. Backups hold the `aesgcm` key, so the volume is Secret-grade. Same array as the cluster's data (no off-array copy yet). **Restore rehearsed 2026-10-08** (`tests/etcd-restore-rehearsal.sh`); the full control-plane recovery procedure is not. |
 | 8 | ~~**NetworkPolicies**~~ | ✅ **CLOSED 2026-10-08, ingress and egress** | Default-deny ingress (`manifests/17-*`) and egress (`manifests/18-*`) with measured allows, on our six namespaces plus egress for `stackrox`; `openshift-*` namespaces largely ship their own. Internet egress remains only for ACS Central and scanner-v4-indexer (vulnerability feeds, registry scans). The Portworx version-manifest fetch is blocked. |
 | 9 | **Image provenance / signing** | **partial** (2026-10-08) | Registry allowlist in force (default `reject`, 8 registries). Signature-verified at runtime: OpenShift release images only. `nvcr.io` cannot be: NVIDIA signs the index, CRI-O verifies the platform manifest (FEASIBILITY.md §3 #2). Remaining options: ACS deploy-time signature checks; sign `ghcr.io/eldritchjs/tlshd` ourselves. |
@@ -593,6 +593,16 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
   (`b36a4c…`); T-14 now WARNs when the job image differs from the current
   release. **Not yet applied to the cluster** — see Open.
 
+- **TLS posture measured, gap #6 closed without a change 2026-10-08.**
+  Read-only survey: every TLS-related compliance rule already PASSes, and
+  handshake probes show FIPS mode already limits every endpoint to TLS 1.3
+  and TLS 1.2 ECDHE+AES-GCM (table in gap #6). Added `verify.sh` T-15
+  (`lib/tls-probe.py`): 8/8 PASS; against a deliberately weak local server
+  it reports CBC/ChaCha20/static-RSA as ACCEPTED (→ FAIL), and an
+  unreachable port as ERROR (→ WARN), so it cannot pass by not probing.
+  etcd :2379 refused TLS 1.2 to the probe, most likely because it requires
+  a client certificate; not included in T-15.
+
 ### Standards confirmed: NIST 800-171 + HIPAA + FIPS
 
 Full mapping, baseline results, FIPS 140-3 position, and the mixed-VM-tenancy
@@ -632,10 +642,9 @@ tenant. Rationale and the alternatives considered: STANDARDS.md §4.
    an IdP and verify login before removing kubeadmin**, or you lose cluster
    access. Also unblocks flipping the GPU-switch policy to `Deny`.
 5. Still unaddressed and invisible to scanners — the rest of the §6 gaps:
-   TLS profile, image signature verification
-   beyond the release images (gap #9), metrics (owned by another team;
-   sizing in gap #12)
-   persistence, plus the non-technical controls.
+   image signature verification beyond the release images (gap #9),
+   metrics persistence (owned by another team; sizing in gap #12), plus
+   the non-technical controls.
 
 ### Not covered by any of this
 

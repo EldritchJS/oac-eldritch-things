@@ -524,13 +524,55 @@ print(int((datetime.datetime.now(datetime.timezone.utc)-t).total_seconds()//3600
     || bad "backup PV reclaim policy is '$reclaim' — one 'oc delete pvc' destroys every backup"
 }
 
+# --------------------------------------------------------------- T-15 ------
+# What TLS the cluster actually offers, measured by handshake. The TLS
+# profile is unset (Intermediate), which on paper allows ChaCha20 and CBC;
+# FIPS mode strips them. The compliance TLS checks read configuration, so
+# only a handshake shows the effective posture — and catches a regression
+# (a non-FIPS node, a profile edit) that config checks would not.
+# Probing logic: ../lib/tls-probe.py. Node addresses are used, not printed.
+run_t15() {
+  hdr "T-15  Effective TLS: 1.2+ with AEAD only (SP 800-52r2)"
+  local targets=() api con oa n ip
+  api=$(oc whoami --show-server | sed 's|^https://||')
+  targets+=("api-server=$api")
+  con=$(jp route console openshift-console '{.spec.host}');        [ -n "$con" ] && targets+=("ingress(console)=$con:443")
+  oa=$(jp route oauth-openshift openshift-authentication '{.spec.host}'); [ -n "$oa" ] && targets+=("oauth=$oa:443")
+  for n in $(oc get nodes -o jsonpath='{.items[*].metadata.name}'); do
+    ip=$(jp node "$n" "" '{.status.addresses[?(@.type=="InternalIP")].address}')
+    [ -n "$ip" ] && targets+=("kubelet/$n=$ip:10250")
+  done
+
+  local out
+  out=$(python3 ../lib/tls-probe.py "${targets[@]}")
+  [ -n "$out" ] || { bad "TLS probe produced no output"; return; }
+
+  local name probe result detail fails errs
+  for name in $(printf '%s\n' "$out" | cut -f1 | sort -u); do
+    fails=""; errs=""
+    while IFS=$'\t' read -r _ probe result detail; do
+      case "$probe:$result" in
+        tls13:ACCEPTED|tls12-gcm:ACCEPTED) ;;
+        tls13:*|tls12-gcm:*)   fails="$fails $probe($result)" ;;
+        *:REFUSED) ;;
+        *:ACCEPTED)            fails="$fails $probe(ACCEPTED: $detail)" ;;
+        *)                     errs="$errs $probe" ;;
+      esac
+    done < <(printf '%s\n' "$out" | awk -F'\t' -v n="$name" '$1==n')
+    if [ -n "$fails" ]; then bad "$name:$fails"
+    elif [ -n "$errs" ]; then warn "$name: could not probe$errs"
+    else ok "$name: TLS 1.3 + 1.2 AES-GCM only (1.0/1.1, CBC, ChaCha20, static RSA refused)"
+    fi
+  done
+}
+
 # ---------------------------------------------------------------- main -----
 command -v oc >/dev/null || { echo "oc not found" >&2; exit 2; }
 oc whoami >/dev/null 2>&1 || { echo "not logged in (set KUBECONFIG)" >&2; exit 2; }
 
 printf '%sjetty verification%s  —  %s  —  %s\n' "$B" "$N" "$(oc whoami --show-server)" "$(date -u '+%Y-%m-%d %H:%M UTC')"
 
-ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12 t13 t14"
+ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12 t13 t14 t15"
 RUN="${ONLY:-$ALL}"
 for t in ${RUN//,/ }; do
   if declare -f "run_$t" >/dev/null; then "run_$t"; else echo "no such test: $t" >&2; fi
