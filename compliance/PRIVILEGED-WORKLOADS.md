@@ -98,8 +98,9 @@ These apply to every entry unless the entry says otherwise:
   pods only (`allow-egress-builds`, `manifests/18-*`); the BuildConfig is
   ours and in git.
 - **Housekeeping:** completed build pods remain and keep appearing in ACS.
-  `tlshd-7` produced the running digest; `oc delete build tlshd-4 tlshd-5
-  tlshd-6 -n nfs-tls` removes the rest.
+  Keep only the build that produced the running digest and delete the rest
+  (`oc delete build <name> -n nfs-tls`). Done 2026-10-10: `tlshd-4`..`-6`
+  deleted; `tlshd-7` (the running digest) kept.
 - **Revisit:** build off-cluster in CI and push signed images; then the
   BuildConfig, the entitlement Secret and this exception all go.
 

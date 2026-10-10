@@ -186,11 +186,16 @@ name, so migrating meant deleting the old ones — the eight PVs were patched to
 survives as `Released` volumes on the array rather than being deleted with the
 claims. Recover one by creating a PVC bound to its `volumeName` if ever needed.
 
-The pre-TLS ACS data is still on the array: the original `stackrox/central-db`
-PVC (Bound, unmounted; the rollback path) and two **Released** PVs whose
-claims are gone, `scanner-v4-db` and `central-db-backup`. About 350Gi, all
-`Retain`. Deleting a claim frees nothing; removing the data means deleting
-the PVs and their backing volumes. Decision: PLAN.md D7.
+The pre-TLS ACS data (the original `stackrox/central-db` PVC, kept as the
+rollback path, and the Released `scanner-v4-db` and `central-db-backup` PVs,
+~350Gi) was **removed 2026-10-10** (PLAN.md D7). Method, for the next
+cluster: with `Retain`, deleting a claim frees nothing. Delete the claim,
+then patch the PV to `persistentVolumeReclaimPolicy: Delete`; the PV
+controller hands it to the CSI driver, which deletes the export and the
+FlashBlade filesystem (`Flashblade backend volume deleted successfully` in
+the `px-pure-csi-controller` `controller-plugin` log) and the PV disappears
+within seconds. No PVC remains on `pure-fb-nfsv4`; the only PVs left on it are
+the Compliance Operator's evidence (D8).
 
 ### The mistake worth not repeating: scoping tlshd to workers
 
@@ -254,10 +259,9 @@ move.
 
 - ~~**Document the ACS exception** for the privileged DaemonSet.~~ Done:
   [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md) #1.
-- **Decide on the old ACS volumes** (the `central-db` PVC and the Released
-  `scanner-v4-db` / `central-db-backup` PVs, ~350Gi on `pure-fb-nfsv4`) once
-  satisfied the migration held. PLAN.md D7. The Compliance Operator's
-  Released raw-result PVs are an evidence-retention question: D8.
+- ~~**Remove the old ACS volumes**~~ Done 2026-10-10 (PLAN.md D7). The
+  Compliance Operator's Released raw-result PVs are an evidence-retention
+  question: D8.
 
 ## Manifests
 
