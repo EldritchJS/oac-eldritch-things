@@ -257,6 +257,14 @@ So a node can move between serving containers and serving VMs in **about one
 to three and a half minutes**. That is fast enough to treat modality as a
 scheduling decision rather than a maintenance event.
 
+**Exception: RDMA.** A node can host GPU VMs or run RDMA/NCCL, not both.
+GPU passthrough needs the IOMMU on, and RDMA needed it off when tested on an
+earlier cluster (not yet reproduced on jetty). Turning it off is a kernel
+argument, so RDMA nodes and GPU-VM nodes are separate pools, and moving a node
+between them costs a reboot. VMs without a GPU are unaffected, and no
+compliance profile checks the IOMMU.
+→ [vms/gpu/README.md](vms/gpu/README.md#gpu-vms-and-rdma-do-not-share-a-node)
+
 → Detail: [FEASIBILITY.md](FEASIBILITY.md) §1, §5 · [tests/README.md](tests/README.md)
 
 ---

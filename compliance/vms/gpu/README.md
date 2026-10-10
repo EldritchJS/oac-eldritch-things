@@ -80,6 +80,30 @@ The granularity is the **node**. There is no supported way to leave two of a nod
 
 Switching is a label change, and after one-time setup it needs no reboot — but it does need every GPU-holding pod off the node first, because the NVIDIA kernel driver will not release a card another process has open. `test-gpu-switch.sh` exists to put a number on that.
 
+### GPU VMs and RDMA do not share a node
+
+A node can host **GPU VMs** or run **RDMA workloads** (RoCEv2, NCCL across nodes), not both. The two need the IOMMU in opposite states:
+
+- **GPU passthrough needs the IOMMU on.** `vfio-pci` cannot claim a card without it (prerequisite 2 below).
+- **RDMA needs it off.** On an earlier, non-compliant cluster (early 2026), NCCL tests and even plain `ib_write_bw` failed badly until the IOMMU was disabled. Not yet reproduced on `jetty`.
+
+On these AMD nodes the IOMMU is on by default (firmware, Translated mode) with no kernel argument. So:
+
+- **An RDMA node needs `amd_iommu=off`**: a kernel argument, so a dedicated MachineConfigPool and a reboot.
+- **Moving a node between the RDMA role and the GPU-VM role costs a reboot.** The "label change, no reboot" switch above holds only between containers and GPU VMs on a node whose IOMMU stays on.
+- **Plan GPU nodes as two pools:** RDMA (IOMMU off) and GPU VMs (IOMMU on). Container workloads that don't use RDMA can run in either.
+
+What this does *not* restrict:
+
+- **VMs without a GPU.** KVM does not need the IOMMU, so ordinary VMs run on RDMA nodes.
+- **Compliance.** No Compliance Operator profile checks the IOMMU (all 49 shipped on `jetty` checked 2026-10-10; the rule `rhcos4-grub2-enable-iommu-force` is in none of them), and FIPS does not involve it. Running RDMA nodes without DMA remapping is at most a sentence in the SSP.
+
+Untested options, recorded so nobody re-derives them:
+
+- **`iommu=pt`** (host devices bypass translation, `vfio` still isolated) might let one node do both. Whether it fixes the RDMA failures is unknown here. `iommu-machineconfig.yaml` already carries it.
+- **GPUDirect RDMA** usually also wants PCIe ACS off, which merges IOMMU groups and can break per-GPU passthrough even under `iommu=pt`.
+- **RDMA inside a VM** needs a NIC or SR-IOV VF passed through, which needs the IOMMU on the host. Out of scope here.
+
 ## Layout
 
 | File | Who runs it | What it does |

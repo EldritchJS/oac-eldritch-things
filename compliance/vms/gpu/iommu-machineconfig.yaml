@@ -28,6 +28,10 @@ metadata:
       and only reach for this if that is zero. The remaining value here is
       iommu=pt and the Intel case.
 
+      The opposite need exists too: RDMA nodes need the IOMMU OFF, so GPU VMs
+      and RDMA cannot share a node. See README.md, "GPU VMs and RDMA do not
+      share a node".
+
       Applied through a DEDICATED MachineConfigPool, not the worker pool. A
       MachineConfig change reboots every node in its pool serially, and these
       arguments are only needed on the handful of nodes that will ever host VM
