@@ -64,7 +64,7 @@ Confirmed working on the OAC dev cluster.
 ## Usage
 
 ```bash
-cd vm-testing
+cd compliance/vms
 oc apply -f net-test-vm.yaml
 ```
 
@@ -111,7 +111,7 @@ oc delete -f net-test-vm.yaml
 `test-vm.sh` boots from a `containerDisk`, which is a copy-on-write overlay discarded when the VMI stops — it proves compute and networking work and nothing about storage. `test-vm-storage.sh` covers the gap: it provisions a real PVC root disk through CDI, boots a Fedora guest off it, writes a unique marker inside the guest, fully stops and restarts the VM, and reads the marker back.
 
 ```bash
-cd vm-testing
+cd compliance/vms
 ./test-vm-storage.sh
 ```
 
@@ -169,7 +169,7 @@ The `DV_STALL` detector exists because of this: it fails the test in about four 
 Live migration is what makes node maintenance survivable for VM users. Drains, cluster upgrades and MachineConfig rollouts all evict VMs; without it, each of those hard-kills the guest and loses whatever was in RAM. `test-vm-migration.sh` boots a VM on an RWX PVC, starts a heartbeat inside the guest, migrates it to another node, and checks that the same kernel came out the other side.
 
 ```bash
-cd vm-testing
+cd compliance/vms
 ./test-vm-migration.sh
 ```
 

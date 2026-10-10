@@ -61,7 +61,7 @@ These apply to every entry unless the entry says otherwise:
   would be reported within one scan interval (15 min; canary-tested).
 - **Audit.** API server audit at `WriteRequestBodies` for all non-platform
   callers. **Limit:** retained ~6 h on the masters only until audit
-  forwarding exists (PLAN.md Open #1).
+  forwarding exists (PLAN.md B1).
 - **Alerting.** **Not yet effective** — neither ACS nor Alertmanager has a
   receiver. Detection exists; notification does not.
 

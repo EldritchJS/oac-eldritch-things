@@ -42,7 +42,7 @@ DV_NAME="${DV_NAME:-${VM_NAME}-rootdisk}"
 GPU_RESOURCE="${GPU_RESOURCE:-}"
 GPU_COUNT="${GPU_COUNT:-1}"
 
-# Ubuntu rather than the Fedora the other vm-testing scripts use. Ubuntu ships
+# Ubuntu rather than the Fedora the other vms/ scripts use. Ubuntu ships
 # NVIDIA's datacenter drivers in its own archive, so tier 2 is one apt install
 # with no third-party repo and no akmod rebuild against a moving kernel. Set
 # IMAGE_URL/GUEST_USER/DRIVER_INSTALL to use something else.

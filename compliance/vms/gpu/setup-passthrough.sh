@@ -4,7 +4,7 @@ set -euo pipefail
 # Puts one node into GPU-passthrough mode and teaches KubeVirt about the device,
 # so that VMs in this cluster can be given a whole physical GPU.
 #
-# Unlike the rest of vm-testing, this is an ADMIN script. It changes
+# Unlike the rest of vms/, this is an ADMIN script. It changes
 # cluster-scoped objects (ClusterPolicy, HyperConverged) and a node label, and
 # the node label change tears down the container GPU stack on that node. Run it
 # read-only first — it reports everything it would do and nothing else until

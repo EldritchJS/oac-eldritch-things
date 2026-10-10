@@ -333,9 +333,11 @@ between the two**. Proposed additions, runnable as one harness:
 Design notes:
 - Must be **non-destructive by default**, with mutating tests (T-08, T-09)
   behind an explicit flag. T-08 unloads a driver; T-09 follows a reboot.
-- Must be **safe about node selection**. `test-gpu-switch.sh` currently cordons
-  `moc-r4pcc02u16`, which hosts RHACS `central` and `central-db`. Any test that
-  drains must check what it is about to evict.
+- Must be **safe about node selection**. `test-gpu-switch.sh` cordons the node
+  it is given, and RHACS `central` and `central-db` live on one of the GPU
+  workers and move between them (`u16` when this was written, `u15` since the
+  2026-10-05 reboots). Any test that drains must check what it is about to
+  evict.
 - Should emit machine-readable output so T-03/T-04 can feed evidence collection.
 
 ---

@@ -176,7 +176,11 @@ Sources: [RHACS 4.8 default resource requirements](https://docs.redhat.com/en/do
 
 ---
 
-## Impact right now
+## Impact at the time (2026-10-02)
+
+> Historical. All three are resolved: Compliance raw results are archived on
+> `nfs-over-tls`, ACS Central runs on TLS-backed PVCs, and all six CNV golden
+> images are `Succeeded` (checked 2026-10-10).
 
 - **Compliance Operator — unblocked.** Running with `rawResultStorage.enabled: false`
   (the CRD's documented option for "environments that don't have storage").

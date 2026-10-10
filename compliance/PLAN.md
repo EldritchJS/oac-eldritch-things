@@ -560,7 +560,7 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
   integration *NVIDIA NGC (nvcr.io, anonymous)* — ACS config, not in a
   manifest. All 10 images have fixable CVEs (13–49 each); HIPAA 306(e) count
   124 → 134, still 9/18. Critical CVE-2025-23266 in mig-parted turned out to be a pseudo-version
-  false positive (Open #3).
+  false positive (resolved 2026-10-09: ACS exceptions, see below).
   On the way, Central's image API hung for ~20 minutes with no network
   cause found; a Central restart fixed it. Details: STANDARDS.md §5.
 
@@ -633,13 +633,14 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
 
   Known limits: (a) the notification rule passes on the alert rule
   *existing* — Alertmanager has no receiver, so an alert reaches nobody
-  until the destination exists (PLAN.md Open #1). (b) The GPU toolkit's
+  until the destination exists (B1/B2 below). (b) The GPU toolkit's
   `/etc/crio/crio.conf.d/99-nvidia.conf` is deliberately watched; if a
   modality switch adds or removes it, re-init that node afterwards. Not
   yet observed — check at the next switch. (c) The operator's re-init after
-  MachineConfig rollouts is documented, not yet observed on jetty. (d) The
-  AIDE DaemonSet is privileged with host `/` mounted: another ACS
-  exception to document.
+  MachineConfig rollouts was documented, not yet observed — since observed
+  during the sshd rollout (2026-10-09 triage entry). (d) The AIDE DaemonSet
+  is privileged with host `/` mounted — documented as
+  PRIVILEGED-WORKLOADS.md #4.
 
 - **FIPS 140-3 certificate status recorded 2026-10-09**
   ([tests/fips-cmvp-certificates.md](tests/fips-cmvp-certificates.md)).
@@ -739,6 +740,7 @@ input from someone else is done; every row below is waiting on a person.*
 | D4 | GPU-claim prevention (optional) | Approve: `vms-test` GPU quota → 0, and an admission policy rejecting GPU requests outside an allowlist | Turns T-17's detection into prevention (billing) | T-17 entry above |
 | D5 | Old build cleanup (optional) | Approve `oc delete build tlshd-4 tlshd-5 tlshd-6 -n nfs-tls` | Removes privileged completed pods from ACS's view | [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md) #2 |
 | D6 | Publish the playbook (optional) | Say where / to whom | — | [PLAYBOOK.md](PLAYBOOK.md) |
+| D7 | Rollback PVC cleanup (optional) | Approve `oc delete pvc central-db -n stackrox` — the pre-TLS Central DB volume, unmounted since 2026-10-07; PV is `Retain`, so the data stays on the array | Removes the last PVC on the cleartext `pure-fb-nfsv4` class | [NFS-TLS.md](NFS-TLS.md) migration |
 
 **Questions for vendors** (whoever holds the support relationship)
 

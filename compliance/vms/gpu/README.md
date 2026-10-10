@@ -34,17 +34,19 @@ billable — that is just the operator doing its job.
 | `ClusterPolicy.sandboxWorkloads` | `{"mode":"kubevirt","defaultWorkload":"container","enabled":true}` — ready to accept the node label |
 | `HyperConverged.permittedHostDevices` | ✅ `10DE:2330` → `nvidia.com/GH100_H100_SXM5_80GB`, `externalResourceProvider: true` |
 | `nvidia.com/gpu.workload.config` | **`u16` = `vm-passthrough`** (`GH100_H100_SXM5_80GB=4`, `nvidia.com/gpu=0`); `u15` unset, still serving containers with `nvidia.com/gpu=4` |
-| **Storage** | ✅ **`pure-fb-nfsv4` (default)** — Portworx CSI → Pure FlashBlade NFSv4.1. Was broken until 2026-10-02 (storage VLAN not trunked to the array); now working. The 7 TB `nvme1n1` on each worker remains untouched and unused |
+| **Storage** | ✅ **`nfs-over-tls` (default)** — Portworx CSI → Pure FlashBlade NFSv4.1 over TLS (since 2026-10-07; [../../NFS-TLS.md](../../NFS-TLS.md)). Was broken until 2026-10-02 (storage VLAN not trunked to the array). The 7 TB `nvme1n1` on each worker remains untouched and unused |
 | IOMMU | ✅ **confirmed active: 103 groups**, and `/proc/cmdline` carries no `amd_iommu=`/`iommu=` argument at all |
 | Current GPU load | both nodes idle of **GPU** workloads — but see the warning below |
 | Control plane | `HighlyAvailable` — standalone, MachineConfig API present |
 
 The node kernel also runs `fips=1`, which did not impede the driver build.
 
-> ### ⚠️ `test-gpu-switch.sh` is NOT safe to run as-is (2026-10-02)
+> ### ⚠️ `test-gpu-switch.sh` can drain RHACS Central
 >
-> It cordons and drains **`moc-r4pcc02u16`**, which now hosts **RHACS `central`
-> and `central-db`** — the ACS control plane and its PostgreSQL database.
+> It cordons and drains whichever node `NODE` names. RHACS **`central` and
+> `central-db`** (the ACS control plane and its PostgreSQL database) run on
+> one of the GPU workers and move between them: `u16` on 2026-10-02, `u15`
+> since the 2026-10-05 reboots (checked 2026-10-10).
 >
 > "Both nodes idle" is true of *GPU* workloads only, and is now misleading:
 > the node is not idle. RHACS pods hold no GPUs so a GPU-scoped drain would not
@@ -55,7 +57,7 @@ The node kernel also runs `fips=1`, which did not impede the driver build.
 > ```sh
 > oc get pods -n stackrox -o wide | grep central
 > ```
-> Prefer `moc-r4pcc02u15` for switch testing, or stop RHACS first.
+> Pick the GPU node that is *not* hosting Central, or stop RHACS first.
 
 Re-run `./preflight.sh` rather than trusting this table — it is a snapshot, and
 it is the script's whole job to produce a current one.
@@ -122,7 +124,7 @@ Untested options, recorded so nobody re-derives them:
 Nothing here is specific to `oac-dev-workload0`; the resource names, PCI ids and GPU node names are all discovered at runtime rather than hardcoded. On a new cluster:
 
 ```bash
-cd vm-testing/gpu
+cd compliance/vms/gpu
 ./preflight.sh                              # what works, what is missing, what you may do
 AS_ADMIN=--as=system:admin ./preflight.sh   # same, plus what impersonation buys you
 ```
@@ -131,7 +133,7 @@ It reads only, so it is safe on a cluster you have just been handed and do not y
 
 ## Prerequisites
 
-Beyond `oc`, `virtctl`, `python3` and the OpenShift Virtualization install the rest of `vm-testing` needs:
+Beyond `oc`, `virtctl`, `python3` and the OpenShift Virtualization install the rest of `vms/` needs:
 
 0. **The three operators.** On a cluster that has GPU hardware and nothing else — which is exactly what `jetty` was — `install-operators.sh` puts NFD, the NVIDIA GPU Operator and OpenShift Virtualization in place:
 
@@ -187,7 +189,7 @@ Beyond `oc`, `virtctl`, `python3` and the OpenShift Virtualization install the r
 Read-only first. It reports current state and what it would change, and exits:
 
 ```bash
-cd vm-testing/gpu
+cd compliance/vms/gpu
 NODE=moc-r4pcc02u16 ./setup-passthrough.sh
 ```
 
@@ -219,7 +221,7 @@ NODE=moc-r4pcc02u16 APPLY=1 TARGET_WORKLOAD=container ./setup-passthrough.sh
 # GPU VM Test
 
 ```bash
-cd vm-testing/gpu
+cd compliance/vms/gpu
 ./test-gpu-vm.sh
 ```
 
@@ -239,7 +241,7 @@ It also reports, without failing: the VMI's `LiveMigratable` condition, and `nvi
 
 ### Guest image
 
-Defaults to Ubuntu 24.04 (`quay.io/containerdisks/ubuntu:24.04`) rather than the Fedora the other `vm-testing` scripts use. Ubuntu ships NVIDIA's datacenter drivers in its own archive, so tier 2 is one `apt-get install` with no third-party repo and no akmod rebuild against a kernel that moves under it. Tier 3 uses the distro's own `nvidia-cuda-toolkit` package for the same reason: one stable package name instead of a repo URL and version-suffixed names that change every CUDA release. It is a large download — set `MAX_TIER=2` to skip it.
+Defaults to Ubuntu 24.04 (`quay.io/containerdisks/ubuntu:24.04`) rather than the Fedora the other `vms/` scripts use. Ubuntu ships NVIDIA's datacenter drivers in its own archive, so tier 2 is one `apt-get install` with no third-party repo and no akmod rebuild against a kernel that moves under it. Tier 3 uses the distro's own `nvidia-cuda-toolkit` package for the same reason: one stable package name instead of a repo URL and version-suffixed names that change every CUDA release. It is a large download — set `MAX_TIER=2` to skip it.
 
 The driver install is deliberately **not** in cloud-init. Inline `userData` is capped at 2048 bytes and these namespaces cannot create Secrets, so anything substantial has to go over `virtctl ssh` after boot.
 
@@ -270,7 +272,7 @@ This directly inverts what `../test-vm-migration.sh` proves for an ordinary VM. 
 
 Ruled out, each by direct observation rather than reasoning: **memory** (reproduced at `MEMORY=2Gi`), **SELinux** (Enforcing, zero AVC denials on the node during the failure), and **QoS / ephemeral-storage eviction** (the pod is `Burstable` either way — this was my own hypothesis and it was wrong). The root cause is not known. What is known is that the combination does not work there, so a GPU VM needs a real PVC, which means a real StorageClass. `preflight.sh` now checks for one up front and `test-gpu-vm.sh` warns if you force `BOOT_MODE=containerdisk` with a GPU attached.
 
-## Result: partly proven on `jetty`, blocked on storage
+## Result: partly proven on `jetty`; not re-run since storage was fixed
 
 Run on 2026-10-01 against `jetty` (OpenShift Virtualization 4.22.9, GPU Operator 26.7.1, NFD 4.22.0, node `moc-r4pcc02u16`).
 
@@ -282,7 +284,7 @@ Run on 2026-10-01 against `jetty` (OpenShift Virtualization 4.22.9, GPU Operator
 - IOMMU needed no intervention at all: 103 IOMMU groups on both workers, no `amd_iommu=` or `iommu=` anywhere in `/proc/cmdline`. See prerequisite 2.
 - `fips=1` is set on these nodes and did not impede the NVIDIA driver build, which was a plausible failure mode that simply did not materialise.
 
-**Not established:** the guest never boots, so tiers 1–3 (does the guest see the card, load the driver, run CUDA) are all still open. `jetty` has no StorageClass, no CSI driver and no PV, so the DataVolume path cannot provision a root disk; the containerDisk path is incompatible with passthrough as described above. Each worker has an untouched 7 TB `nvme1n1`, so the fix is a storage provider — LVM Storage is the usual answer on bare metal — but that is a deliberate decision about those disks, not a step this test should take on its own.
+**Not established:** the guest never booted, so tiers 1–3 (does the guest see the card, load the driver, run CUDA) are all still open. At the time (2026-10-01) `jetty` had no working storage, so the DataVolume path could not provision a root disk, and the containerDisk path is incompatible with passthrough as described above. Storage has worked since 2026-10-02 (Pure FlashBlade via Portworx, now `nfs-over-tls`), so nothing blocks a re-run except that it claims an H100 — billable, see the cost warning.
 
 ---
 
@@ -291,7 +293,7 @@ Run on 2026-10-01 against `jetty` (OpenShift Virtualization 4.22.9, GPU Operator
 **This test is destructive.** It cordons the node and deletes every GPU-holding pod on it, in every namespace, twice. It restores the original label and uncordons on exit including on failure, but evicted pods are not recreated — controller-managed ones reschedule themselves, bare pods and Notebooks do not. It refuses to start without an explicit confirmation, and prints the pods at risk first.
 
 ```bash
-cd vm-testing/gpu
+cd compliance/vms/gpu
 NODE=moc-r4pcc02u16 ./test-gpu-switch.sh                              # lists what it would evict, then stops
 NODE=moc-r4pcc02u16 CONFIRM=yes-drain-this-node ./test-gpu-switch.sh  # runs
 ```
@@ -341,7 +343,7 @@ A table of per-milestone and total durations:
 
 ## Result: not yet run
 
-This is the only remaining test, and **it is not blocked by the storage problem** — it never boots a VM. It needs a node in `container` mode to start from, so `moc-r4pcc02u16` has to be flipped back first:
+Never boots a VM, so storage was never a factor. Note that `tests/gpu-switch-timing.sh` has since measured the label-flip switch (73s / 208s, no reboot) without a drain; this test adds the drain and the eviction cost. It needs a node in `container` mode to start from, so `moc-r4pcc02u16` has to be flipped back first:
 
 ```bash
 NODE=moc-r4pcc02u16 APPLY=1 TARGET_WORKLOAD=container ./setup-passthrough.sh

@@ -167,7 +167,7 @@ destination:
    `SecurityPolicy` CR synced by ACS's config-controller; Central accepted
    it). It fired on the old `tlshd` image as intended.
 2. **Attach the notifier to it** once the audit/alert destination exists —
-   the same open decision as audit forwarding (PLAN.md Open #1). Notifiers
+   the same open decision as audit forwarding (PLAN.md B1/B2). Notifiers
    on this policy plus the runtime policies are what close HIPAA
    308(a)(6)(ii) / 314(a)(2)(i)(C).
 3. **Keep the default policy enabled** as the inventory of vendor exposure;

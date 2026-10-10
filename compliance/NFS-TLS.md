@@ -186,10 +186,10 @@ name, so migrating meant deleting the old ones — the eight PVs were patched to
 survives as `Released` volumes on the array rather than being deleted with the
 claims. Recover one by creating a PVC bound to its `volumeName` if ever needed.
 
-Two PVCs remain *defined* on `pure-fb-nfsv4` — the original `central-db` and
-`scanner-v4-db`. Nothing mounts them; they are the rollback path. Their PVs
-are `Retain`, so deleting the claims preserves the data. Delete once you are
-satisfied the migration held.
+One PVC remains *defined* on `pure-fb-nfsv4`: the original `stackrox/central-db`
+(`scanner-v4-db`'s has since been deleted). Nothing mounts it; it is the
+rollback path. Its PV is `Retain`, so deleting the claim preserves the data.
+Delete once you are satisfied the migration held (PLAN.md D7).
 
 ### The mistake worth not repeating: scoping tlshd to workers
 
@@ -251,9 +251,11 @@ move.
 
 ### Still to do
 
-- **Document the ACS exception** for the privileged DaemonSet.
-- **Delete the two rollback PVCs** (`central-db`, `scanner-v4-db` on
-  `pure-fb-nfsv4`) once satisfied the migration held. Their PVs are `Retain`.
+- ~~**Document the ACS exception** for the privileged DaemonSet.~~ Done:
+  [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md) #1.
+- **Delete the rollback PVC** `stackrox/central-db` (on `pure-fb-nfsv4`)
+  once satisfied the migration held. Its PV is `Retain`. (`scanner-v4-db`'s
+  is already gone.) PLAN.md D7.
 
 ## Manifests
 
@@ -274,6 +276,11 @@ certificate is supplied locally — it is not in the repo.
 | **A migration plan for existing PVCs** | `mountOptions` are fixed at StorageClass level. Existing volumes on `pure-fb-nfsv4` do not transparently upgrade — they need a new class and a data move. |
 
 ## Risks to settle before deploying here
+
+> Pre-deployment planning, kept for the next cluster. On jetty: the image is
+> built in-cluster and pinned by digest (signing is PLAN.md D3); the DaemonSet
+> runs `system-node-critical` with a liveness probe; the ACS exception is
+> PRIVILEGED-WORKLOADS.md #1. The support-posture point still stands.
 
 - **Image provenance.** The reference image is published to a personal
   registry. A privileged, host-network DaemonSet in the storage data path is
