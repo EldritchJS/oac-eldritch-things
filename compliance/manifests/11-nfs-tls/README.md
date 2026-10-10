@@ -21,8 +21,11 @@ Closes the cleartext-storage gap described in [../../NFS-TLS.md](../../NFS-TLS.m
 RPC-over-TLS; the only missing piece is the `tlshd` userspace daemon, supplied
 here by a DaemonSet.
 
-Adapted for jetty from a colleague's working implementation in this
-environment. That repo is the upstream reference and is **not** vendored here.
+Adapted for jetty from [@larsks](https://github.com/larsks)'s working
+implementation in this environment,
+[larsks/tlshd, branch `rhel9.6`](https://github.com/larsks/tlshd/tree/rhel9.6)
+(`main` has nothing of use). That repo is the upstream reference and is
+**not** vendored here.
 
 ---
 

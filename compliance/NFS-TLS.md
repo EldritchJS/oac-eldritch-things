@@ -68,10 +68,13 @@ install`ed onto a node. Two ways to supply it:
    do exist on this cluster, so this is available. Heavier: a build pipeline,
    an entitled builder, and a node reboot per rollout.
 
-**A colleague has already built and proven option 1 in this environment**
+**[@larsks](https://github.com/larsks) has already built and proven option 1
+in this environment**
 (MOC, against a Pure appliance), including a packet capture showing the TLS
 handshake and NFS traffic inside the TLS channel. That work is deliberately
 **not vendored into this repo** — use it as the upstream reference:
+[larsks/tlshd, branch `rhel9.6`](https://github.com/larsks/tlshd/tree/rhel9.6)
+(`main` has nothing of use).
 
 - Container: UBI9 + `ktls-utils`, `CMD ["/usr/sbin/tlshd", "-s"]`
 - DaemonSet: privileged, `hostNetwork: true`, mounts the storage CA from a
