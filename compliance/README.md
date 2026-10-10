@@ -367,7 +367,7 @@ DNS lookups leave the site. Worth pointing at an internal resolver.
 
 ## 8. What happens next
 
-Open decisions for you:
+Open decisions:
 
 1. ~~**Scope**~~ — **decided 2026-10-08: the whole cluster is in scope** for
    800-171. With two workers there is no meaningful way to split it, and the
