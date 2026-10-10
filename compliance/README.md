@@ -223,7 +223,7 @@ jetty's two workers are in **opposite modalities right now**:
 | Host driver | loaded | **not loaded** |
 | Special | device plugin, DCGM, MIG manager | **`vfio-manager`**, sandbox plugin |
 
-The driver genuinely differs per mode, as you thought. In container mode the
+The driver genuinely differs per mode, as expected. In container mode the
 host NVIDIA driver owns the GPU. In passthrough mode it must *not* —
 `vfio-manager` binds each card to `vfio-pci` and the guest runs its own driver.
 The GPU Operator handles the swap, driven entirely by one node label:
@@ -232,7 +232,7 @@ The GPU Operator handles the swap, driven entirely by one node label:
 oc label node <node> nvidia.com/gpu.workload.config=vm-passthrough --overwrite
 ```
 
-**So you never have to commit the cluster to VMs.** Modality is per-node and
+**So one never has to commit the cluster to VMs.** Modality is per-node and
 reversible.
 
 Better still: switching needs **no reboot on this hardware**. The usual reason
