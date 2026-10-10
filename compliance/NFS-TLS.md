@@ -29,15 +29,16 @@ the scan results will ever flag it.
 
 ## What is and isn't in place
 
-Measured on `moc-r4pcc02u15`, RHCOS 9.8, kernel `5.14.0-687.46.1.el9_8`:
+Measured on `moc-r4pcc02u15`, RHCOS 9.8, kernel `5.14.0-687.46.1.el9_8`.
+"Before" is the state when the gap was found; "now" is after the fix.
 
-| Layer | State |
-|---|---|
-| Kernel RPC-over-TLS | ✅ 42 `xprtsec`/`xs_tls` symbols; `tls.ko` present and loaded; handshake netlink symbols present |
-| `mount.nfs` passthrough | ✅ Passes `xprtsec=` to the kernel (the binary itself has no `xprtsec` string — it does not need one) |
-| FlashBlade server-side TLS | ✅ Supported (confirmed by the storage team; in use on another cluster) |
-| Portworx CSI `mountOptions` | ✅ Passes `xprtsec` through |
-| **`tlshd` userspace daemon** | ❌ **absent — the only missing piece** |
+| Layer | Before (2026-10-07) | Now |
+|---|---|---|
+| Kernel RPC-over-TLS | ✅ 42 `xprtsec`/`xs_tls` symbols; `tls.ko` present and loaded; handshake netlink symbols present | ✅ unchanged |
+| `mount.nfs` passthrough | ✅ Passes `xprtsec=` to the kernel (the binary itself has no `xprtsec` string — it does not need one) | ✅ unchanged |
+| FlashBlade server-side TLS | ✅ Supported (confirmed by the storage team; in use on another cluster) | ✅ in use |
+| Portworx CSI `mountOptions` | ✅ Passes `xprtsec` through | ✅ `nfs-over-tls` StorageClass (default) carries `xprtsec=tls` |
+| **`tlshd` userspace daemon** | ❌ **absent — the only missing piece** | ✅ **DaemonSet `nfs-tls/tlshd`, 5/5 nodes** ([manifests/11-nfs-tls/](manifests/11-nfs-tls/)) |
 
 ### The decisive test
 
