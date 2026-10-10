@@ -214,7 +214,7 @@ share of an authorisation package and which no tool produces.
 
 ## 5. GPUs work in both modes, today
 
-Your two workers are in **opposite modalities right now**:
+jetty's two workers are in **opposite modalities right now**:
 
 | | `u15` | `u16` |
 |---|---|---|
