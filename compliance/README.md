@@ -3,7 +3,8 @@
 *Read this one. Everything else is detail you can drill into if you want it.*
 
 *Doing this on another cluster? Start with [PLAYBOOK.md](PLAYBOOK.md) — the
-method, order of operations and cautions, generalised from jetty.*
+method, order of operations and cautions, generalised from jetty. For OAC's
+hub and hosted workload clusters, see [HUB-SPOKE.md](HUB-SPOKE.md).*
 
 Last updated 2026-10-08.
 
@@ -447,6 +448,7 @@ automated way to prove it still works on the other side.
 | [STORAGE-ISSUE.md](STORAGE-ISSUE.md) | The FlashBlade outage — diagnosis and resolution |
 | [PLAYBOOK.md](PLAYBOOK.md) | **The method, generalised** — order of operations, cautions, scaling beyond jetty |
 | [NFS-TLS.md](NFS-TLS.md) | Storage encryption in transit (closed 2026-10-07) — the gap, the evidence, the fix |
+| [HUB-SPOKE.md](HUB-SPOKE.md) | **Design:** building OAC's hub and hosted workload clusters compliant, managed by GitOps — boundary, install-time decisions, where each jetty control goes, experiments still needed |
 | [PATCHING.md](PATCHING.md) | Patch cadence — draft SSP text, current state, ACS policy proposal |
 | [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md) | Exception register for every privileged / host-access workload and wildcard-RBAC operator |
 | `manifests/` | Everything applied, in numeric order |
