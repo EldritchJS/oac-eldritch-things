@@ -1,0 +1,48 @@
+# A compliant hosted workload cluster. Split on the "# file:" lines.
+
+# file: hosted-clusters/<hub>/<cluster>/values.yaml (merge into the existing file)
+# FIPS is decided when the HostedCluster is created. Whether it can be
+# turned on afterwards is unverified (HUB-SPOKE.md §3): plan on rebuilding.
+fips: true
+# Node OS hardening: the ConfigMap rendered on the hub by
+# compliance-node-hardening (nodePool.enabled). Rolls every NodePool.
+nodePoolConfig:
+  - compliance-node-hardening
+apiServer:
+  audit:
+    profile: WriteRequestBodies
+imageConfig:
+  registrySources:
+    allowedRegistries: [quay.io, registry.redhat.io, registry.connect.redhat.com, registry.access.redhat.com, nvcr.io]
+clusterLabels:
+  massopen.cloud/feature-compliance: "true"
+---
+# file: values/<hub>/<cluster>/compliance-operator.yaml
+# No masters in a hosted cluster: scan workers only, and let the result
+# server schedule on any node. null, not {}: Helm merges maps, so {} would
+# keep the chart's master nodeSelector and the pod would never schedule.
+scanSetting:
+  roles: [worker]
+  rawResultStorage:
+    storageClassName: nfs-over-tls
+    nodeSelector: null
+    tolerations: []
+bindings:
+  - name: nist-moderate
+    profiles:
+      - name: ocp4-moderate-node
+      - name: rhcos4-moderate
+---
+# file: values/<hub>/<cluster>/rhacs.yaml
+securedCluster:
+  enabled: true
+  clusterName: <cluster>
+  centralEndpoint: <central route on the hub>:443
+---
+# file: values/<hub>/<cluster>/platform-hardening.yaml
+# imageConfig stays off: the hosted cluster's image config is set on the hub.
+systemUseNotice:
+  enabled: true
+  banner: <approved one-line notice>
+  motd: |
+    <approved full notice>

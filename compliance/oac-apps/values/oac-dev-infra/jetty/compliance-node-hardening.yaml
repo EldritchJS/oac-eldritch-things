@@ -1,0 +1,5 @@
+# jetty: reproduce what is on the cluster (manifests/21-* naming), so the
+# render can be checked against it with `oc diff` (scripts/validate.sh).
+sshdAllowUsers:
+  fileName: 10-jetty-allowusers.conf
+  header: "# Managed by MachineConfig 76-*-sshd-allowusers (compliance/manifests/21-*)"

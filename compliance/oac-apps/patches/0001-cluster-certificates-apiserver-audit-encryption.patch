@@ -1,0 +1,125 @@
+diff --git a/charts/cluster-certificates/templates/apiserver.yaml b/charts/cluster-certificates/templates/apiserver.yaml
+index 2036ad3..10bb6d9 100644
+--- a/charts/cluster-certificates/templates/apiserver.yaml
++++ b/charts/cluster-certificates/templates/apiserver.yaml
+@@ -1,5 +1,9 @@
+-{{ if .Values.certificates.api.enabled }}
+-{{- $clusterDomain := required "clusterDomain is required" .Values.clusterDomain }}
++{{- /*
++The APIServer singleton has one owner in this repo, so the audit and
++encryption settings live here next to the serving certificate. A second
++Application managing the same object would fight this one.
++*/}}
++{{- if or .Values.certificates.api.enabled .Values.apiServer.encryption }}
+ apiVersion: config.openshift.io/v1
+ kind: APIServer
+ metadata:
+@@ -7,11 +11,18 @@ metadata:
+   namespace: openshift-config
+ spec:
+   audit:
+-    profile: Default
++    {{- toYaml .Values.apiServer.audit | nindent 4 }}
++  {{- with .Values.apiServer.encryption }}
++  encryption:
++    {{- toYaml . | nindent 4 }}
++  {{- end }}
++  {{- if .Values.certificates.api.enabled }}
++  {{- $clusterDomain := required "clusterDomain is required" .Values.clusterDomain }}
+   servingCerts:
+     namedCertificates:
+       - names:
+           - '{{ .Values.clusterAPIDomainName | default (printf "api.%s" $clusterDomain) }}'
+         servingCertificate:
+           name: {{ .Values.certificates.api.certificate_name }}
+-{{ end }}
++  {{- end }}
++{{- end }}
+diff --git a/charts/cluster-certificates/tests/unit/apiserver_test.yaml b/charts/cluster-certificates/tests/unit/apiserver_test.yaml
+new file mode 100644
+index 0000000..0ede000
+--- /dev/null
++++ b/charts/cluster-certificates/tests/unit/apiserver_test.yaml
+@@ -0,0 +1,61 @@
++suite: APIServer
++templates:
++  - templates/apiserver.yaml
++set:
++  clusterDomain: example.com
++tests:
++  - it: should keep the Default audit profile by default
++    asserts:
++      - equal:
++          path: spec.audit
++          value: {profile: Default}
++      - notExists:
++          path: spec.encryption
++      - equal:
++          path: spec.servingCerts.namedCertificates[0].names[0]
++          value: api.example.com
++
++  - it: should render audit rules and encryption from values
++    set:
++      apiServer:
++        audit:
++          profile: WriteRequestBodies
++          customRules:
++            - group: system:serviceaccounts:openshift-monitoring
++              profile: Default
++        encryption:
++          type: aesgcm
++    asserts:
++      - equal:
++          path: spec.audit.profile
++          value: WriteRequestBodies
++      - equal:
++          path: spec.audit.customRules[0].profile
++          value: Default
++      - equal:
++          path: spec.encryption.type
++          value: aesgcm
++
++  - it: should render without a serving certificate when only encryption is set
++    set:
++      certificates:
++        api:
++          enabled: false
++      apiServer:
++        encryption:
++          type: aesgcm
++    asserts:
++      - notExists:
++          path: spec.servingCerts
++      - equal:
++          path: spec.encryption.type
++          value: aesgcm
++
++  - it: should render nothing when the API certificate and encryption are both off
++    set:
++      certificates:
++        api:
++          enabled: false
++    asserts:
++      - hasDocuments:
++          count: 0
+diff --git a/charts/cluster-certificates/values.yaml b/charts/cluster-certificates/values.yaml
+index 18da891..090d1ed 100644
+--- a/charts/cluster-certificates/values.yaml
++++ b/charts/cluster-certificates/values.yaml
+@@ -13,3 +13,16 @@ certificates:
+   ingress:
+     enabled: true
+     certificate_name: default-ingress-certificate
++
++# The rest of the APIServer object (see templates/apiserver.yaml). Only
++# rendered on clusters with their own API server; hosted clusters set these
++# through HostedCluster.spec.configuration on the hub.
++apiServer:
++  # Default keeps request metadata only. NIST 800-53 AU-3 / 800-171 3.3.1
++  # want WriteRequestBodies; platform service accounts can be dropped back
++  # to Default with customRules to keep volume (and so retention) sane.
++  audit:
++    profile: Default
++  # etcd encryption of Secrets, ConfigMaps, Routes, OAuth tokens.
++  # Example: {type: aesgcm}. Empty leaves the cluster's setting alone.
++  encryption: {}

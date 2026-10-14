@@ -1,0 +1,54 @@
+# Drop-in for apps/<hub>/ (copy to apps/oac-dev-infra/compliance.yaml, say).
+# Deploys the compliance charts to the hub itself. A drop-in rather than an
+# addition to hub-components, so it lands on one hub when someone decides
+# to put it there, not on every hub when the PR merges.
+#
+# BEFORE SYNCING compliance-node-hardening on a hub that has never had it:
+# it adds ~380 MachineConfigs, and every node reboots to take them. Pause
+# the MachineConfigPools first, sync, check the rendered configs, then
+# unpause so each pool reboots once rather than once per MachineConfig:
+#   oc patch mcp master worker --type=merge -p '{"spec":{"paused":true}}'
+# (compliance/remediate.sh did the same on jetty for the same reason.)
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: hub-compliance
+  namespace: openshift-gitops
+spec:
+  generators:
+    - list:
+        elements:
+          - component: compliance-operator
+          - component: compliance-node-hardening
+          - component: file-integrity
+          - component: namespace-guardrails
+          - component: platform-hardening
+          - component: nfs-tls
+          - component: etcd-backup
+          - component: rhacs
+  template:
+    metadata:
+      name: "hub-{{component}}"
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/CCI-MOC/oac-apps.git
+        targetRevision: main
+        path: "charts/{{component}}"
+        helm:
+          ignoreMissingValueFiles: true
+          valueFiles:
+            - "/values/oac-dev-infra/{{component}}.yaml"
+            - "/values/oac-dev-infra/local-cluster/{{component}}.yaml"
+      destination:
+        server: https://kubernetes.default.svc
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        retry:
+          limit: 5
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 10m

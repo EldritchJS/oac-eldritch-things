@@ -1,0 +1,154 @@
+# jetty: reproduces manifests/17-*, 18-* and 22-*; the reasons for each
+# allow rule are in those files. stackrox has no ingress entry: the ACS
+# operator ships its ingress policies. The FlashBlade rule names the range,
+# not the array's address (public repo).
+quotaName: jetty-objects
+
+namespaces:
+  assisted-installer:
+    quota:
+      pods: '1'
+      persistentvolumeclaims: '0'
+      services: '0'
+      services.nodeports: '0'
+      services.loadbalancers: '0'
+  etcd-backup:
+    ingress: {}
+    egress: {}
+    quota:
+      pods: '4'
+      persistentvolumeclaims: '2'
+      requests.storage: 50Gi
+      services: '0'
+      services.nodeports: '0'
+      services.loadbalancers: '0'
+  nfs-tls:
+    ingress: {}
+    egress: {}
+    extraPolicies:
+    - name: allow-egress-builds
+      spec:
+        podSelector:
+          matchExpressions:
+          - key: openshift.io/build.name
+            operator: Exists
+        policyTypes:
+        - Egress
+        egress:
+        - ports:
+          - protocol: TCP
+            port: 6443
+        - ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+        - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: openshift-dns
+          ports:
+          - protocol: UDP
+            port: 5353
+          - protocol: TCP
+            port: 5353
+        - ports:
+          - protocol: TCP
+            port: 443
+    quota:
+      pods: '20'
+      persistentvolumeclaims: '2'
+      requests.storage: 10Gi
+      services: '2'
+      services.nodeports: '0'
+      services.loadbalancers: '0'
+  nvidia-gpu-operator:
+    ingress:
+      sameNamespace: true
+      monitoringPorts:
+      - 8080
+      - 9400
+      - 8000
+    egress:
+      apiAndDns: true
+      sameNamespace: true
+    quota:
+      pods: '50'
+      persistentvolumeclaims: '0'
+      services: '10'
+      services.nodeports: '0'
+      services.loadbalancers: '0'
+  portworx:
+    ingress:
+      sameNamespace: true
+      hostNetworkPorts:
+      - 9443
+    egress:
+      apiAndDns: true
+    extraPolicies:
+    - name: allow-egress-csi-controller-to-array
+      spec:
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/component: controller-plugin
+        policyTypes:
+        - Egress
+        egress:
+        - to:
+          - ipBlock:
+              cidr: 10.0.0.0/8
+          ports:
+          - protocol: TCP
+            port: 443
+    quota:
+      pods: '30'
+      persistentvolumeclaims: '2'
+      requests.storage: 10Gi
+      services: '10'
+      services.nodeports: '0'
+      services.loadbalancers: '0'
+  rhacs-operator:
+    ingress:
+      monitoringPorts:
+      - 8443
+    egress:
+      apiAndDns: true
+  stackrox:
+    egress:
+      apiAndDns: true
+      sameNamespace: true
+    extraPolicies:
+    - name: allow-egress-https-feeds
+      spec:
+        podSelector:
+          matchExpressions:
+          - key: app
+            operator: In
+            values:
+            - central
+            - scanner-v4-indexer
+        policyTypes:
+        - Egress
+        egress:
+        - ports:
+          - protocol: TCP
+            port: 443
+    quota:
+      pods: '45'
+      persistentvolumeclaims: '8'
+      requests.storage: 1Ti
+      services: '20'
+      services.nodeports: '0'
+      services.loadbalancers: '0'
+  vms-test:
+    ingress:
+      sameNamespace: true
+    quota:
+      pods: '20'
+      persistentvolumeclaims: '20'
+      requests.storage: 1Ti
+      services: '10'
+      services.nodeports: '0'
+      services.loadbalancers: '0'
+      requests.nvidia.com/gpu: '4'
+      requests.nvidia.com/GH100_H100_SXM5_80GB: '4'

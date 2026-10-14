@@ -174,12 +174,18 @@ changes.
 
 ## 8. Build order (once E1–E2 are answered)
 
+The charts for these steps are written (2026-10-13), in the fork's
+`compliance-charts` branch; see [oac-apps/README.md](oac-apps/README.md)
+for where they are and how they were checked against jetty.
+
 **Hub**
 1. Decide §3 items; install with FIPS and disk encryption.
 2. Bootstrap ArgoCD from `oac-apps` (existing procedure).
-3. Add compliance components to `hub-components`: Compliance Operator with
-   tailored profiles and `autoApplyRemediations: false`, FIO, NetworkPolicies,
-   etcd backup, ACS Central, log forwarding (when B1 exists).
+3. Add the compliance components through a drop-in under `apps/<hub>/`
+   rather than `hub-components`, so each hub opts in: Compliance Operator
+   with tailored profiles and `autoApplyRemediations: false`, FIO,
+   NetworkPolicies, etcd backup, ACS Central, log forwarding (when B1
+   exists).
 4. Scan; turn remediations into git (§5); repeat until only documented
    exceptions remain. jetty's PLAYBOOK phases apply, with git as the delivery.
 5. `verify.sh`, adapted for the hub.

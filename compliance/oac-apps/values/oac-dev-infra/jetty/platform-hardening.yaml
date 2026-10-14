@@ -1,0 +1,35 @@
+# jetty: reproduces manifests/14-* and 16-*. The notice is PLACEHOLDER text,
+# not approved by any legal or compliance office (see 16-*).
+imageConfig:
+  enabled: true
+  allowedRegistries:
+  - nvcr.io
+  - quay.io
+  - registry.redhat.io
+  - registry.connect.redhat.com
+  - registry.access.redhat.com
+  - docker.io
+  - registry.k8s.io
+  - ghcr.io
+  allowedRegistriesForImport:
+  - domainName: quay.io
+    insecure: false
+  - domainName: registry.access.redhat.com
+    insecure: false
+  - domainName: registry.redhat.io
+    insecure: false
+systemUseNotice:
+  enabled: true
+  banner: '[PLACEHOLDER — NOT LEGALLY APPROVED] Authorized use only. Activity on this system is monitored and recorded. Use constitutes consent to monitoring.'
+  color: '#ffffff'
+  backgroundColor: '#8a1c1c'
+  motd: |
+    ************************************************************************
+    *  PLACEHOLDER NOTICE — NOT APPROVED BY ANY LEGAL OR COMPLIANCE OFFICE  *
+    ************************************************************************
+    This system is for authorized use only. All activity on this system is
+    monitored, recorded, and subject to audit. Users have no expectation of
+    privacy in any data stored on or transmitted through this system.
+    Unauthorized use may result in loss of access and other action.
+    By continuing, you consent to these terms.
+    ************************************************************************

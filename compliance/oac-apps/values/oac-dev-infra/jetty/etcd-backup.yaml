@@ -1,0 +1,4 @@
+# jetty: reproduces manifests/15-etcd-backup.yaml (4.22.16 cli image).
+image: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:b36a4c332f05bd71c5315b6cfe38987809bae09c2865217e1c7240fa6bfd813b
+storage:
+  storageClassName: nfs-over-tls

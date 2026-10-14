@@ -1,0 +1,14 @@
+# jetty: reproduces manifests/11-nfs-tls/ minus the BuildConfig and
+# ImageStream (the image build is not part of a fleet deployment). The CA
+# ConfigMap was made by kustomize's configMapGenerator, hence the suffix;
+# the certificate itself is kept out of this public repo.
+image:
+  repository: ghcr.io/eldritchjs/tlshd
+  digest: sha256:f8bcab63ea0cd9bfe28e84e127391c95fe9470d9b5f1cf2f97d87f99cf50e50b
+imagePullSecrets:
+  - name: ghcr-push
+ca:
+  existingConfigMap: nfs-certificates-6m76m98dtt
+storageClass:
+  nfsPolicy: export-policy-tls
+  nfsServer: nfs-server

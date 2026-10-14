@@ -1,0 +1,67 @@
+# jetty: Central and SecuredCluster on the same cluster (manifests/02-*, 04-*,
+# 05-*, 19-*). The Central spec is taken from the live object: the database
+# PVCs were pre-created on nfs-over-tls during the TLS migration
+# (NFS-TLS.md), so it names claims rather than a size and class.
+central:
+  enabled: true
+  spec:
+    central:
+      db:
+        persistence:
+          persistentVolumeClaim:
+            claimName: central-db-tls
+      exposure:
+        route:
+          enabled: true
+    egress:
+      connectivityPolicy: Online
+    scannerV4:
+      db:
+        persistence:
+          persistentVolumeClaim:
+            claimName: scanner-v4-db-tls
+securedCluster:
+  enabled: true
+  clusterName: jetty
+  centralEndpoint: central.stackrox.svc:443
+  spec:
+    admissionControl:
+      listenOnCreates: true
+      listenOnEvents: true
+      listenOnUpdates: true
+    perNode:
+      collector:
+        collection: CORE_BPF
+    scannerV4:
+      scannerComponent: AutoSense
+securityPolicies:
+- name: jetty-own-images-fixable-important
+  spec:
+    policyName: 'jetty: our images - fixable Important+'
+    description: Fixable vulnerabilities rated Important or Critical in container images built by this project (not vendor images).
+    rationale: We control these images, so a fixable finding is remediated by a rebuild within the timeline in PATCHING.md (class c).
+    remediation: 'Rebuild the image from current RHEL content (for tlshd: oc start-build tlshd -n nfs-tls), pin the new digest in the manifest, roll it out, and confirm this violation clears.'
+    categories:
+    - Vulnerability Management
+    lifecycleStages:
+    - BUILD
+    - DEPLOY
+    eventSource: NOT_APPLICABLE
+    severity: HIGH_SEVERITY
+    scope:
+    - cluster: jetty
+      namespace: ^nfs-tls$
+      clusterLabel: {}
+      label: {}
+      namespaceLabel: {}
+    policySections:
+    - sectionName: fixable-important
+      policyGroups:
+      - fieldName: Fixed By
+        booleanOperator: OR
+        values:
+        - value: .*
+      - fieldName: Severity
+        booleanOperator: OR
+        values:
+        - value: '>= IMPORTANT'

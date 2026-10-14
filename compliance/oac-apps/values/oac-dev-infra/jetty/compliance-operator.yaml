@@ -1,0 +1,49 @@
+# jetty: reproduces manifests/03-*, 06-* and 13-* (see that file's header for
+# why each exception exists). Checked against the live cluster with oc diff.
+scanSetting:
+  name: jetty-default
+  rawResultStorage:
+    storageClassName: nfs-over-tls
+
+bindings:
+  - name: cis-baseline
+    profiles:
+      - {name: jetty-ocp4-cis, kind: TailoredProfile}
+      - {name: ocp4-cis-node}
+  - name: nist-moderate
+    profiles:
+      - {name: jetty-ocp4-moderate, kind: TailoredProfile}
+      - {name: ocp4-moderate-node}
+      - {name: rhcos4-moderate}
+
+tailoredProfiles:
+- name: jetty-ocp4-cis
+  spec:
+    extends: ocp4-cis
+    title: CIS (jetty) — GPU/virt SCC capability exception
+    description: Stock ocp4-cis with the ten GPU Operator and OpenShift Virtualization SCCs added to the allowed-capabilities allowlist. See manifest header.
+    disableRules:
+    - name: ocp4-openshift-api-server-audit-log-path
+      rationale: 'Scanner false positive, OCPBUGS-126610: the content checks the kube-apiserver ConfigMap for the openshift-apiserver path. The real openshift-apiserver audit-log-path is set and is verified directly by tests/verify.sh T-03. Re-enable when fixed content ships.'
+    setValues:
+    - name: ocp4-var-sccs-with-allowed-capabilities-regex
+      rationale: Vendor-shipped GPU Operator and OpenShift Virtualization SCCs, required for kernel module loading and device management; namespace-scoped and monitored at runtime by ACS. Matched by exact name.
+      value: ^privileged$|^hostnetwork-v2$|^restricted-v2$|^restricted-v3$|^nonroot-v2$|^insights-runtime-extractor-scc|^nested-container$|^nvidia-dcgm$|^nvidia-dcgm-exporter$|^nvidia-driver$|^nvidia-gpu-feature-discovery$|^nvidia-mig-manager$|^nvidia-node-status-exporter$|^nvidia-operator-validator$|^nvidia-sandbox-validator$|^nvidia-vgpu-device-manager$|^kubevirt-controller$
+- name: jetty-ocp4-moderate
+  spec:
+    extends: ocp4-moderate
+    title: NIST 800-53 Moderate (jetty) — GPU/virt SCC capability exception
+    description: Stock ocp4-moderate with the ten GPU Operator and OpenShift Virtualization SCCs added to the allowed-capabilities allowlist. See manifest header.
+    disableRules:
+    - name: ocp4-openshift-api-server-audit-log-path
+      rationale: 'Scanner false positive, OCPBUGS-126610: the content checks the kube-apiserver ConfigMap for the openshift-apiserver path. The real openshift-apiserver audit-log-path is set and is verified directly by tests/verify.sh T-03. Re-enable when fixed content ships.'
+    setValues:
+    - name: ocp4-var-sccs-with-allowed-capabilities-regex
+      rationale: Vendor-shipped GPU Operator and OpenShift Virtualization SCCs, required for kernel module loading and device management; namespace-scoped and monitored at runtime by ACS. Matched by exact name.
+      value: ^privileged$|^hostnetwork-v2$|^restricted-v2$|^restricted-v3$|^nonroot-v2$|^insights-runtime-extractor-scc|^nested-container$|^nvidia-dcgm$|^nvidia-dcgm-exporter$|^nvidia-driver$|^nvidia-gpu-feature-discovery$|^nvidia-mig-manager$|^nvidia-node-status-exporter$|^nvidia-operator-validator$|^nvidia-sandbox-validator$|^nvidia-vgpu-device-manager$|^kubevirt-controller$
+    - name: ocp4-var-deployment-limit-namespaces-exempt-regex
+      rationale: 'E1 (2026-10-09): every deployment lacking requests/limits outside the platform is vendor operator-managed (Portworx operator via its CSV, px-pure-csi-controller via PureStorageCluster). A wrong memory limit on the storage CSI is an outage; usage cannot yet be sized (no metrics persistence). Revisit with measured limits once metrics persist.'
+      value: ^nvidia-gpu-operator$|^portworx$
+    - name: ocp4-var-daemonset-limit-namespaces-exempt-regex
+      rationale: 'E1 (2026-10-09): every daemonset lacking requests/limits outside the platform is vendor operator-managed (14 NVIDIA GPU Operator DaemonSets from ClusterPolicy, px-pure-csi-node from PureStorageCluster). A wrong memory limit on the GPU driver or storage CSI node plugin is an outage; usage cannot yet be sized. Revisit with measured limits.'
+      value: ^nvidia-gpu-operator$|^portworx$
