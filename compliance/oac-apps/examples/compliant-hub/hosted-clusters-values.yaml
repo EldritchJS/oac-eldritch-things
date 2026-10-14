@@ -1,0 +1,19 @@
+# Merge into hosted-clusters/<hub>/values.yaml: hub-wide defaults that every
+# hosted cluster on this hub inherits. A cluster's own values.yaml can still
+# override them; compliance-hub-policy then refuses the result.
+
+# Fixed when the HostedCluster is created. Whether it can be turned on
+# later is unverified (HUB-SPOKE.md §3): plan on rebuilding.
+fips: true
+# The ConfigMap rendered on the hub by compliance-node-hardening
+# (nodePool.enabled). On every NodePool, ahead of its own config.
+nodePoolConfig:
+  - compliance-node-hardening
+apiServer:
+  audit:
+    profile: WriteRequestBodies
+imageConfig:
+  registrySources:
+    # From an inventory of every image the clusters use; see the
+    # platform-hardening chart's values.yaml.
+    allowedRegistries: [quay.io, registry.redhat.io, registry.connect.redhat.com, registry.access.redhat.com, nvcr.io]

@@ -73,6 +73,53 @@ narrower** — a small hub-admin group, MFA through Keycloak, and no tenant
 access at all. Losing the hub takes every workload cluster's control plane
 with it, so its backup and recovery matter more than any single cluster's.
 
+### Compliant and non-compliant hubs
+
+There may be both. The rules (decided 2026-10-13):
+
+- **A non-compliant hub cannot have compliant workload clusters.** Their
+  control planes, etcd and audit logs would live on it.
+- **A compliant hub carries no non-compliant workload clusters.** A cluster
+  that will never hold CUI or ePHI goes on a non-compliant hub.
+
+So compliance is a property of the **hub**, and everything is switched per
+hub, never per workload cluster. In `oac-apps` terms (built on the fork's
+`compliance-charts` branch; example in
+[oac-apps/examples/compliant-hub/](oac-apps/examples/compliant-hub/)):
+
+| Per hub | Compliant hub | Non-compliant hub |
+|---|---|---|
+| Drop-in `apps/<hub>/compliance.yaml` | Compliance charts on the hub, and the in-cluster ones on **every** managed cluster (existing `all-managed-clusters` placement) | absent |
+| `hosted-clusters/<hub>/values.yaml` | FIPS, node hardening ConfigMap, audit profile, registry allowlist, inherited by every hosted cluster | as today |
+| Admission policy (`compliance-hub-policy`) | Hub refuses a HostedCluster without FIPS, the audit profile or secret encryption, and a NodePool without the hardening ConfigMap | absent |
+
+There is no per-cluster label to set, so none to forget on a compliant hub
+or to set by mistake on a non-compliant one. The second would be worse than
+nothing: a cluster that scans clean with its control plane on a
+non-compliant hub. The admission policy turns "we would not put one there"
+into "the hub refuses": it holds even if git or a person asks for a
+non-compliant cluster. Whether its field checks match the HostedCluster
+API is **to verify** on a hub (it was only compiled against jetty, which
+has no HyperShift types); start it in warn-only mode.
+
+**What the two kinds of hub still share**, and so what the compliant hub's
+boundary has to reach:
+
+- **The `oac-apps` repository.** Everything on `main` goes to every hub.
+  Whoever can merge there can change the compliant hub, so change control
+  (800-53 CM-3/CM-5; 800-171 3.4.3/3.4.5) applies to the whole repo, not
+  just the compliant hub's files. Branch protection and required review on
+  `main` are part of the compliant hub's controls.
+- **Shared services:** AWS Secrets Manager (admin kubeconfigs, etcd
+  material if pushed), Keycloak, Route 53 and the OIDC bucket. Each one
+  that the compliant hub depends on is in its boundary and must meet its
+  baseline, whoever else uses it. A separate secret store, or separately
+  scoped credentials, for the compliant hub is the simpler boundary.
+- **Network and hardware pools.** A node that served a non-compliant
+  cluster should be wiped and re-provisioned before it joins a compliant
+  one (800-171 3.8.3, media sanitization), so agents should not move
+  between hubs' inventories without that step.
+
 ## 3. Decisions that cannot be changed after install
 
 Like FIPS on jetty, these are fixed when a cluster is created. Getting one
@@ -190,12 +237,15 @@ for where they are and how they were checked against jetty.
    exceptions remain. jetty's PLAYBOOK phases apply, with git as the delivery.
 5. `verify.sh`, adapted for the hub.
 
-**Each workload cluster**
-1. Values file with `fips: true`, `spec.configuration` (audit, image allowlist),
-   NodePool `config` carrying the node hardening.
-2. In-cluster components: Compliance Operator (scan only), FIO, ACS secured
-   cluster, NetworkPolicies, quotas, `tlshd` where NFS is used, the GPU
-   billing guard.
+**Each workload cluster** (on a compliant hub; nothing here is per-cluster
+opt-in, see §2)
+1. FIPS, audit, image allowlist and NodePool `config` come from the hub-wide
+   `hosted-clusters/<hub>/values.yaml`; the cluster's own values file only
+   adds what is specific to it. The hub's admission policy refuses the
+   cluster if any of it is overridden.
+2. In-cluster components arrive by being managed by the hub: Compliance
+   Operator (scan only), FIO, ACS secured cluster, NetworkPolicies, quotas,
+   `tlshd` where NFS is used, the GPU billing guard.
 3. Scan, confirm, record evidence per cluster.
 
 ## 9. Not decided here
@@ -203,6 +253,6 @@ for where they are and how they were checked against jetty.
 - Whether compliance components live in `oac-apps` or a separate repo the hub
   also reads. That is the `oac-apps` maintainers' call.
 - ACS topology (one Central on the hub vs. one per environment).
-- Which workload clusters hold CUI/ePHI at all. A cluster that never does
-  can carry a lighter baseline — but the hub cannot, because it hosts every
-  cluster's control plane.
+- Which workload clusters hold CUI/ePHI at all. One that never does goes on
+  a non-compliant hub (§2); it cannot share a compliant hub with a lighter
+  baseline.

@@ -1,0 +1,109 @@
+# Copy to apps/<hub>/compliance.yaml on a COMPLIANT hub only.
+#
+# BEFORE THE FIRST SYNC of compliance-node-hardening on a hub that has never
+# had it: it adds ~380 MachineConfigs and every node reboots to take them.
+# Pause the MachineConfigPools, sync, check the rendered configs, unpause,
+# so each pool reboots once:
+#   oc patch mcp master worker --type=merge -p '{"spec":{"paused":true}}'
+#
+# Start compliance-hub-policy with validationActions [Warn, Audit] on a hub
+# that already has hosted clusters, to see what it would refuse.
+---
+# The hub itself.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: hub-compliance
+  namespace: openshift-gitops
+spec:
+  generators:
+    - list:
+        elements:
+          - component: compliance-hub-policy
+          - component: compliance-operator
+          - component: compliance-node-hardening
+          - component: file-integrity
+          - component: namespace-guardrails
+          - component: platform-hardening
+          - component: nfs-tls
+          - component: etcd-backup
+          - component: rhacs
+  template:
+    metadata:
+      name: "hub-{{component}}"
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/CCI-MOC/oac-apps.git
+        targetRevision: main
+        path: "charts/{{component}}"
+        helm:
+          ignoreMissingValueFiles: true
+          valueFiles:
+            - "/values/oac-dev-infra/{{component}}.yaml"
+            - "/values/oac-dev-infra/local-cluster/{{component}}.yaml"
+      destination:
+        server: https://kubernetes.default.svc
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        retry:
+          limit: 5
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 10m
+---
+# Every cluster this hub manages, through the existing all-managed-clusters
+# placement: no label to set, so none to forget. Node hardening is not in
+# this list; hosted clusters get it through their NodePools on the hub.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: managed-compliance
+  namespace: openshift-gitops
+spec:
+  generators:
+    - matrix:
+        generators:
+          - clusterDecisionResource:
+              configMapRef: acm-placement
+              labelSelector:
+                matchLabels:
+                  cluster.open-cluster-management.io/placement: all-managed-clusters
+              requeueAfterSeconds: 180
+          - list:
+              elements:
+                - component: compliance-operator
+                - component: file-integrity
+                - component: namespace-guardrails
+                - component: platform-hardening
+                - component: nfs-tls
+                - component: rhacs
+  template:
+    metadata:
+      name: "{{name}}-{{component}}"
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/CCI-MOC/oac-apps.git
+        targetRevision: main
+        path: "charts/{{component}}"
+        helm:
+          ignoreMissingValueFiles: true
+          valueFiles:
+            - "/values/oac-dev-infra/{{component}}.yaml"
+            - "/values/oac-dev-infra/{{name}}/{{component}}.yaml"
+      destination:
+        server: "{{server}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        retry:
+          limit: 5
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 10m

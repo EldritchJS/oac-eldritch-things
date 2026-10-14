@@ -1,0 +1,127 @@
+# One section per file; split on the "# file:" lines. Paths are under
+# values/<hub>/. The ApplicationSets layer values/<hub>/<chart>.yaml first,
+# then values/<hub>/<cluster>/<chart>.yaml (local-cluster = the hub). So the
+# hub-wide file is written for the hosted clusters, and local-cluster/
+# overrides it for the hub.
+---
+# file: local-cluster/cluster-certificates.yaml (merge; needs the on-hold
+# cluster-certificates patch, patches/0001 in this repo)
+apiServer:
+  audit:
+    profile: WriteRequestBodies
+    customRules:
+    - group: system:serviceaccounts:openshift-operator-lifecycle-manager
+      profile: Default
+    - group: system:serviceaccounts:openshift-cnv
+      profile: Default
+    - group: system:serviceaccounts:openshift-network-operator
+      profile: Default
+    - group: system:serviceaccounts:portworx
+      profile: Default
+    - group: system:serviceaccounts:openshift-machine-config-operator
+      profile: Default
+    - group: system:serviceaccounts:openshift-apiserver-operator
+      profile: Default
+    - group: system:serviceaccounts:openshift-monitoring
+      profile: Default
+    - group: system:serviceaccounts:openshift-console-operator
+      profile: Default
+    - group: system:serviceaccounts:openshift-cloud-controller-manager-operator
+      profile: Default
+    - group: system:serviceaccounts:openshift-cluster-olm-operator
+      profile: Default
+  encryption:
+    type: aesgcm
+---
+# file: local-cluster/compliance-node-hardening.yaml
+# The hub's own MachineConfigs, plus the ConfigMap its NodePools reference.
+nodePool:
+  enabled: true
+---
+# file: compliance-hub-policy.yaml
+# Defaults are right for a compliant hub; no file needed unless starting
+# in warn-only mode on a hub that already has hosted clusters:
+validationActions: [Warn, Audit]
+---
+# file: compliance-operator.yaml
+# Hosted clusters: no masters to scan, and the result server may run on
+# any node. null, not {}: Helm merges maps, so {} would keep the chart's
+# master nodeSelector and the pod would never schedule.
+scanSetting:
+  roles: [worker]
+  rawResultStorage:
+    storageClassName: nfs-over-tls
+    nodeSelector: null
+    tolerations: []
+bindings:
+  - name: nist-moderate
+    profiles:
+      - name: ocp4-moderate-node
+      - name: rhcos4-moderate
+---
+# file: local-cluster/compliance-operator.yaml
+# The hub has masters and its own control plane: back to the chart defaults.
+scanSetting:
+  roles: [master, worker]
+  rawResultStorage:
+    nodeSelector:
+      node-role.kubernetes.io/master: ""
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+        operator: Exists
+bindings:
+  - name: nist-moderate
+    profiles:
+      - name: ocp4-moderate
+      - name: ocp4-moderate-node
+      - name: rhcos4-moderate
+---
+# file: platform-hardening.yaml
+# Every cluster: the system use notice. Text from the legal or compliance
+# office, not from here.
+systemUseNotice:
+  enabled: true
+  banner: <approved one-line notice>
+  motd: |
+    <approved full notice>
+---
+# file: local-cluster/platform-hardening.yaml
+# The hub's own registry allowlist. Hosted clusters get theirs from
+# hosted-clusters-values.yaml (imageConfig) instead.
+imageConfig:
+  enabled: true
+  allowedRegistries: [quay.io, registry.redhat.io, registry.connect.redhat.com, registry.access.redhat.com]
+---
+# file: local-cluster/etcd-backup.yaml
+image: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:<oc adm release info --image-for=cli>
+storage:
+  storageClassName: nfs-over-tls
+---
+# file: rhacs.yaml
+# Every hosted cluster: a SecuredCluster reporting to the hub's Central.
+securedCluster:
+  enabled: true
+  clusterName: <set per cluster in values/<hub>/<cluster>/rhacs.yaml>
+  centralEndpoint: <central route on the hub>:443
+---
+# file: local-cluster/rhacs.yaml
+central:
+  enabled: true
+  spec:
+    central:
+      exposure:
+        route:
+          enabled: true
+      db:
+        persistence:
+          persistentVolumeClaim:
+            claimName: central-db
+            size: 100Gi
+            storageClassName: nfs-over-tls
+    egress:
+      connectivityPolicy: Online
+securedCluster:
+  enabled: true
+  clusterName: oac-dev-infra
+  centralEndpoint: central.stackrox.svc:443

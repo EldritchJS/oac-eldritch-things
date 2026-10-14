@@ -6,7 +6,7 @@ charts live in the fork**, not here:
 
 | Where | What |
 |---|---|
-| [EldritchJS/oac-apps](https://github.com/EldritchJS/oac-apps), branch `compliance-charts` | Eight charts, `scripts/export-remediations.py`, an opt-in `compliance-clusters` placement and ApplicationSet. A proposal: to be discussed with the oac-apps maintainers before any PR |
+| [EldritchJS/oac-apps](https://github.com/EldritchJS/oac-apps), branch `compliance-charts` | Nine new charts and `scripts/export-remediations.py`. Adds files only; changes nothing existing. A proposal: to be discussed with the oac-apps maintainers before any PR |
 | same fork, branch `hosted-cluster-nodepool-config` | `NodePool.spec.config`, API server audit and image config on the `hosted-cluster` chart. Renders identically for every existing cluster; a PR candidate on its own |
 | this directory | The evidence that the charts reproduce jetty, and the pieces that are not in the fork (below) |
 
@@ -17,13 +17,19 @@ jetty was built by hand, once; that approach will not be repeated. So the
 charts are written for clusters built from oac-apps, not for adopting jetty.
 jetty is used here only as a real cluster to check the charts against.
 
+Compliance is switched per **hub**, never per workload cluster: a compliant
+hub carries only compliant hosted clusters, and a non-compliant hub carries
+none (HUB-SPOKE.md §2, "Compliant and non-compliant hubs"). The ninth chart,
+`compliance-hub-policy`, makes a compliant hub refuse a non-compliant
+HostedCluster or NodePool.
+
 ## What is here
 
 | Path | What |
 |---|---|
 | `values/oac-dev-infra/jetty/` | Values that point each chart at jetty's settings. Kept out of the fork: jetty is not a managed cluster |
 | `patches/0001-*.patch` | `cluster-certificates`: audit and encryption on the APIServer object. **On hold** until its owner is asked (see below) |
-| `examples/` | A hub drop-in ApplicationSet, hub values, hosted-cluster values |
+| `examples/compliant-hub/` | Everything a compliant hub adds: the `apps/<hub>/` drop-in (hub and every managed cluster), hub-wide hosted-cluster values, chart values. A non-compliant hub adds nothing |
 | `scripts/validate.sh` | Renders the fork's charts with jetty's values and runs `oc diff` against jetty |
 
 ## The proof
@@ -106,12 +112,20 @@ Found by diffing against a real cluster; all fixed in the fork:
 - **`patches/0001` (`cluster-certificates`):** changes what an existing
   oac-apps chart owns. Its defaults render what it renders today, but
   whether audit settings belong in that chart is the maintainers' call.
-- **`examples/`:** they show settings; they are not deployable. The
-  `cluster-certificates` part of `examples/hub/values.yaml` needs
-  `patches/0001`.
+- **`examples/compliant-hub/`:** per-hub files, and which hub is compliant
+  is a decision, not a default. The `cluster-certificates` part of
+  `values.yaml` needs `patches/0001`. Rendered on 2026-10-13 against both
+  fork branches plus `patches/0001`: `oac-dev-workload0` with the hub-wide
+  values comes out with FIPS, `WriteRequestBodies`, secret encryption, an
+  image allowlist and the hardening ConfigMap on both NodePools, which is
+  what `compliance-hub-policy` checks.
 
 ## Not verified: needs a hub and a hosted cluster (HUB-SPOKE.md §7)
 
+- `compliance-hub-policy` against real HyperShift objects. Its CEL was
+  accepted by jetty's API server (a dry run; jetty has no HyperShift types,
+  so field names were not type-checked). Start it with
+  `validationActions: [Warn, Audit]`.
 - **E1:** what the Compliance Operator reports inside a hosted cluster.
 - **E2:** whether a NodePool accepts the merged node-hardening ConfigMap
   (188 rules, about 88 KB), and how `InPlace` upgrades roll it out.
