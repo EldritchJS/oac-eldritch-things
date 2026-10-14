@@ -223,7 +223,8 @@ changes.
 
 The charts for these steps are written (2026-10-13), in the fork's
 `compliance-charts` branch; see [oac-apps/README.md](oac-apps/README.md)
-for where they are and how they were checked against jetty.
+for where they are and how they were checked against jetty. The steps
+below, written out as commands and checks, are in [BUILD.md](BUILD.md).
 
 **Hub**
 1. Decide §3 items; install with FIPS and disk encryption.

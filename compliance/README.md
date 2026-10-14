@@ -450,6 +450,7 @@ automated way to prove it still works on the other side.
 | [NFS-TLS.md](NFS-TLS.md) | Storage encryption in transit (closed 2026-10-07) — the gap, the evidence, the fix |
 | [HUB-SPOKE.md](HUB-SPOKE.md) | **Design:** building OAC's hub and hosted workload clusters compliant, managed by GitOps — boundary, install-time decisions, where each jetty control goes, experiments still needed |
 | [oac-apps/README.md](oac-apps/README.md) | **Proof:** jetty's manifests as oac-apps charts (in the fork), checked against jetty with `oc diff`; what the check caught |
+| [BUILD.md](BUILD.md) | **Runbook:** building a compliant hub, then a compliant workload cluster on it — prerequisites, steps, checks; not yet run |
 | [PATCHING.md](PATCHING.md) | Patch cadence — draft SSP text, current state, ACS policy proposal |
 | [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md) | Exception register for every privileged / host-access workload and wildcard-RBAC operator |
 | `manifests/` | Everything applied, in numeric order |
