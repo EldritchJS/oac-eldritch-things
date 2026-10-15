@@ -1,0 +1,49 @@
+# nist-dev-infra test hub, stage B. Apply by hand on the hub:
+#   KUBECONFIG=$HOME/kubeadmin-nist-dev-infra oc apply -f stage-b.yaml
+# The hub's ArgoCD reads CCI-MOC/oac-apps main, which does not have the
+# compliance charts, so this points at the fork's test branch instead.
+# Each stage file lists everything installed so far and updates the same
+# ApplicationSet. Deleting it removes the Applications and what they made.
+# Stage B: adds the rest, except node hardening. No reboots.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: nist-compliance-test
+  namespace: openshift-gitops
+spec:
+  generators:
+    - list:
+        elements:
+          - component: compliance-operator
+          - component: compliance-hub-policy
+          - component: file-integrity
+          - component: platform-hardening
+          - component: etcd-backup
+          - component: rhacs
+          - component: namespace-guardrails
+  template:
+    metadata:
+      name: "nist-test-{{component}}"
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/EldritchJS/oac-apps.git
+        targetRevision: nist-dev-infra-test
+        path: "charts/{{component}}"
+        helm:
+          ignoreMissingValueFiles: true
+          valueFiles:
+            - "/values/nist-dev-infra/{{component}}.yaml"
+            - "/values/nist-dev-infra/local-cluster/{{component}}.yaml"
+      destination:
+        server: https://kubernetes.default.svc
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        retry:
+          limit: 5
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 10m
