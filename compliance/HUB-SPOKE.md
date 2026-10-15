@@ -187,6 +187,78 @@ two controllers both own flaps. The model that fits:
 New workload clusters then arrive compliant. Nothing is remediated after the
 fact.
 
+### What is automatic and what is not
+
+Once a hub and its workload clusters are built, there are two kinds of
+failure, and they are handled differently:
+
+- **Drift from the approved configuration: automatic.** The approved
+  configuration is what is in git. ArgoCD's self-heal restores in-cluster
+  objects, and HyperShift restores node configuration from the NodePool.
+  No person is involved. A failure of this kind rarely lasts until the next
+  scan.
+- **A change to the approved configuration: reviewed.** A failure that
+  self-heal does not fix means one of these:
+  - a Compliance Operator update added or changed rules;
+  - the fix needs a local choice (for example, the chrony remediation
+    points every node at `pool.ntp.org`);
+  - the check cannot pass here and needs a documented exception.
+
+  Each one is a change to what every cluster runs, so it goes through a
+  PR.
+
+Why the second kind is not applied automatically:
+
+- **800-171 3.4.3** asks for changes to be reviewed and approved before
+  they are made. Enforcing an approved configuration automatically meets
+  that. A scanner changing the configuration on its own does not.
+- **A node fix restarts every node on the hub.** Node hardening is one
+  ConfigMap shared by every NodePool, so one bad remediation reaches every
+  workload cluster. jetty's remediations were applied in stages for this
+  reason.
+- **A workload cluster cannot apply node fixes.** It has no MachineConfig
+  operator (what the Compliance Operator does with node remediations there
+  is part of E1). Applying them automatically would need a new component
+  on the hub that rewrites the hardening ConfigMap outside git.
+
+**Planned automation: a bot that opens the PR.** A job on the hub does the
+following:
+
+1. Collects new failures and their suggested remediations from every
+   cluster.
+2. Writes them into `compliance-node-hardening`, or into chart values, in
+   the chart's file format.
+3. Opens a PR that lists the clusters and checks affected.
+
+A person reviews and merges it. ArgoCD then rolls it out, and the next scan
+confirms. The only manual step left is the approval, and an assessor can
+see it in the PR history. This is not written yet. It needs:
+
+- a way to read results from every cluster (below);
+- `scripts/export-remediations.py` extended to export remediations that
+  were not applied (BUILD.md Part 1 step 6).
+
+**Possible later: pre-approved in-cluster fixes.** A short, reviewed list
+of low-risk remediations that are not node-level could be enforced by ACM
+policies (`remediationAction: enforce`). Node-level remediations stay out
+of that list. Decide after E1, when it is known which checks fail on
+workload clusters.
+
+**How results reach the hub: not designed yet.** Each cluster's results
+are stored in that cluster, as `ComplianceCheckResult` objects. There are
+two candidates for bringing them to the hub:
+
+- **ACS (try first).** Every workload cluster already runs a
+  SecuredCluster that reports to Central on the hub. Central can show
+  Compliance Operator results from its secured clusters, which would give
+  one view for every cluster. **To verify in E1.**
+- **ACM governance.** A Policy on the hub that reports each cluster's scan
+  status on the ACM dashboard.
+
+Raw scan results (ARF), kept as evidence, also have to be archived per
+cluster, as `tests/verify.sh` T-04 does on jetty. The design for that is
+open.
+
 ## 6. Hub-specific findings from reading `oac-apps`
 
 - **Workload clusters are not FIPS** (§3). Fix before tenants depend on one,

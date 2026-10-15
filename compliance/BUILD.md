@@ -317,6 +317,13 @@ Then archive this cluster's first scan results as its baseline evidence.
 
 ### 5. Afterwards
 
+- **Failures after the build** are handled as HUB-SPOKE.md §5 ("What is
+  automatic and what is not") describes:
+  - drift is reverted without anyone acting;
+  - anything else becomes a reviewed PR.
+
+  A bot to open those PRs is planned, not written. Until then, a person
+  checks each cluster's results and writes the PR.
 - **Node hardening changes** are made once, in the chart, for the whole hub.
   Every NodePool on the hub then rolls (to verify, E2). Schedule the change
   like a maintenance window.
