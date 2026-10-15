@@ -1,8 +1,9 @@
 # Hub and spoke: building compliant OAC clusters
 
-*Design, 2026-10-13. Nothing here has been tested on a hub or a hosted
-cluster yet; every claim is marked as **read** (from source or docs),
-**measured** (on jetty) or **to verify**.*
+*Design, 2026-10-13. Every claim is marked as **read** (from source or
+docs), **measured** (on jetty, or on the `nist-dev-infra` hub where it says
+so) or **to verify**. Hub install state was measured on `nist-dev-infra`
+on 2026-10-15 (§3). Nothing has been tested on a hosted cluster yet.*
 
 > Angle-bracket values are redacted internal addresses. See the top-level
 > README § Conventions.
@@ -132,6 +133,22 @@ wrong means rebuilding.
 | **Disk encryption at rest** (RHCOS LUKS, TPM2 or Tang) | Install-time config. The hub's local disks hold every workload cluster's etcd | How LUKS is requested for agent-provisioned hosted workers — **to verify** | Not configured (read: nothing in `ai-ivp` or `oac-apps`) | **Not encrypted** (measured 2026-10-13: no crypt layer under `/sysroot`). No OpenShift scanner profile checks this; 800-171 3.13.16 and HIPAA 164.312(a)(2)(iv) still ask |
 | **SSH key type** | ECDSA or RSA; FIPS rejects Ed25519 (noted in `ai-ivp`) | Same | ECDSA in use (read) | ECDSA (read) |
 | **Network placement** | Management network, VPN-only; hub API not exposed | API and ingress may be NAT'd public | Workload API/ingress optionally public (read) | VPN-only |
+
+### Measured on `nist-dev-infra` (2026-10-15)
+
+`nist-dev-infra` is the first hub built for this work: a compact hub of three
+FC830s, built from `CCI-MOC/oac-infra` PR #19 (`hub-images`, open at the
+time). It runs OpenShift 4.22.14. Checked through the API, then on each node
+with `oc debug`:
+
+| Item | Result |
+|---|---|
+| FIPS | **On**, on every node. `fips: true` in the install config and the rendered MachineConfig. Kernel `fips_enabled=1` and `fips=1`, crypto policy `FIPS`, `fips-mode-setup --check` enabled, OpenSSL FIPS provider active |
+| Disk encryption | **None.** The install asked for `tpmv2`, but FC830s have no TPM 2.0, so the root disk is plain xfs. Exception for this dev hub |
+| What the encryption setting covers | Only the install disk. The installer's `diskEncryption` setting (AgentClusterInstall) does not reach the separate etcd disk, which `98-master-var-lib-etcd` formats as plain xfs. It would not reach LVMS disks either. Even with a TPM, etcd, the most sensitive data on a hub, would be unencrypted. Fix: Tang (no TPM needed), or LUKS for the extra disks in the install MachineConfigs. Both **to verify (E6)** |
+| Disks per node | Two of 1.5 TB: OS and etcd. **No free disk for LVMS**, which OAC uses for hosted-cluster etcd (`lvms-vg0`). As built, the hub cannot host a workload cluster; E1 and E2 wait on a storage decision |
+| Time and DNS | `us.pool.ntp.org` and a public DNS resolver (read, install vars). Acceptable for dev; a compliant hub wants MOC-run servers |
+| Installed | Nothing past the base install: no operators, no ArgoCD, no StorageClasses. All 34 cluster operators healthy |
 
 ## 4. Where each jetty control goes
 
