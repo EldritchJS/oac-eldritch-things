@@ -92,6 +92,10 @@ As upstream:
 helm template bootstrap ./bootstrap --set hubName=<hub> | oc apply -f -
 ```
 
+Use the full name, `applications.argoproj.io`, when checking ArgoCD.
+ACM installs a second `Application` type (`app.k8s.io`), and plain
+`oc get applications` then lists that one instead, which is empty.
+
 ### 4. The hub's oac-apps PR
 
 This is one PR to the repo, with the hub's usual files plus the compliance
@@ -127,6 +131,7 @@ oc patch mcp master worker --type=merge -p '{"spec":{"paused":true}}'
 Merge. Wait for ArgoCD to sync, then check the rendered configs:
 
 ```
+oc get applications.argoproj.io -n openshift-gitops      # all Synced, Healthy
 oc get mc | grep -c '^75-'                               # about 380
 oc get mcp                                               # UPDATED=False, paused
 ```
