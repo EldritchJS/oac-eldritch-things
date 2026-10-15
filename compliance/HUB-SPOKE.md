@@ -149,6 +149,7 @@ with `oc debug`:
 | Disks per node | Two of 1.5 TB: OS and etcd. **No free disk for LVMS**, which OAC uses for hosted-cluster etcd (`lvms-vg0`). As built, the hub cannot host a workload cluster; E1 and E2 wait on a storage decision |
 | Time and DNS | `us.pool.ntp.org` and a public DNS resolver (read, install vars). Acceptable for dev; a compliant hub wants MOC-run servers |
 | Installed | Nothing past the base install: no operators, no ArgoCD, no StorageClasses. All 34 cluster operators healthy |
+| First scans (stage A, scan only) | Failures: `ocp4-cis` 9, `ocp4-moderate` 25, `ocp4-moderate-node` 4, `rhcos4-moderate` 191. Within one of jetty's first scan on every profile. 196 remediations generated, **none applied**, so scan-only works. Details and what closes each failure: [nist-dev-infra/README.md](nist-dev-infra/README.md) |
 
 ## 4. Where each jetty control goes
 
