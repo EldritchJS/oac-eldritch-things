@@ -38,12 +38,14 @@ rollout, with a second round of reboots.
 
 ## Before each stage
 
-- **A:** a default StorageClass. The scanner keeps its raw results on a
-  volume, and none exists until the standard storage components sync. If
-  the class is not the default, set it in the values. Until then, scans run
-  but their result server stays Pending.
-- **B:** the same StorageClass, for the ACS Central database and etcd
-  backups. The hub's SecuredCluster also needs an init bundle from Central
+- **A:** nothing. The hub has no storage yet: Portworx is not configured
+  for it (upstream `docs/pure-storage-configuration.md`: a FlashBlade realm,
+  the storage network, and `values/nist-dev-infra/local-cluster/portworx.yaml`
+  in CCI-MOC/oac-apps). So raw result storage is off. Results are still
+  kept as `ComplianceCheckResult` objects; only the raw ARF files are
+  skipped. Turn it back on, with the class, once storage exists.
+- **B:** a default StorageClass, for the ACS Central database and etcd
+  backups, so it waits for Portworx. The hub's SecuredCluster also needs an init bundle from Central
   (as on jetty, `manifests/05-*`). It is a credential, so it is applied by
   hand and never committed. NetworkPolicies may fail for a few minutes,
   until their namespaces exist, and then succeed on retry.
