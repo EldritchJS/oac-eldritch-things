@@ -21,6 +21,7 @@ spec:
           - component: etcd-backup
           - component: rhacs
           - component: namespace-guardrails
+          - component: nfs-tls
   template:
     metadata:
       name: "nist-test-{{component}}"

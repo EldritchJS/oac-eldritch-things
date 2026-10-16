@@ -23,6 +23,7 @@ spec:
           - component: etcd-backup
           - component: rhacs
           - component: namespace-guardrails
+          - component: nfs-tls
           - component: compliance-node-hardening
   template:
     metadata:

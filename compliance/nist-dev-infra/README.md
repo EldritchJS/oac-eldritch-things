@@ -18,7 +18,7 @@ This is a test setup. A compliant hub would get its compliance charts as an
 | Stage | Adds | Reboots |
 |---|---|---|
 | A | Compliance Operator, scanning the stock profiles with no tailoring: a baseline of a fresh FIPS hub | none |
-| B | Admission policy, FIO, system use notice, etcd backup, ACS (Central and the hub's SecuredCluster), NetworkPolicies and quotas for those namespaces | none |
+| B | Admission policy, FIO, system use notice, etcd backup, ACS (Central and the hub's SecuredCluster), NFS over TLS (`tlshd` and the `nfs-over-tls` StorageClass, not yet the default), NetworkPolicies and quotas for those namespaces | none |
 | C | Node hardening: about 380 MachineConfigs | **every node**. On this compact hub that is the whole cluster, one node at a time |
 
 Apply a stage:
@@ -64,7 +64,6 @@ rollout, with a second round of reboots.
 
 Not set for this hub, on purpose:
 - the registry allowlist, until the hub's images have been inventoried;
-- NFS over TLS, unless the hub mounts FlashBlade NFS;
 - node hardening on NodePools, until there is a hosted cluster.
 
 ## Stage A results (2026-10-15)
