@@ -451,6 +451,7 @@ automated way to prove it still works on the other side.
 | [HUB-SPOKE.md](HUB-SPOKE.md) | **Design:** building OAC's hub and hosted workload clusters compliant, managed by GitOps — boundary, install-time decisions, where each jetty control goes, experiments still needed |
 | [oac-apps/README.md](oac-apps/README.md) | **Proof:** jetty's manifests as oac-apps charts (in the fork), checked against jetty with `oc diff`; what the check caught |
 | [nist-dev-infra/README.md](nist-dev-infra/README.md) | **Test:** the compliance charts on the nist-dev-infra hub, in stages, from the fork's `nist-dev-infra-test` branch |
+| [nist-dev-infra/STORAGE-BRINGUP.md](nist-dev-infra/STORAGE-BRINGUP.md) | **Notes:** the steps that give an OAC hub storage, and ways to streamline them |
 | [BUILD.md](BUILD.md) | **Runbook:** building a compliant hub, then a compliant workload cluster on it — prerequisites, steps, checks; not yet run |
 | [PATCHING.md](PATCHING.md) | Patch cadence — draft SSP text, current state, ACS policy proposal |
 | [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md) | Exception register for every privileged / host-access workload and wildcard-RBAC operator |

@@ -45,6 +45,31 @@ These are not cluster steps, but the build cannot start without them.
 | P8 | A secret store scope (or a separate store) and credentials for this hub only | Shared services are in the compliant hub's boundary | AWS and Keycloak owners |
 | P9 | An audit and alert destination (B1) | Without it, audit records last hours (on jetty, 5.8 h) | Security or SIEM owners |
 | P10 | A tested way to install with disk encryption (E6) | It cannot be added after install | Hub team |
+| P11 | At least two array admins, each with their own FlashBlade account, and the playbook's token in a shared, audited store | The realm steps need array access; sharing it keeps hub builds moving | Array admins |
+
+### Hub infrastructure: request all of it on day one
+
+Every OAC hub needs these outside the cluster. They have different
+owners, so request them all when the hub is planned, in parallel, from one
+tracking issue that links each PR. Request a named reviewer on each PR. The storage steps in more detail:
+[nist-dev-infra/STORAGE-BRINGUP.md](nist-dev-infra/STORAGE-BRINGUP.md).
+
+| # | Needed | Where (example) | Owner | Done when |
+|---|---|---|---|---|
+| I1 | FlashBlade realm | `everpure-moc` `realms.yaml` (#26) | Array admins | PR merged |
+| I2 | Realm playbook run | `everpure-moc` `ansible/flashblade-realm.yaml` | Array admins | `cluster/<hub>/portworx` exists |
+| I3 | OIDC provider and `eso-<hub>`, `cert-manager-<hub>` roles | `moc-aws` `openshift_oidc_clusters`, `cert-manager-policies.tf` (#53) | moc-aws maintainers | `cluster/<hub>/aws-oidc` exists |
+| I4 | Signing keys in S3, issuer set | `oac-apps/bootstrap/setup-oidc.sh` (after I3) | Hub owner | The OIDC document is public, and the hub's issuer matches it |
+| I5 | Storage VLAN untagged on each node's second port, reaching DHCP, the gateway and the array | Switch configuration | Network admins | Each node's `br-storage` has a DHCP lease (after I6) |
+| I6 | The hub's values: `external-secrets.yaml`, `portworx.yaml` | `oac-apps` `values/<hub>/local-cluster/` (#142) | Hub owner | `hub-external-secrets` and `hub-portworx` Synced, a default StorageClass |
+
+`tests/hub-preflight.sh <hub>` checks I2 to I6, read-only. Run it before
+calling any of them done.
+
+I6 can merge before the others, and is a useful test of I5: the storage
+bridges come up as soon as it applies. But until I2 to I4 are done, the
+`hub-portworx` sync fails, and ArgoCD does not retry the same commit. When
+the preflight passes, re-sync `hub-portworx` by hand.
 
 ---
 
@@ -71,7 +96,12 @@ In `ai-ivp` (`open-accelerator` branch), as upstream, plus:
    configuration. How to do this with OAC's agent-install templates is
    **to verify (E6)**. Do not install without it: adding it later means a
    rebuild.
-4. Generate the media, boot the nodes, and record the kubeadmin
+4. **Service account issuer:** set `serviceAccountIssuer` to
+   `https://oac-clusters-oidc.s3.us-east-1.amazonaws.com/<hub>` in the
+   install configuration. Setting it later, as `setup-oidc.sh` offers to,
+   invalidates every service account token and restarts most pods.
+   Where OAC's install templates take it is **to verify**.
+5. Generate the media, boot the nodes, and record the kubeadmin
    credentials in the hub's own secret store scope (P8), as upstream.
 
 Check before going further. If any check fails, reinstall:

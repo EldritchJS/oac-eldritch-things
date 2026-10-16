@@ -65,6 +65,7 @@ lockout protection is not protection.
 | What | Where | Why separate |
 |---|---|---|
 | GPU switch turnaround | `./gpu-switch-timing.sh` | **Mutating** — unloads/reloads the driver |
+| Hub infrastructure preflight | `./hub-preflight.sh <hub>` | Checks a hub's infrastructure (BUILD.md I2 to I6), not its compliance, and needs AWS access. Read-only; reads secret metadata, never values. |
 | etcd restore rehearsal | `./etcd-restore-rehearsal.sh` | Creates one temporary pod in `etcd-backup`; restores the newest backup into it, serves it, compares with live. Control plane untouched. |
 | VM networking / storage / migration | `../vms/test-vm*.sh` | Creates VMs |
 | GPU-to-VM end-to-end | `../vms/gpu/test-gpu-vm.sh` | Creates a GPU VM |

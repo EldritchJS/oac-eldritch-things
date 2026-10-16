@@ -45,7 +45,8 @@ rollout, with a second round of reboots.
   kept as `ComplianceCheckResult` objects; only the raw ARF files are
   skipped. Turn it back on, with the class, once storage exists.
 - **B:** a default StorageClass, for the ACS Central database and etcd
-  backups, so it waits for Portworx. The hub's SecuredCluster also needs an init bundle from Central
+  backups, so it waits for Portworx ([STORAGE-BRINGUP.md](STORAGE-BRINGUP.md);
+  `../tests/hub-preflight.sh nist-dev-infra` passes when it is ready). The hub's SecuredCluster also needs an init bundle from Central
   (as on jetty, `manifests/05-*`). It is a credential, so it is applied by
   hand and never committed. NetworkPolicies may fail for a few minutes,
   until their namespaces exist, and then succeed on retry.
