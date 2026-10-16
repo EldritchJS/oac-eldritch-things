@@ -58,8 +58,8 @@ tracking issue that links each PR. Request a named reviewer on each PR. The stor
 |---|---|---|---|---|
 | I1 | FlashBlade realm | `everpure-moc` `realms.yaml` (#26) | Array admins | PR merged |
 | I2 | Realm playbook run | `everpure-moc` `ansible/flashblade-realm.yaml` | Array admins | `cluster/<hub>/portworx` exists |
-| I3 | OIDC provider and `eso-<hub>`, `cert-manager-<hub>` roles | `moc-aws` `openshift_oidc_clusters`, `cert-manager-policies.tf` (#53) | moc-aws maintainers | `cluster/<hub>/aws-oidc` exists |
-| I4 | Signing keys in S3, issuer set | `oac-apps/bootstrap/setup-oidc.sh` (after I3) | Hub owner | The OIDC document is public, and the hub's issuer matches it |
+| I3 | Signing keys in S3, issuer set | `oac-apps/bootstrap/setup-oidc.sh`; needs S3 write on `oac-clusters-oidc` | Hub owner | The OIDC document is public, and the hub's issuer matches it |
+| I4 | OIDC provider and `eso-<hub>`, `cert-manager-<hub>` roles | `moc-aws` `openshift_oidc_clusters`, `cert-manager-policies.tf` (#53). The PR can open on day one, but merge it after I3: AWS reads the hub's OIDC document when it creates the provider | moc-aws maintainers | `cluster/<hub>/aws-oidc` exists |
 | I5 | Storage VLAN untagged on each node's second port, reaching DHCP, the gateway and the array | Switch configuration | Network admins | Each node's `br-storage` has a DHCP lease (after I6) |
 | I6 | The hub's values: `external-secrets.yaml`, `portworx.yaml` | `oac-apps` `values/<hub>/local-cluster/` (#142) | Hub owner | `hub-external-secrets` and `hub-portworx` Synced, a default StorageClass |
 

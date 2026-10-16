@@ -42,26 +42,30 @@ app_state() {
 }
 
 # Without a working AWS session every secret looks missing. Say so instead.
+AWS_OK=0
 if aws sts get-caller-identity --region "$AWS_REGION" >/dev/null 2>&1; then
+  AWS_OK=1
   hdr "I2  Realm playbook: Portworx secret"
   if secret_exists "cluster/${HUB}/portworx"; then ok "cluster/${HUB}/portworx exists"
   else bad "cluster/${HUB}/portworx missing: the realm playbook has not run"; fi
-
-  hdr "I3  moc-aws: OIDC roles applied"
-  if secret_exists "cluster/${HUB}/aws-oidc"; then ok "cluster/${HUB}/aws-oidc exists (written by the moc-aws module)"
-  else bad "cluster/${HUB}/aws-oidc missing: the moc-aws entry is not applied"; fi
 else
-  hdr "I2, I3  AWS"
-  bad "no AWS session (set AWS_PROFILE; for SSO, run aws sso login): I2 and I3 not checked"
+  hdr "I2, I4  AWS"
+  bad "no AWS session (set AWS_PROFILE; for SSO, run aws sso login): I2 and I4 not checked"
 fi
 
-hdr "I4  setup-oidc.sh: keys published, issuer set"
+hdr "I3  setup-oidc.sh: keys published, issuer set"
 code=$(curl -s -o /dev/null -w '%{http_code}' "${ISSUER}/.well-known/openid-configuration")
 if [ "$code" = 200 ]; then ok "OIDC document is public"
 else bad "OIDC document returns HTTP ${code}: setup-oidc.sh has not uploaded it"; fi
 current=$(oc get authentication cluster -o jsonpath='{.spec.serviceAccountIssuer}' 2>/dev/null)
 if [ "$current" = "$ISSUER" ]; then ok "serviceAccountIssuer matches"
 else bad "serviceAccountIssuer is '${current}', expected ${ISSUER}"; fi
+
+hdr "I4  moc-aws: OIDC roles applied"
+if [ "${AWS_OK}" = 1 ]; then
+  if secret_exists "cluster/${HUB}/aws-oidc"; then ok "cluster/${HUB}/aws-oidc exists (written by the moc-aws module)"
+  else bad "cluster/${HUB}/aws-oidc missing: the moc-aws entry is not applied (its apply fails until I3 is done)"; fi
+else skip "no AWS session"; fi
 
 hdr "I5  Storage VLAN: DHCP lease on each node's br-storage"
 nodes=$(oc get nncp -o jsonpath='{range .items[*]}{.spec.nodeSelector.kubernetes\.io/hostname}{"\n"}{end}' 2>/dev/null | grep -v '^$')
