@@ -7,11 +7,11 @@ FlashBlade. These are the steps it takes, as learned on nist-dev-infra.
 
 | # | Step | Repo or place | Owner (role) |
 |---|---|---|---|
-| 1 | A FlashBlade realm for the hub | `CCI-MOC/everpure-moc`, `realms.yaml` | Array admins |
-| 2 | The realm playbook, which writes `cluster/<hub>/portworx` to AWS Secrets Manager | Run by hand; needs the FlashBlade admin token | Array admins |
+| 1 | A FlashBlade realm for the hub | `CCI-MOC/everpure-moc`, `realms.yaml` | FlashBlade admins |
+| 2 | The realm playbook, which writes `cluster/<hub>/portworx` to AWS Secrets Manager | Run by hand; needs the FlashBlade admin token | FlashBlade admins |
 | 3 | The hub's signing keys published to S3, and its `serviceAccountIssuer` set to match | `oac-apps/bootstrap/setup-oidc.sh`; needs S3 write | Hub owner |
 | 4 | An AWS identity for the hub's external-secrets: an OIDC provider and the `eso-<hub>` role. AWS reads the hub's OIDC document (step 3) when it creates the provider | `CCI-MOC/moc-aws`, `openshift_oidc_clusters` | moc-aws maintainers |
-| 5 | The storage VLAN (untagged) on each node's second port, reaching the DHCP server, the gateway and the array | Switch configuration | Network admins |
+| 5 | The storage VLAN (untagged) on each node's second port, reaching the DHCP server, the gateway and the FlashBlade | Switch configuration | Network admins |
 | 6 | The hub's values: `external-secrets.yaml` (role) and `portworx.yaml` (nodes, ports, storage subnet) | `CCI-MOC/oac-apps` | Hub owner, oac-apps reviewers |
 
 Steps 1, 3 and 5 can start on day one. Step 2 follows 1, and step 4
@@ -28,7 +28,7 @@ succeeds once 2, 4 and 5 are done.
 - **Set `serviceAccountIssuer` at install** (BUILD.md Part 1 step 2).
   Then `setup-oidc.sh` only uploads keys, and the hub does not need to
   restart its pods.
-- **Share array access** among more than one admin, each with their own
+- **Share FlashBlade access** among more than one admin, each with their own
   account, with the playbook's token in a shared, audited store (BUILD.md
   P11).
 - **Request a named reviewer** on each prerequisite PR.

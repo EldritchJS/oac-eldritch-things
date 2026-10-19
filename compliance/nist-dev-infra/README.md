@@ -144,8 +144,8 @@ after TLS is up. The StorageClass parameters (`export-policy-tls`,
 `nfs-server`, `xprtsec=tls`) are the same as jetty's, where 20 volumes mount
 this way. A cleartext volume in the same test mounted normally.
 
-So the difference is likely on the array, in this realm's
-`export-policy-tls`. To check with the array admins:
+So the difference is likely on the FlashBlade, in this realm's
+`export-policy-tls`. To check with the FlashBlade admins:
 
 - that `nist-dev-infra::export-policy-tls` exists, with a rule for the storage
   subnet that allows read-write and requires TLS;

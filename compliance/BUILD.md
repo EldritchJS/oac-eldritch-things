@@ -45,7 +45,7 @@ These are not cluster steps, but the build cannot start without them.
 | P8 | A secret store scope (or a separate store) and credentials for this hub only | Shared services are in the compliant hub's boundary | AWS and Keycloak owners |
 | P9 | An audit and alert destination (B1) | Without it, audit records last hours (on jetty, 5.8 h) | Security or SIEM owners |
 | P10 | A tested way to install with disk encryption (E6) | It cannot be added after install | Hub team |
-| P11 | At least two array admins, each with their own FlashBlade account, and the playbook's token in a shared, audited store | The realm steps need array access; sharing it keeps hub builds moving | Array admins |
+| P11 | At least two FlashBlade admins, each with their own account, and the playbook's token in a shared, audited store | The realm steps need FlashBlade access; sharing it keeps hub builds moving | FlashBlade admins |
 
 ### Hub infrastructure: request all of it on day one
 
@@ -56,11 +56,11 @@ tracking issue that links each PR. Request a named reviewer on each PR. The stor
 
 | # | Needed | Where (example) | Owner | Done when |
 |---|---|---|---|---|
-| I1 | FlashBlade realm | `everpure-moc` `realms.yaml` (#26) | Array admins | PR merged |
-| I2 | Realm playbook run | `everpure-moc` `ansible/flashblade-realm.yaml` | Array admins | `cluster/<hub>/portworx` exists |
+| I1 | FlashBlade realm | `everpure-moc` `realms.yaml` (#26) | FlashBlade admins | PR merged |
+| I2 | Realm playbook run | `everpure-moc` `ansible/flashblade-realm.yaml` | FlashBlade admins | `cluster/<hub>/portworx` exists |
 | I3 | Signing keys in S3, issuer set | `oac-apps/bootstrap/setup-oidc.sh`; needs S3 write on `oac-clusters-oidc` | Hub owner | The OIDC document is public, and the hub's issuer matches it |
 | I4 | OIDC provider and `eso-<hub>`, `cert-manager-<hub>` roles | `moc-aws` `openshift_oidc_clusters`, `cert-manager-policies.tf` (#53). The PR can open on day one, but merge it after I3: AWS reads the hub's OIDC document when it creates the provider | moc-aws maintainers | `cluster/<hub>/aws-oidc` exists |
-| I5 | Storage VLAN untagged on each node's second port, reaching DHCP, the gateway and the array | Switch configuration | Network admins | Each node's `br-storage` has a DHCP lease (after I6) |
+| I5 | Storage VLAN untagged on each node's second port, reaching DHCP, the gateway and the FlashBlade | Switch configuration | Network admins | Each node's `br-storage` has a DHCP lease (after I6) |
 | I6 | The hub's values: `external-secrets.yaml`, `portworx.yaml` | `oac-apps` `values/<hub>/local-cluster/` (#142) | Hub owner | `hub-external-secrets` and `hub-portworx` Synced, a default StorageClass |
 
 `tests/hub-preflight.sh <hub>` checks I2 to I6, read-only. Run it before
