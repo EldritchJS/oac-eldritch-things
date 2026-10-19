@@ -1,5 +1,7 @@
 # GPU Passthrough for VMs
 
+> The options for GPUs in VMs on OAC (passthrough, vGPU, compliant and non-compliant spokes) are summarised in [OPTIONS.md](OPTIONS.md). This page is the runbook behind it.
+
 Giving a VM a physical NVIDIA GPU, and measuring what it costs to move a node between serving containers and serving VMs.
 
 > **Status: the passthrough path is built and partly proven on `jetty`.** `preflight.sh`, `install-operators.sh` and `setup-passthrough.sh` (including `APPLY=1`) have all run against real hardware. A GPU VM **schedules and is allocated an H100**. The original blocker — no working storage — was resolved on 2026-10-02, but `test-gpu-vm.sh` has **not been re-run since**, so a full guest boot is still unproven. `test-gpu-switch.sh` has not been run. Node-level modality switching *has* been measured independently: see `tests/gpu-switch-timing.sh` (73s / 208s, no reboot).
