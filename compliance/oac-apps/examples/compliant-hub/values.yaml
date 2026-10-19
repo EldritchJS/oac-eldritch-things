@@ -43,6 +43,27 @@ nodePool:
 # in warn-only mode on a hub that already has hosted clusters:
 validationActions: [Warn, Audit]
 ---
+# file: local-cluster/portworx.yaml
+# Merge into the hub's Portworx values (BUILD.md I6). pure-fb-nfsv4 becomes
+# a TLS class and stays the default; the hub has no cleartext FlashBlade
+# class. Hosted clusters that mount the FlashBlade set the same in their
+# own portworx.yaml.
+portworx:
+  tls: true
+  nfs_policy: export-policy-tls
+---
+# file: nfs-tls.yaml
+# tlshd on every node (hub and hosted clusters). Portworx's class is the
+# TLS class, so this chart adds none of its own.
+image:
+  repository: ghcr.io/eldritchjs/tlshd
+  digest: sha256:<pinned digest>
+ca:
+  externalSecret:
+    remoteKey: cluster/<hub>/nfs-tls-ca
+storageClass:
+  enabled: false
+---
 # file: compliance-operator.yaml
 # Hosted clusters: no masters to scan, and the result server may run on
 # any node. null, not {}: Helm merges maps, so {} would keep the chart's
@@ -50,7 +71,7 @@ validationActions: [Warn, Audit]
 scanSetting:
   roles: [worker]
   rawResultStorage:
-    storageClassName: nfs-over-tls
+    storageClassName: pure-fb-nfsv4
     nodeSelector: null
     tolerations: []
 bindings:
@@ -96,7 +117,7 @@ imageConfig:
 # file: local-cluster/etcd-backup.yaml
 image: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:<oc adm release info --image-for=cli>
 storage:
-  storageClassName: nfs-over-tls
+  storageClassName: pure-fb-nfsv4
 ---
 # file: rhacs.yaml
 # Every hosted cluster: a SecuredCluster reporting to the hub's Central.
@@ -118,7 +139,7 @@ central:
           persistentVolumeClaim:
             claimName: central-db
             size: 100Gi
-            storageClassName: nfs-over-tls
+            storageClassName: pure-fb-nfsv4
     egress:
       connectivityPolicy: Online
 securedCluster:

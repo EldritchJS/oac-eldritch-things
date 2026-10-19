@@ -87,10 +87,13 @@ class at all:
   realm, the cleartext `export-policy` also requires TLS. Keep the policy
   rather than deleting it: the CSI driver creates any policy a StorageClass
   names that does not exist, with its own defaults. **To agree with the
-  FlashBlade admins.**
-- An admission policy in `compliance-hub-policy` that rejects a claim on a
-  StorageClass without `xprtsec=tls` would stop a hand-made cleartext class.
-  **To build.**
+  FlashBlade admins** (CCI-MOC/everpure-moc#28: `tls_only` realms).
+- The `flashblade-nfs-tls` admission policy in `compliance-hub-policy`
+  (`storage.requireNfsTls`, on by default) refuses a FlashBlade StorageClass
+  without `xprtsec=tls`, and a FlashBlade volume created without it. Turn
+  it on only once the hub's Portworx class is TLS (`portworx.tls: true`):
+  it would refuse the cleartext class when ArgoCD replaces it. Tested on
+  nist-dev-infra on 2026-10-19 (Part 1 step 7).
 - Re-running the realm playbook makes a new certificate. Update
   `cluster/<hub>/nfs-tls-ca` when that happens, or every mount fails.
 
@@ -171,8 +174,9 @@ Also set:
 - **`compliance-hub-policy`:** this is a new hub with no hosted clusters
   yet, so leave the chart default (`Deny`). Do not copy the example's
   `[Warn, Audit]` line; that line is for a hub that already has clusters.
-- **`nfs-tls`:** `nfsServer`, `nfsPolicy`, and the CA (an `externalSecret`
-  from the hub's secret store), if the hub mounts FlashBlade NFS.
+- **`nfs-tls`:** the `tlshd` image digest and the CA (an `externalSecret`
+  from `cluster/<hub>/nfs-tls-ca`), with `storageClass.enabled: false`: the
+  hub's Portworx class is the TLS class (I6, I7).
 - **`namespace-guardrails`:** the hub's own namespaces. Start from what
   HyperShift creates in its control-plane namespaces (HUB-SPOKE.md §6).
 - **Log forwarding:** when B1 exists (P9).
@@ -244,12 +248,30 @@ from jetty, so the hub should start close to clean. The platform checks
    - Remove the GPU tests.
 2. Archive the first clean scan results (raw ARF) and the exceptions list.
    That is the hub's baseline evidence.
-3. Check the admission policy is in place:
+3. Check the admission policies are in place:
 
 ```
-oc get validatingadmissionpolicy compliant-hosted-clusters
-oc get validatingadmissionpolicybinding compliant-hosted-clusters -o jsonpath='{.spec.validationActions}'   # ["Deny"]
+oc get validatingadmissionpolicy compliant-hosted-clusters flashblade-nfs-tls
+for p in compliant-hosted-clusters flashblade-nfs-tls; do
+  oc get validatingadmissionpolicybinding $p -o jsonpath='{.spec.validationActions}{"\n"}'   # ["Deny"]
+done
 ```
+
+   Check that the hub refuses a cleartext FlashBlade StorageClass, without
+   creating one:
+
+```
+oc create --dry-run=server -f - <<'EOF'
+{"apiVersion": "storage.k8s.io/v1", "kind": "StorageClass",
+ "metadata": {"name": "policy-test"}, "provisioner": "pxd.portworx.com",
+ "mountOptions": ["nfsvers=4.1", "tcp"],
+ "parameters": {"backend": "pure_file", "pure_nfs_server": "nfs-server", "pure_nfs_policy": "export-policy"}}
+EOF
+```
+
+   It must be denied by `flashblade-nfs-tls`. With `"xprtsec=tls"` added to
+   `mountOptions`, the same dry run must be accepted. On nist-dev-infra
+   (2026-10-19) both did.
 
 4. Check that the hub refuses a non-compliant cluster, without creating
    one. This is a server-side dry run:
