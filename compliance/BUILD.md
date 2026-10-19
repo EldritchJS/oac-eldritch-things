@@ -61,8 +61,8 @@ tracking issue that links each PR. Request a named reviewer on each PR. The stor
 | I3 | Signing keys in S3, issuer set | `oac-apps/bootstrap/setup-oidc.sh`; needs S3 write on `oac-clusters-oidc` | Hub owner | The OIDC document is public, and the hub's issuer matches it |
 | I4 | OIDC provider and `eso-<hub>`, `cert-manager-<hub>` roles | `moc-aws` `openshift_oidc_clusters`, `cert-manager-policies.tf` (#53). The PR can open on day one, but merge it after I3: AWS reads the hub's OIDC document when it creates the provider | moc-aws maintainers | `cluster/<hub>/aws-oidc` exists |
 | I5 | Storage VLAN untagged on each node's second port, reaching DHCP, the gateway and the FlashBlade | Switch configuration | Network admins | Each node's `br-storage` has a DHCP lease (after I6) |
-| I6 | The hub's values: `external-secrets.yaml`, `portworx.yaml` with `portworx.is_default_storage_class: false` | `oac-apps` `values/<hub>/local-cluster/` (#142) | Hub owner | `hub-external-secrets` and `hub-portworx` Synced |
-| I7 | NFS over TLS, before the first volume: the realm certificate in `cluster/<hub>/nfs-tls-ca`, and the `nfs-tls` values with `storageClass.default: true` | AWS Secrets Manager; `oac-apps` `values/<hub>/local-cluster/nfs-tls.yaml` | Hub owner (the certificate comes from the FlashBlade admins) | `tlshd` Ready on every node, `nfs-over-tls` the only default StorageClass, and no volume on any other FlashBlade class |
+| I6 | The hub's values: `external-secrets.yaml`, and `portworx.yaml` with `portworx.tls: true` and `nfs_policy: export-policy-tls` (CCI-MOC/oac-apps#148) | `oac-apps` `values/<hub>/local-cluster/` (#142) | Hub owner | `hub-external-secrets` and `hub-portworx` Synced; `pure-fb-nfsv4` mounts with `xprtsec=tls` |
+| I7 | `tlshd` on every node, before the first volume: the realm certificate in `cluster/<hub>/nfs-tls-ca`, and the `nfs-tls` values with `storageClass.enabled: false` | AWS Secrets Manager; `oac-apps` `values/<hub>/local-cluster/nfs-tls.yaml` | Hub owner (the certificate comes from the FlashBlade admins) | `tlshd` Ready on every node, one default StorageClass that mounts with `xprtsec=tls`, and no FlashBlade volume without it |
 
 `tests/hub-preflight.sh <hub>` checks I2 to I7, read-only. Run it before
 calling any of them done.
@@ -73,17 +73,24 @@ mounts to the same FlashBlade. On a TLS-only export the mount then fails
 with `Operation not permitted`. On an export that allows cleartext, the
 mount most likely succeeds over the cleartext session, unencrypted.
 Standard hub components, such as ACS and Perses, claim volumes as soon as a
-default StorageClass exists. So if `pure-fb-nfsv4` is ever the default,
-volumes land on it, and they have to be recreated on `nfs-over-tls` later
-(nist-dev-infra, 2026-10-19). To avoid that:
+default StorageClass exists. So if the default class is ever cleartext,
+volumes land on it, and they have to be recreated later (nist-dev-infra,
+2026-10-19). To avoid that, a compliant hub has no cleartext FlashBlade
+class at all:
 
-- Merge I6 and I7 together, or I7 first. With `is_default_storage_class:
-  false`, the hub has no default class until `nfs-over-tls` exists. Claims
-  made in between wait in `Pending`, and Kubernetes assigns them the
-  default class once one exists. They never land on cleartext.
-- Keep the cleartext class out of reach with the StorageClass admission
-  policy in `compliance-hub-policy`: a claim that names any FlashBlade class
-  other than `nfs-over-tls` is rejected. The policy is **to build**.
+- `portworx.tls: true` makes the hub's only FlashBlade class,
+  `pure-fb-nfsv4`, a TLS class, and it stays the default. Set it in I6,
+  so the class is TLS from the moment Portworx creates it.
+- Merge I6 and I7 together, or I7 first. A TLS mount needs `tlshd` on the
+  node, and `tlshd` needs the certificate.
+- The FlashBlade realm should refuse cleartext as well: on a compliant
+  realm, the cleartext `export-policy` also requires TLS. Keep the policy
+  rather than deleting it: the CSI driver creates any policy a StorageClass
+  names that does not exist, with its own defaults. **To agree with the
+  FlashBlade admins.**
+- An admission policy in `compliance-hub-policy` that rejects a claim on a
+  StorageClass without `xprtsec=tls` would stop a hand-made cleartext class.
+  **To build.**
 - Re-running the realm playbook makes a new certificate. Update
   `cluster/<hub>/nfs-tls-ca` when that happens, or every mount fails.
 

@@ -18,7 +18,7 @@ This is a test setup. A compliant hub would get its compliance charts as an
 | Stage | Adds | Reboots |
 |---|---|---|
 | A | Compliance Operator, scanning the stock profiles with no tailoring: a baseline of a fresh FIPS hub | none |
-| S | Storage, TLS only, before any volume exists: `tlshd`, `nfs-over-tls` as the only default StorageClass (`pure-fb-nfsv4` not the default), and the StorageClass admission policy once it exists | none |
+| S | Storage, TLS only, before any volume exists: `tlshd` on every node, and `pure-fb-nfsv4` as a TLS class (`portworx.tls: true`), the default and the only FlashBlade class | none |
 | B | Admission policy, FIO, system use notice, etcd backup, ACS (Central and the hub's SecuredCluster), NetworkPolicies and quotas for those namespaces | none |
 | C | Node hardening: about 380 MachineConfigs | **every node**. On this compact hub that is the whole cluster, one node at a time |
 
@@ -179,6 +179,12 @@ Afterwards, every NFS mount on every node used `xprtsec=tls` (u13 2 of 2,
 u15 6 of 6). A canary written 300 times to a new `nfs-over-tls` volume on
 u17 appeared 0 times in 4,370 packets captured on port 2049. The preflight
 passes I7.
+
+Later the same day, following a review comment on #147, the Portworx
+chart gained `portworx.tls` (CCI-MOC/oac-apps#148): `pure-fb-nfsv4` itself
+mounts with `xprtsec=tls`, so a compliant hub has one FlashBlade class, and
+it is TLS. On nist-dev-infra, `nfs-over-tls` stays for the five volumes
+above, but is no longer the default.
 
 On the next hub, stage S keeps this from happening (Stages, above).
 

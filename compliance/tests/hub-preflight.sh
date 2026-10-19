@@ -94,8 +94,13 @@ else bad "pure-fb-nfsv4 missing"; info "if I2 to I5 pass, re-sync hub-portworx: 
 hdr "I7  NFS over TLS before the first volume"
 default_sc=$(oc get storageclass -o jsonpath='{range .items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")]}{.metadata.name}{" "}{end}' 2>/dev/null)
 default_sc=${default_sc% }
-if [ "$default_sc" = nfs-over-tls ]; then ok "nfs-over-tls is the only default StorageClass"
-else bad "default StorageClass is '${default_sc}', expected only nfs-over-tls"; info "portworx.is_default_storage_class: false, and nfs-tls storageClass.default: true"; fi
+if [ -z "$default_sc" ] || [ "${default_sc#* }" != "$default_sc" ]; then
+  bad "expected exactly one default StorageClass, found '${default_sc}'"
+elif oc get storageclass "$default_sc" -o jsonpath='{.mountOptions}' 2>/dev/null | grep -q 'xprtsec=tls'; then
+  ok "the default StorageClass, ${default_sc}, mounts with xprtsec=tls"
+else
+  bad "the default StorageClass, ${default_sc}, does not mount with xprtsec=tls"; info "portworx.tls: true and nfs_policy: export-policy-tls in the hub's portworx values"
+fi
 es=$(oc get externalsecret nfs-certificates -n nfs-tls -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
 if [ "$es" = True ]; then ok "ExternalSecret nfs-certificates Ready"
 else bad "ExternalSecret nfs-certificates not Ready: is cluster/${HUB}/nfs-tls-ca in AWS?"; fi
@@ -106,7 +111,7 @@ else bad "tlshd not Ready on every node (${ds:-not found})"; fi
 # that breaks TLS mounts on the same node. Checks the PVs, not the nodes.
 clear_pvs=$(oc get pv -o jsonpath='{range .items[?(@.spec.csi.driver=="pxd.portworx.com")]}{.metadata.name}{" "}{.spec.claimRef.namespace}/{.spec.claimRef.name}{" "}{.spec.mountOptions}{"\n"}{end}' 2>/dev/null | grep -v 'xprtsec=tls')
 if [ -z "$clear_pvs" ]; then ok "no FlashBlade volume without xprtsec=tls"
-else bad "FlashBlade volumes without xprtsec=tls (recreate them on nfs-over-tls):"; echo "$clear_pvs" | while read -r _ claim _; do info "$claim"; done; fi
+else bad "FlashBlade volumes without xprtsec=tls (recreate them on a TLS class):"; echo "$clear_pvs" | while read -r _ claim _; do info "$claim"; done; fi
 
 printf '\n%sPASS %d  FAIL %d  SKIP %d%s\n' "$B" "$PASS" "$FAIL" "$SKIP" "$N"
 [ "$FAIL" -eq 0 ]

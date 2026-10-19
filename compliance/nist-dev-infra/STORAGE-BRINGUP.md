@@ -12,8 +12,8 @@ FlashBlade. These are the steps it takes, as learned on nist-dev-infra.
 | 3 | The hub's signing keys published to S3, and its `serviceAccountIssuer` set to match | `oac-apps/bootstrap/setup-oidc.sh`; needs S3 write | Hub owner |
 | 4 | An AWS identity for the hub's external-secrets: an OIDC provider and the `eso-<hub>` role. AWS reads the hub's OIDC document (step 3) when it creates the provider | `CCI-MOC/moc-aws`, `openshift_oidc_clusters` | moc-aws maintainers |
 | 5 | The storage VLAN (untagged) on each node's second port, reaching the DHCP server, the gateway and the FlashBlade | Switch configuration | Network admins |
-| 6 | The hub's values: `external-secrets.yaml` (role) and `portworx.yaml` (nodes, ports, storage subnet, and `is_default_storage_class: false`) | `CCI-MOC/oac-apps` | Hub owner, oac-apps reviewers |
-| 7 | NFS over TLS: the realm certificate in `cluster/<hub>/nfs-tls-ca`, and `nfs-tls.yaml` with `storageClass.default: true` | AWS Secrets Manager; `CCI-MOC/oac-apps` | Hub owner; the certificate from the FlashBlade admins |
+| 6 | The hub's values: `external-secrets.yaml` (role) and `portworx.yaml` (nodes, ports, storage subnet, and `tls: true` with `nfs_policy: export-policy-tls`) | `CCI-MOC/oac-apps` | Hub owner, oac-apps reviewers |
+| 7 | NFS over TLS: the realm certificate in `cluster/<hub>/nfs-tls-ca`, and `nfs-tls.yaml` (`tlshd` on every node) with `storageClass.enabled: false` | AWS Secrets Manager; `CCI-MOC/oac-apps` | Hub owner; the certificate from the FlashBlade admins |
 
 Steps 1, 3 and 5 can start on day one. Step 2 follows 1, and step 4
 follows 3. Step 6 can merge at any point, but the Portworx sync only
@@ -24,7 +24,7 @@ Steps 6 and 7 go together because the first volume decides everything
 after it. A node with a cleartext NFS mount to the FlashBlade reuses that
 session for later TLS mounts, which then fail. If the cleartext class is
 ever the default, the hub's components put their volumes on it, and they
-have to be recreated on `nfs-over-tls` (BUILD.md, "Storage is TLS-only
+have to be recreated on a TLS class (BUILD.md, "Storage is TLS-only
 from its first volume").
 
 ## Ways to streamline
