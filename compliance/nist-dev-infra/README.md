@@ -111,10 +111,11 @@ says so.
 | `ingress-controller-certificate`, `default-ingress-ca-replaced` | `cluster-certificates` (cert-manager), once it syncs for this hub |
 | `audit-log-forwarding-enabled` (CIS and moderate), `audit-log-forwarding-uses-tls` | B1, the audit destination |
 | `file-integrity-notification-enabled` | Alerting on FIO results (with B1) |
-| `route-ip-whitelist`, `routes-rate-limit` | Route annotations, as jetty did for ACS (D2) |
+| `routes-rate-limit` | Route annotations, as jetty did for ACS (D2) |
+| `route-ip-whitelist` | Needs the address ranges users come from (PLAN.md F5). On jetty, left as a recorded gap |
 | `resource-requests-limits-in-{deployment,daemonset,statefulset}` | Limits on workloads, or documented exceptions (jetty: vendor operators) |
-| `cluster-wide-proxy-set` | Not applicable without a proxy; tailored-profile exception, as on jetty |
-| `openshift-api-server-audit-log-path` (CIS and moderate) | Scanner false positive (OCPBUGS-126610); tailored-profile exception, as on jetty |
+| `cluster-wide-proxy-set` | No egress proxy exists. A real gap (PLAN.md B5): on jetty it was recorded, not tailored away |
+| `openshift-api-server-audit-log-path` (CIS and moderate) | Scanner false positive (OCPBUGS-126610); tailored-profile exception, as on jetty. The real path is set on this hub (checked 2026-10-19) |
 
 ## Stage B results (2026-10-19)
 
