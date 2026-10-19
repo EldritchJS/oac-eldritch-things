@@ -214,3 +214,23 @@ The other failures are unchanged, as expected. The node scans wait for
 stage C. `configure-network-policies-namespaces` and `resource-requests-quota`
 still fail, because they check every non-platform namespace, not only stage
 B's. The rest are closed by the other rows of the table above.
+
+### Tailoring the false positive (2026-10-19)
+
+`openshift-api-server-audit-log-path` fails on CIS and moderate although the
+real path is set (`/var/log/openshift-apiserver/audit.log`): OCPBUGS-126610,
+as on jetty. The hub's bindings now use tailored profiles,
+`nist-ocp4-cis` and `nist-ocp4-moderate`, that disable that rule alone, with
+the rationale in the profile. The scans are renamed to match.
+
+| Scan | Fail, before | Fail, after |
+|---|---|---|
+| `nist-ocp4-cis` (platform) | 9 | **8** |
+| `nist-ocp4-moderate` (platform) | 21 | **20** |
+
+Not tailored: `cluster-wide-proxy-set` and `route-ip-whitelist` are gaps to
+record, as on jetty. The `resource-requests-limits-*` rules fail on about 65
+operator-managed Deployments (ACM, multicluster-engine, Hive, HyperShift,
+MetalLB, cert-manager, External Secrets, Portworx). On jetty, exempting two
+vendor namespaces covered it. Here it is a decision for the SSP: set limits,
+exempt the operators' namespaces, or record a gap.
