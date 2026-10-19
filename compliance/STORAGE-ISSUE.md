@@ -80,7 +80,7 @@ Tested from both a master and a worker:
 
 The nodes have the right interface, the right subnet, the right route, and the
 storage VLAN carries traffic — **the gateway on that exact subnet answers.**
-Only the array's data VIP is silent.
+Only the FlashBlade's data VIP is silent.
 
 `<fb-data-vip>` is on a directly-connected subnet, so reaching it requires only
 ARP, not routing. **ARP is layer 2 and cannot be blocked by an IP firewall or
@@ -107,12 +107,12 @@ Admin: *"I am pretty sure the vlan isn't trunked to the Pure storage appliance."
 
 That is consistent with every observation, and it is the fix:
 
-- **ARP `INCOMPLETE`/`FAILED`** — if the storage VLAN never reaches the array's
+- **ARP `INCOMPLETE`/`FAILED`** — if the storage VLAN never reaches the FlashBlade's
   ports, the FlashBlade never receives the ARP request, so nothing replies.
   Exactly what an untrunked VLAN looks like from the client side.
 - **Gateway `<storage-gw>` reachable** — the switch carries the VLAN to the *node*
-  ports and to the router, just not to the *array* ports. This is why the
-  subnet looked healthy while the array stayed invisible.
+  ports and to the router, just not to the *FlashBlade* ports. This is why the
+  subnet looked healthy while the FlashBlade stayed invisible.
 - **Management `10.3.11.50` works** — the FlashBlade's management interface sits
   on a different, correctly connected network. Management plane up, data plane
   isolated. That is precisely the split we measured.

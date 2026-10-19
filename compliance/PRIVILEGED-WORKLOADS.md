@@ -76,7 +76,7 @@ These apply to every entry unless the entry says otherwise:
   netlink socket in the host network namespace; the daemon must be in that
   namespace and able to install keys into kernel TLS. Required for
   NFS-over-TLS (800-171 3.13.8) on every node that can mount storage.
-- **Touches:** netlink handshake socket; the array's certificate trust
+- **Touches:** netlink handshake socket; the FlashBlade's certificate trust
   anchor (ConfigMap). No host filesystem mounts.
 - **Additional controls:** image built by us from entitled RHEL content,
   pinned by digest, rebuilt per PATCHING.md class (c) (last 2026-10-09 for

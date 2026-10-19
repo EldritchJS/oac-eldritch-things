@@ -249,13 +249,13 @@ fixing** — these need deliberate work.
 | 4 | **Identity provider** | **none configured** | Auth is via `kubeadmin` only — a shared break-glass account. No per-user attribution, which breaks accountability controls (AC-2, IA-2). |
 | 5 | **kubeadmin still present** | secret exists | Standard hardening says remove it once a real IdP works. Do *not* remove before step 4 or you lose access. |
 | 6 | ~~**TLS security profile**~~ | ✅ **CLOSED BY MEASUREMENT 2026-10-08** — profile still unset (Intermediate), deliberately | All 31 TLS compliance checks already PASS. Handshake probes of the API server, ingress, OAuth and all 5 kubelets: only TLS 1.3 and TLS 1.2 ECDHE+AES-GCM are accepted; TLS 1.0/1.1, CBC, ChaCha20 and static-RSA key exchange are refused — FIPS mode strips what Intermediate would otherwise allow. That meets NIST SP 800-52r2. `verify.sh` T-15 guards it (negative-tested against a weak server). `Modern` (TLS 1.3 only) was not adopted: the only gain is dropping TLS 1.2, it costs a full rolling reboot for the kubelet, the 4.22 docs contradict themselves on ingress support, and TLS 1.2-only clients cannot be ruled out. Revisit if a requirement names TLS 1.3. |
-| 7 | ~~**etcd backup**~~ | ✅ **CLOSED 2026-10-08** — nightly CronJob, 14 retained | `manifests/15-etcd-backup.yaml`; `tests/verify.sh` T-14 guards it. Backups hold the `aesgcm` key, so the volume is Secret-grade. Same array as the cluster's data (no off-array copy yet). **Restore rehearsed 2026-10-08** (`tests/etcd-restore-rehearsal.sh`); the full control-plane recovery procedure is not. |
+| 7 | ~~**etcd backup**~~ | ✅ **CLOSED 2026-10-08** — nightly CronJob, 14 retained | `manifests/15-etcd-backup.yaml`; `tests/verify.sh` T-14 guards it. Backups hold the `aesgcm` key, so the volume is Secret-grade. Same FlashBlade as the cluster's data (no copy off the FlashBlade yet). **Restore rehearsed 2026-10-08** (`tests/etcd-restore-rehearsal.sh`); the full control-plane recovery procedure is not. |
 | 8 | ~~**NetworkPolicies**~~ | ✅ **CLOSED 2026-10-08, ingress and egress** | Default-deny ingress (`manifests/17-*`) and egress (`manifests/18-*`) with measured allows, on our six namespaces plus egress for `stackrox`; `openshift-*` namespaces largely ship their own. Internet egress remains only for ACS Central and scanner-v4-indexer (vulnerability feeds, registry scans). The Portworx version-manifest fetch is blocked. |
 | 9 | **Image provenance / signing** | **partial** (2026-10-08) | Registry allowlist in force (default `reject`, 8 registries). Signature-verified at runtime: OpenShift release images only. `nvcr.io` cannot be: NVIDIA signs the index, CRI-O verifies the platform manifest (FEASIBILITY.md §3 #2). Remaining options: ACS deploy-time signature checks; sign `ghcr.io/eldritchjs/tlshd` ourselves. |
 | 10 | **FIPS scope discipline** | cluster OK | Workloads must also use FIPS-validated crypto. A Go binary built without BoringCrypto on a FIPS cluster is still non-compliant — the cluster being FIPS does not make applications FIPS. |
 | 11 | ~~**NFS traffic to Pure is cleartext**~~ | ✅ **CLOSED 2026-10-07** | All NFS traffic is now encrypted (RFC 9289). `tests/verify.sh` T-13 reports no cleartext mounts remain; 18/18 PVCs on `nfs-over-tls`, which is also the default class. Proven by packet capture, not just by the mount succeeding. **No scanner checks this** — T-13 is the only guard. See **[NFS-TLS.md](NFS-TLS.md)**. |
 | 12 | **Metrics have no persistence** | Prometheus `retention=15d`, **no `volumeClaimTemplate`** | Monitoring data is on emptyDir, so it is lost whenever the pod restarts or reschedules — "15 days" is nominal. There is no `cluster-monitoring-config` ConfigMap at all. Pairs with gap #3: the AU workstream needs a destination for *metrics* as well as logs. **Also (measured 2026-10-08): Portworx and rhacs-operator metrics are scraped by nothing** — their namespaces lack the cluster-monitoring label (Portworx) or a ServiceMonitor (rhacs-operator), and user-workload monitoring is off. **Owned elsewhere (2026-10-08):** another team is deciding how monitoring storage is done; not ours to change. Measurements handed over: 22.5k samples/s and 659k series per replica (apiserver 279k, kubelet 150k), 2.32 bytes/sample on disk → **~68 GB per replica for 15 days** (~140 GB for the pair). Only NFS StorageClasses exist (Prometheus upstream does not support NFS; Red Hat recommends block). Each GPU worker has an unpartitioned 7.68 TB NVMe (`nvme1n1`, no holders) that might suit LVM Storage, if the owner hasn't earmarked it — not checked from the host. |
-| 13 | **Node disks not encrypted at rest** | found 2026-10-13; install-time, not fixable in place | No LUKS layer under `/sysroot` on jetty's nodes. No OpenShift scanner profile checks this, so it never appeared in a scan; 800-171 3.13.16 and HIPAA 164.312(a)(2)(iv) still ask. Most data is on the FlashBlade (array-side encryption at rest not yet confirmed with the storage team); node disks hold container images, logs and, on masters, etcd (encrypted at the API layer). Fix = reinstall with RHCOS disk encryption (TPM2/Tang). Carried forward as an install-time decision in [HUB-SPOKE.md](HUB-SPOKE.md) §3. |
+| 13 | **Node disks not encrypted at rest** | found 2026-10-13; install-time, not fixable in place | No LUKS layer under `/sysroot` on jetty's nodes. No OpenShift scanner profile checks this, so it never appeared in a scan; 800-171 3.13.16 and HIPAA 164.312(a)(2)(iv) still ask. Most data is on the FlashBlade (FlashBlade-side encryption at rest not yet confirmed with the storage team); node disks hold container images, logs and, on masters, etcd (encrypted at the API layer). Fix = reinstall with RHCOS disk encryption (TPM2/Tang). Carried forward as an install-time decision in [HUB-SPOKE.md](HUB-SPOKE.md) §3. |
 
 Also note: **non-technical controls** (policies, SSPs, access reviews, IR plans,
 training) are typically the larger share of an authorization package, and no
@@ -496,7 +496,7 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
   script refuses to run while a control-plane operator is Progressing — a
   night landing mid-rollout fails and retries. (c) Backups share the
   FlashBlade with everything else — they survive losing masters, not the
-  array. (d) A full control-plane restore has not been tested; the
+  FlashBlade. (d) A full control-plane restore has not been tested; the
   backup itself was restore-rehearsed later the same day (below). T-14 fails if the newest
   successful backup is over 26h old; verified that it does fail.
 
@@ -542,7 +542,7 @@ Operators are available in `redhat-operators`: `cluster-logging` **6.6.1** and
     still allocatable, ClusterPolicy `ready`, all 3 scrape targets `up`,
     fresh `DCGM_FI_DEV_GPU_TEMP` for all 4 GPUs (exporter -> DCGM path).
   - `portworx`: operator and CSI controllers restarted; a test PVC on
-    `nfs-over-tls` provisioned, mounted, wrote, deleted (array mgmt path,
+    `nfs-over-tls` provisioned, mounted, wrote, deleted (FlashBlade management path,
     allowed as `10.0.0.0/8:443` so no address is committed). The blocked
     version-manifest fetch logs no error; the operator carries on.
   - `stackrox`: all components restarted; Central reports every component
@@ -762,7 +762,7 @@ input from someone else is done; every row below is waiting on a person.*
 | B4 | Ingress certificate and CA | A certificate from the organisation's CA | `ingress-controller-certificate`, `default-ingress-ca-replaced` (2 results) | — |
 | B5 | Egress proxy | A proxy, if the organisation requires one | `cluster-wide-proxy-set` (documented gap) | triage entry above |
 | B6 | Metrics persistence | Another team's design | Gap #12; then measured requests/limits for the vendor DaemonSets (revisit E1) | gap #12 |
-| B7 | Off-array backup copy | An off-array target (S3 or another site) | CP-9 resilience: backups survive losing the array | gap #7 |
+| B7 | Backup copy off the FlashBlade | A target off the FlashBlade (S3 or another site) | CP-9 resilience: backups survive losing the FlashBlade | gap #7 |
 | B8 | Full control-plane restore test | A disposable cluster of the same version | Measured RTO for etcd recovery | §7 restore entry |
 | B9 | Non-technical controls | SSP, policies, access reviews, IR plan, training, risk analysis, BAAs | Usually the larger share of an authorization package | below |
 

@@ -23,8 +23,8 @@
 # a run of failures is what tests/verify.sh T-14 (proposed) would catch.
 #
 # DESTINATION: an nfs-over-tls PVC on the FlashBlade -- off the masters and
-# encrypted in transit, but the SAME array as the cluster's data. That covers
-# losing masters, not losing the array. A second copy elsewhere is future work
+# encrypted in transit, but the SAME FlashBlade as the cluster's data. That covers
+# losing masters, not losing the FlashBlade. A second copy elsewhere is future work
 # (same S3 dependency as audit forwarding).
 #
 # IMAGE: the release payload's cli image, pinned by digest. It is under the

@@ -1,7 +1,7 @@
 # jetty: reproduces manifests/17-*, 18-* and 22-*; the reasons for each
 # allow rule are in those files. stackrox has no ingress entry: the ACS
 # operator ships its ingress policies. The FlashBlade rule names the range,
-# not the array's address (public repo).
+# not the FlashBlade's address (public repo).
 quotaName: jetty-objects
 
 namespaces:

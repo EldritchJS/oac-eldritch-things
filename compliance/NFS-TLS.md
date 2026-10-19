@@ -102,7 +102,7 @@ is the one that needs the trust.
 
 A mount succeeding proves the mount worked, not that it is encrypted. So:
 300 lines of a unique canary string were written to a TLS-backed volume while
-capturing port 2049 to the array.
+capturing port 2049 to the FlashBlade.
 
 | | |
 |---|---|
@@ -114,7 +114,7 @@ On a cleartext mount that string appears in the capture verbatim.
 
 ### What made it fail first time
 
-The array's **default Pure self-signed certificate has no Subject Alternative
+The FlashBlade's **default Pure self-signed certificate has no Subject Alternative
 Name**, and GnuTLS requires an `iPAddress` SAN to verify a peer addressed by
 IP — it does not fall back to the CN. The symptom was:
 
@@ -134,7 +134,7 @@ SHA-256/RSA-2048, both FIPS-acceptable — so neither a protocol-version
 mismatch nor an algorithm rejection.
 
 **Fix:** storage team reissued with `subjectAltName = IP:<nfs-data-vip>`.
-Keep that requirement in mind for any other array.
+Keep that requirement in mind for any other storage server.
 
 ### Node-reboot behaviour — measured, and it is a non-issue
 
@@ -183,7 +183,7 @@ says that is safe, but it is a real centralisation of risk.
 `rawResultStorage.storageClassName: nfs-over-tls`. The operator reuses PVCs by
 name, so migrating meant deleting the old ones — the eight PVs were patched to
 `persistentVolumeReclaimPolicy: Retain` first, so the archived ARF evidence
-survives as `Released` volumes on the array rather than being deleted with the
+survives as `Released` volumes on the FlashBlade rather than being deleted with the
 claims. Recover one by creating a PVC bound to its `volumeName` if ever needed.
 
 The pre-TLS ACS data (the original `stackrox/central-db` PVC, kept as the

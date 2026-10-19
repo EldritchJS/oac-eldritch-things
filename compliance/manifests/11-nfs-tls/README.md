@@ -7,10 +7,10 @@ provisions, mounts carry `xprtsec=tls`, and a packet capture confirms the
 payload is encrypted (300 canary lines written, 0 occurrences in 3,454
 captured packets). See [../../NFS-TLS.md](../../NFS-TLS.md).
 
-The initial failure was the array's default certificate having no
+The initial failure was the FlashBlade's default certificate having no
 `iPAddress` SAN — GnuTLS will not fall back to the CN for an IP peer.
 The storage team reissued with `subjectAltName = IP:<nfs-data-vip>`.
-**Keep that requirement in mind for any other array.**
+**Keep that requirement in mind for any other storage server.**
 
 **Migration complete 2026-10-07.** All 18 PVCs in use are on `nfs-over-tls`,
 which is also the default StorageClass; T-13 reports no cleartext NFS mounts

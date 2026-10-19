@@ -86,7 +86,7 @@ the action.
 | 5 Storage encryption | Packet capture shows no plaintext; no cleartext mounts on any node | ✓ 18/18 PVCs |
 | 6 Workload-dangerous checks | Each applied singly with an uncached pull / GPU check after | ✓ (signature policy reverted) |
 | 7 NetworkPolicies | Each namespace proven by a restarted pod doing its job, incl. builds/jobs | ✓ (builds missed, fixed later) |
-| 8 Backups | Freshness test; restore rehearsed; off-array copy | ✓ except off-array |
+| 8 Backups | Freshness test; restore rehearsed; copy off the FlashBlade | ✓ except the copy off the FlashBlade |
 | 9 HIPAA in ACS | Every registry scanned; findings split ours/platform; notifier | ✓ except notifier |
 | 10 Upgrades | Before/after `verify.sh` identical; rescans; pinned digests refreshed | ✓ 4.22.14 → .16 |
 | 11 TLS posture | Handshake probes on every endpoint (T-15) | ✓ no change needed |
@@ -179,7 +179,7 @@ See NFS-TLS.md for the full procedure. Points to copy:
 
 - The handshake daemon (`tlshd`) runs on **every node that can mount
   storage**, including masters (§3, "Storage").
-- The array certificate needs an **IP SAN** if mounted by IP.
+- The FlashBlade certificate needs an **IP SAN** if mounted by IP.
 - Prove with a packet capture containing a canary string, not by the mount
   succeeding.
 - Make the encrypted class the **default** StorageClass, then migrate existing
@@ -251,8 +251,8 @@ specific documents).
 - The **full recovery procedure** (`cluster-restore.sh`, static pods
   stopped, members re-added) takes the API down. Rehearse it on a
   disposable cluster of the same version; record the RTO.
-- Off-array copy: still needed; backups on the same array survive losing
-  masters, not the array.
+- Copy off the FlashBlade: still needed; backups on the same FlashBlade survive
+  losing masters, not the FlashBlade.
 
 ### Phase 9 — HIPAA in ACS
 
@@ -522,7 +522,7 @@ jetty is 3 masters + 2 GPU workers. What changes on a larger cluster:
 | NetworkPolicies | 7 namespaces, hand-derived | Template per tenant (default-deny + API/DNS + same-namespace) and derive the exceptions from ACS's graph per namespace; consider `AdminNetworkPolicy` for cluster-wide baselines. |
 | Registry allowlist | 8 registries | Inventory programmatically; mirror to a controlled registry so the allowlist stays short. |
 | GPU modality | Per-node label, delegated RBAC + admission policy | Same pattern; per-node turnaround measured at 68–247 s, no reboot. |
-| Evidence | PVCs on one array | Off-cluster, off-array evidence and backup copies. |
+| Evidence | PVCs on one FlashBlade | Off-cluster, off-FlashBlade evidence and backup copies. |
 | Verification | `verify.sh`, run by hand | Scheduled, with results shipped to the same destination as audit logs. |
 
 **Monitoring storage sizing.** Measure before choosing: per replica,
@@ -532,8 +532,8 @@ samples those blocks cover). jetty: 22.5k samples/s, 2.32 B/sample → ~68 GB
 per replica for 15 days, with the API server and kubelet producing two
 thirds of the series. Series count scales with nodes and pods, so expect
 this to grow roughly linearly. Prometheus needs block storage (NFS is not
-supported upstream), and keeping monitoring off the array it monitors means
-it still works when that array fails.
+supported upstream), and keeping monitoring off the FlashBlade it monitors means
+it still works when that FlashBlade fails.
 
 **TLS profile.** The probe-first method in Phase 11 scales unchanged; on a
 large cluster the client inventory before `Modern` is the expensive part

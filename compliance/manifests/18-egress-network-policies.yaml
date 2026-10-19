@@ -212,7 +212,7 @@ spec:
         - {protocol: UDP, port: 5353}
         - {protocol: TCP, port: 5353}
 ---
-# FlashBlade management REST API. The array's address is in 10/8; the
+# FlashBlade management REST API. The FlashBlade's address is in 10/8; the
 # rule names the range, not the address (public repo).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

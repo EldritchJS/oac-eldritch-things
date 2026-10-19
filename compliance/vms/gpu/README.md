@@ -34,7 +34,7 @@ billable — that is just the operator doing its job.
 | `ClusterPolicy.sandboxWorkloads` | `{"mode":"kubevirt","defaultWorkload":"container","enabled":true}` — ready to accept the node label |
 | `HyperConverged.permittedHostDevices` | ✅ `10DE:2330` → `nvidia.com/GH100_H100_SXM5_80GB`, `externalResourceProvider: true` |
 | `nvidia.com/gpu.workload.config` | **`u16` = `vm-passthrough`** (`GH100_H100_SXM5_80GB=4`, `nvidia.com/gpu=0`); `u15` unset, still serving containers with `nvidia.com/gpu=4` |
-| **Storage** | ✅ **`nfs-over-tls` (default)** — Portworx CSI → Pure FlashBlade NFSv4.1 over TLS (since 2026-10-07; [../../NFS-TLS.md](../../NFS-TLS.md)). Was broken until 2026-10-02 (storage VLAN not trunked to the array). The 7 TB `nvme1n1` on each worker remains untouched and unused |
+| **Storage** | ✅ **`nfs-over-tls` (default)** — Portworx CSI → Pure FlashBlade NFSv4.1 over TLS (since 2026-10-07; [../../NFS-TLS.md](../../NFS-TLS.md)). Was broken until 2026-10-02 (storage VLAN not trunked to the FlashBlade). The 7 TB `nvme1n1` on each worker remains untouched and unused |
 | IOMMU | ✅ **confirmed active: 103 groups**, and `/proc/cmdline` carries no `amd_iommu=`/`iommu=` argument at all |
 | Current GPU load | both nodes idle of **GPU** workloads — but see the warning below |
 | Control plane | `HighlyAvailable` — standalone, MachineConfig API present |

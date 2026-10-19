@@ -18,7 +18,7 @@ Consequence: a clean clone needs this one manual step before `oc apply -k`.
 
 ## Obtaining it
 
-Get it from the Purity//FB UI or API, or from whoever administers the array.
+Get it from the Purity//FB UI or API, or from whoever administers the FlashBlade.
 
 > `openssl s_client -connect <data-vip>:2049` will **not** work. RPC-with-TLS
 > (RFC 9289) upgrades an already-established RPC connection rather than
@@ -27,11 +27,11 @@ Get it from the Purity//FB UI or API, or from whoever administers the array.
 
 ## What it must satisfy
 
-The **CN or a SAN must match the NFS data VIP**. Mounts target the array by IP
+The **CN or a SAN must match the NFS data VIP**. Mounts target the FlashBlade by IP
 and send that address as the TLS SNI, so a certificate naming only a hostname
 fails validation even when everything else is correct.
 
-If the array uses a self-signed certificate, this is that certificate. If it
+If the FlashBlade uses a self-signed certificate, this is that certificate. If it
 is issued by an internal CA, this is the CA certificate.
 
 ## Verify before deploying
