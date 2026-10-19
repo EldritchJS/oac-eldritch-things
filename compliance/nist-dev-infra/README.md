@@ -159,6 +159,28 @@ policy the driver made could be what refuses the mount.
 The canary capture (NFS-TLS.md, "The proof") waits until a TLS mount works.
 `pure-fb-nfsv4` stays the default until then.
 
-### Not yet done
+### Rescan after stage B
 
-- A rescan, to see which stage A failures stage B closed.
+All five scans were rerun on 2026-10-19, after stage B had synced.
+
+| Scan | Fail, stage A | Fail, stage B |
+|---|---|---|
+| `ocp4-cis` (platform) | 9 | **9** |
+| `ocp4-cis-node` (masters) | 0 | **0** |
+| `ocp4-moderate` (platform) | 25 | **21** |
+| `ocp4-moderate-node` (masters) | 4 | **4** |
+| `rhcos4-moderate` (masters) | 191 | **191** |
+
+Stage B closed four `ocp4-moderate` rules:
+
+- `file-integrity-exists`
+- `file-integrity-notification-enabled`. The table above expected this one
+  to wait for alerting on FIO results (B1), but the rule passes once FIO is
+  configured.
+- `banner-or-login-template-set`
+- `openshift-motd-exists`
+
+The other failures are unchanged, as expected. The node scans wait for
+stage C. `configure-network-policies-namespaces` and `resource-requests-quota`
+still fail, because they check every non-platform namespace, not only stage
+B's. The rest are closed by the other rows of the table above.
