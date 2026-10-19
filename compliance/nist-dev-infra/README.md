@@ -111,7 +111,7 @@ says so.
 | `ingress-controller-certificate`, `default-ingress-ca-replaced` | `cluster-certificates` (cert-manager), once it syncs for this hub |
 | `audit-log-forwarding-enabled` (CIS and moderate), `audit-log-forwarding-uses-tls` | B1, the audit destination |
 | `file-integrity-notification-enabled` | Alerting on FIO results (with B1) |
-| `routes-rate-limit` | Route annotations, as jetty did for ACS (D2) |
+| `routes-rate-limit` | Route annotations, as jetty did for ACS (D2): `route-rate-limits.sh`, applied 2026-10-19 |
 | `route-ip-whitelist` | Needs the address ranges users come from (PLAN.md F5). On jetty, left as a recorded gap |
 | `resource-requests-limits-in-{deployment,daemonset,statefulset}` | Limits on workloads, or documented exceptions (jetty: vendor operators) |
 | `cluster-wide-proxy-set` | No egress proxy exists. A real gap (PLAN.md B5): on jetty it was recorded, not tailored away |
@@ -234,3 +234,14 @@ operator-managed Deployments (ACM, multicluster-engine, Hive, HyperShift,
 MetalLB, cert-manager, External Secrets, Portworx). On jetty, exempting two
 vendor namespaces covered it. Here it is a decision for the SSP: set limits,
 exempt the operators' namespaces, or record a gap.
+
+### Route rate limits (2026-10-19)
+
+`route-rate-limits.sh` annotates every route outside `openshift-*` and
+`kube-*` with jetty's limits: per source IP, 100 concurrent TCP connections
+and 100 new connections per 3 s. On this hub that is seven routes: ACS
+Central's two, four in `multicluster-engine`, and ACM's CLI downloads.
+The router's configuration shows both limits on all seven backends. Sensor
+stayed connected, and every `local-cluster` add-on stayed Available.
+
+`routes-rate-limit` passes, and `nist-ocp4-moderate` is at **19** failures.
