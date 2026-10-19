@@ -107,3 +107,58 @@ says so.
 | `resource-requests-limits-in-{deployment,daemonset,statefulset}` | Limits on workloads, or documented exceptions (jetty: vendor operators) |
 | `cluster-wide-proxy-set` | Not applicable without a proxy; tailored-profile exception, as on jetty |
 | `openshift-api-server-audit-log-path` (CIS and moderate) | Scanner false positive (OCPBUGS-126610); tailored-profile exception, as on jetty |
+
+## Stage B results (2026-10-19)
+
+Applied at 14:13 EDT, once the hub had storage
+([STORAGE-BRINGUP.md](STORAGE-BRINGUP.md)). A test volume on `pure-fb-nfsv4`
+had bound, mounted over NFS 4.1 and been written to first. All eight
+`nist-test-*` Applications were Synced and Healthy by 14:15.
+
+| Component | State |
+|---|---|
+| Admission policy | `compliant-hosted-clusters` ValidatingAdmissionPolicy present |
+| FIO | `all-nodes` Active; first check Succeeded on all three nodes |
+| System use notice | `classification-banner` ConsoleNotification present |
+| etcd backup | CronJob present, writing to the default StorageClass |
+| ACS | Central 4.11.5 up. The hub's SecuredCluster is Available, and Sensor connected to Central at 14:26, after the init bundle was applied by hand |
+| NetworkPolicies and quotas | Synced with their namespaces |
+| NFS over TLS | `tlshd` Running on all three nodes, CA synced from `cluster/nist-dev-infra/nfs-tls-ca`, `nfs-over-tls` StorageClass present (not the default). **Mounts fail: see below** |
+
+ArgoCD reports `nist-test-rhacs` Healthy as soon as the Central resource
+exists, before Central is up. Wait for `deploy/central` to be Available
+before generating the init bundle.
+
+### NFS over TLS: the mount is refused after the handshake
+
+A volume on `nfs-over-tls` provisions and attaches, but the mount fails:
+
+```
+mount -t nfs -o vers=4.1,xprtsec=tls <data-vip>:/px_...
+mount.nfs: Operation not permitted
+```
+
+`tlshd` logs `Handshake with <data-vip> was successful` for each attempt, so
+the certificate and the trust anchor are right. The server refuses the mount
+after TLS is up. The StorageClass parameters (`export-policy-tls`,
+`nfs-server`, `xprtsec=tls`) are the same as jetty's, where 20 volumes mount
+this way. A cleartext volume in the same test mounted normally.
+
+So the difference is likely on the array, in this realm's
+`export-policy-tls`. To check with the array admins:
+
+- that `nist-dev-infra::export-policy-tls` exists, with a rule for the storage
+  subnet that allows read-write and requires TLS;
+- how it differs from jetty's TLS export policy.
+
+The pure CSI driver creates a policy with its own defaults when the named
+one does not exist (everpure-moc `docs/flashblade-setup.md`). So if the
+realm's policy were missing, provisioning would still succeed, and the
+policy the driver made could be what refuses the mount.
+
+The canary capture (NFS-TLS.md, "The proof") waits until a TLS mount works.
+`pure-fb-nfsv4` stays the default until then.
+
+### Not yet done
+
+- A rescan, to see which stage A failures stage B closed.
