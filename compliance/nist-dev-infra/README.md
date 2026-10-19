@@ -18,8 +18,16 @@ This is a test setup. A compliant hub would get its compliance charts as an
 | Stage | Adds | Reboots |
 |---|---|---|
 | A | Compliance Operator, scanning the stock profiles with no tailoring: a baseline of a fresh FIPS hub | none |
-| B | Admission policy, FIO, system use notice, etcd backup, ACS (Central and the hub's SecuredCluster), NFS over TLS (`tlshd` and the `nfs-over-tls` StorageClass, not yet the default), NetworkPolicies and quotas for those namespaces | none |
+| S | Storage, TLS only, before any volume exists: `tlshd`, `nfs-over-tls` as the only default StorageClass (`pure-fb-nfsv4` not the default), and the StorageClass admission policy once it exists | none |
+| B | Admission policy, FIO, system use notice, etcd backup, ACS (Central and the hub's SecuredCluster), NetworkPolicies and quotas for those namespaces | none |
 | C | Node hardening: about 380 MachineConfigs | **every node**. On this compact hub that is the whole cluster, one node at a time |
+
+On nist-dev-infra, NFS over TLS went in with stage B, after Portworx had
+already made `pure-fb-nfsv4` the default. Five volumes landed on it, and
+TLS mounts then failed on every node that held one of them. They were
+recreated on `nfs-over-tls` on 2026-10-19. On the next hub, stage S
+comes first, in the same merge as the hub's Portworx values (BUILD.md,
+"Storage is TLS-only from its first volume").
 
 Apply a stage:
 

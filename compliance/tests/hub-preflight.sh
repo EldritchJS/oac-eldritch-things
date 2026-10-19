@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Hub infrastructure preflight: checks BUILD.md I2 to I6 for one hub.
+# Hub infrastructure preflight: checks BUILD.md I2 to I7 for one hub.
 #
 # READ-ONLY. It reads AWS Secrets Manager metadata (never secret values),
 # fetches the hub's public OIDC document, and reads the hub's API.
@@ -88,9 +88,25 @@ done
 es=$(oc get externalsecret px-pure-secret -n portworx -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
 if [ "$es" = True ]; then ok "ExternalSecret px-pure-secret Ready"
 else bad "ExternalSecret px-pure-secret not Ready: AWS does not accept the hub's identity yet (I3, I4)"; fi
+if oc get storageclass pure-fb-nfsv4 >/dev/null 2>&1; then ok "pure-fb-nfsv4 exists (Portworx is up)"
+else bad "pure-fb-nfsv4 missing"; info "if I2 to I5 pass, re-sync hub-portworx: ArgoCD does not retry a failed sync of the same commit"; fi
+
+hdr "I7  NFS over TLS before the first volume"
 default_sc=$(oc get storageclass -o jsonpath='{range .items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")]}{.metadata.name}{" "}{end}' 2>/dev/null)
-if [ -n "$default_sc" ]; then ok "default StorageClass: ${default_sc}"
-else bad "no default StorageClass"; info "if I2 to I5 pass, re-sync hub-portworx: ArgoCD does not retry a failed sync of the same commit"; fi
+default_sc=${default_sc% }
+if [ "$default_sc" = nfs-over-tls ]; then ok "nfs-over-tls is the only default StorageClass"
+else bad "default StorageClass is '${default_sc}', expected only nfs-over-tls"; info "portworx.is_default_storage_class: false, and nfs-tls storageClass.default: true"; fi
+es=$(oc get externalsecret nfs-certificates -n nfs-tls -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
+if [ "$es" = True ]; then ok "ExternalSecret nfs-certificates Ready"
+else bad "ExternalSecret nfs-certificates not Ready: is cluster/${HUB}/nfs-tls-ca in AWS?"; fi
+ds=$(oc get ds tlshd -n nfs-tls -o jsonpath='{.status.numberReady}/{.status.desiredNumberScheduled}' 2>/dev/null)
+if [ -n "$ds" ] && [ "${ds%/*}" = "${ds#*/}" ] && [ "${ds%/*}" != 0 ]; then ok "tlshd Ready on every node (${ds})"
+else bad "tlshd not Ready on every node (${ds:-not found})"; fi
+# Any FlashBlade volume without xprtsec=tls means a cleartext mount, and
+# that breaks TLS mounts on the same node. Checks the PVs, not the nodes.
+clear_pvs=$(oc get pv -o jsonpath='{range .items[?(@.spec.csi.driver=="pxd.portworx.com")]}{.metadata.name}{" "}{.spec.claimRef.namespace}/{.spec.claimRef.name}{" "}{.spec.mountOptions}{"\n"}{end}' 2>/dev/null | grep -v 'xprtsec=tls')
+if [ -z "$clear_pvs" ]; then ok "no FlashBlade volume without xprtsec=tls"
+else bad "FlashBlade volumes without xprtsec=tls (recreate them on nfs-over-tls):"; echo "$clear_pvs" | while read -r _ claim _; do info "$claim"; done; fi
 
 printf '\n%sPASS %d  FAIL %d  SKIP %d%s\n' "$B" "$PASS" "$FAIL" "$SKIP" "$N"
 [ "$FAIL" -eq 0 ]

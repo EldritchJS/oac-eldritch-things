@@ -61,10 +61,31 @@ tracking issue that links each PR. Request a named reviewer on each PR. The stor
 | I3 | Signing keys in S3, issuer set | `oac-apps/bootstrap/setup-oidc.sh`; needs S3 write on `oac-clusters-oidc` | Hub owner | The OIDC document is public, and the hub's issuer matches it |
 | I4 | OIDC provider and `eso-<hub>`, `cert-manager-<hub>` roles | `moc-aws` `openshift_oidc_clusters`, `cert-manager-policies.tf` (#53). The PR can open on day one, but merge it after I3: AWS reads the hub's OIDC document when it creates the provider | moc-aws maintainers | `cluster/<hub>/aws-oidc` exists |
 | I5 | Storage VLAN untagged on each node's second port, reaching DHCP, the gateway and the FlashBlade | Switch configuration | Network admins | Each node's `br-storage` has a DHCP lease (after I6) |
-| I6 | The hub's values: `external-secrets.yaml`, `portworx.yaml` | `oac-apps` `values/<hub>/local-cluster/` (#142) | Hub owner | `hub-external-secrets` and `hub-portworx` Synced, a default StorageClass |
+| I6 | The hub's values: `external-secrets.yaml`, `portworx.yaml` with `portworx.is_default_storage_class: false` | `oac-apps` `values/<hub>/local-cluster/` (#142) | Hub owner | `hub-external-secrets` and `hub-portworx` Synced |
+| I7 | NFS over TLS, before the first volume: the realm certificate in `cluster/<hub>/nfs-tls-ca`, and the `nfs-tls` values with `storageClass.default: true` | AWS Secrets Manager; `oac-apps` `values/<hub>/local-cluster/nfs-tls.yaml` | Hub owner (the certificate comes from the FlashBlade admins) | `tlshd` Ready on every node, `nfs-over-tls` the only default StorageClass, and no volume on any other FlashBlade class |
 
-`tests/hub-preflight.sh <hub>` checks I2 to I6, read-only. Run it before
+`tests/hub-preflight.sh <hub>` checks I2 to I7, read-only. Run it before
 calling any of them done.
+
+**Storage is TLS-only from its first volume.** A node that has a cleartext
+NFS mount to the FlashBlade reuses that session for later `xprtsec=tls`
+mounts to the same FlashBlade. On a TLS-only export the mount then fails
+with `Operation not permitted`. On an export that allows cleartext, the
+mount most likely succeeds over the cleartext session, unencrypted.
+Standard hub components, such as ACS and Perses, claim volumes as soon as a
+default StorageClass exists. So if `pure-fb-nfsv4` is ever the default,
+volumes land on it, and they have to be recreated on `nfs-over-tls` later
+(nist-dev-infra, 2026-10-19). To avoid that:
+
+- Merge I6 and I7 together, or I7 first. With `is_default_storage_class:
+  false`, the hub has no default class until `nfs-over-tls` exists. Claims
+  made in between wait in `Pending`, and Kubernetes assigns them the
+  default class once one exists. They never land on cleartext.
+- Keep the cleartext class out of reach with the StorageClass admission
+  policy in `compliance-hub-policy`: a claim that names any FlashBlade class
+  other than `nfs-over-tls` is rejected. The policy is **to build**.
+- Re-running the realm playbook makes a new certificate. Update
+  `cluster/<hub>/nfs-tls-ca` when that happens, or every mount fails.
 
 I6 can merge before the others, and is a useful test of I5: the storage
 bridges come up as soon as it applies. But until I2 to I4 are done, the
