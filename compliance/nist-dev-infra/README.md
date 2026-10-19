@@ -131,41 +131,56 @@ had bound, mounted over NFS 4.1 and been written to first. All eight
 | etcd backup | CronJob present, writing to the default StorageClass |
 | ACS | Central 4.11.5 up. The hub's SecuredCluster is Available, and Sensor connected to Central at 14:26, after the init bundle was applied by hand |
 | NetworkPolicies and quotas | Synced with their namespaces |
-| NFS over TLS | `tlshd` Running on all three nodes, CA synced from `cluster/nist-dev-infra/nfs-tls-ca`, `nfs-over-tls` StorageClass present (not the default). **Mounts fail: see below** |
+| NFS over TLS | `tlshd` Running on all three nodes, CA synced from `cluster/nist-dev-infra/nfs-tls-ca`. At first, mounts failed (below). Since 2026-10-19 `nfs-over-tls` is the only default, and every volume uses it |
 
 ArgoCD reports `nist-test-rhacs` Healthy as soon as the Central resource
 exists, before Central is up. Wait for `deploy/central` to be Available
 before generating the init bundle.
 
-### NFS over TLS: the mount is refused after the handshake
+### NFS over TLS: why mounts failed, and the fix
 
-A volume on `nfs-over-tls` provisions and attaches, but the mount fails:
+At first, a volume on `nfs-over-tls` provisioned and attached, but the
+mount failed:
 
 ```
 mount -t nfs -o vers=4.1,xprtsec=tls <data-vip>:/px_...
 mount.nfs: Operation not permitted
 ```
 
-`tlshd` logs `Handshake with <data-vip> was successful` for each attempt, so
-the certificate and the trust anchor are right. The server refuses the mount
-after TLS is up. The StorageClass parameters (`export-policy-tls`,
-`nfs-server`, `xprtsec=tls`) are the same as jetty's, where 20 volumes mount
-this way. A cleartext volume in the same test mounted normally.
+The certificate and the FlashBlade's export policy were not the cause:
+`tlshd` logged a successful handshake each time, and the realm's TLS policy
+matches jetty's. Kernel tracepoints (`handshake`, `nfs4`) on two nodes
+showed the cause:
 
-So the difference is likely on the FlashBlade, in this realm's
-`export-policy-tls`. To check with the FlashBlade admins:
+| Node | NFS mounts already there | TLS mount |
+|---|---|---|
+| u13 | 2, cleartext, to the same FlashBlade | Handshake and `EXCHANGE_ID` over TLS, then the TLS connection is closed. The client reuses its existing cleartext session; the lookup gets `SECINFO`, and the mount fails with `EPERM` |
+| u17 | none | Handshake, `EXCHANGE_ID` and `CREATE_SESSION` over TLS. Mounts, and writes |
 
-- that `nist-dev-infra::export-policy-tls` exists, with a rule for the storage
-  subnet that allows read-write and requires TLS;
-- how it differs from jetty's TLS export policy.
+The Linux client treats the TLS mount's server as one it already has a
+session with, and uses that session. On u13, a TLS mount of a cleartext
+export "succeeded" the same way, most likely unencrypted. So a node must
+not mix the two: every FlashBlade volume on the hub has to be on
+`nfs-over-tls`. Jetty most likely works because all its volumes were moved there.
 
-The pure CSI driver creates a policy with its own defaults when the named
-one does not exist (everpure-moc `docs/flashblade-setup.md`). So if the
-realm's policy were missing, provisioning would still succeed, and the
-policy the driver made could be what refuses the mount.
+The fix, on 2026-10-19:
 
-The canary capture (NFS-TLS.md, "The proof") waits until a TLS mount works.
-`pure-fb-nfsv4` stays the default until then.
+1. `nfs-over-tls` made the default (fork values), and `pure-fb-nfsv4` no
+   longer the default (CCI-MOC/oac-apps#147).
+2. The five volumes created so far recreated on `nfs-over-tls`: etcd backup,
+   Perses, and ACS `central-db`, `central-db-backup` and `scanner-v4-db`.
+   Each was hours old, so none was copied.
+3. ACS, after its database was recreated: delete the three init bundle
+   secrets and apply a new bundle; delete the `tls-cert-*` secrets, which
+   carry the old cluster ID; restart Sensor, admission control and the
+   collectors. Sensor reconnected at 16:13 EDT.
+
+Afterwards, every NFS mount on every node used `xprtsec=tls` (u13 2 of 2,
+u15 6 of 6). A canary written 300 times to a new `nfs-over-tls` volume on
+u17 appeared 0 times in 4,370 packets captured on port 2049. The preflight
+passes I7.
+
+On the next hub, stage S keeps this from happening (Stages, above).
 
 ### Rescan after stage B
 
