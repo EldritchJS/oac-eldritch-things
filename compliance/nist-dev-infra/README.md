@@ -272,3 +272,90 @@ HyperShift, Portworx and the others wait until a spoke exists, so their
 traffic, including the spoke's, can be measured first. The policy must be
 real: the check passes on any NetworkPolicy, including one that allows
 everything.
+
+## Stage C results (2026-10-19)
+
+Node hardening, applied 21:25 to 22:28 EDT. The master pool was paused, so
+the chart's 192 master MachineConfigs (191 `rhcos4-moderate` remediations
+and `76-master-sshd-allowusers`) arrived as one rendered configuration. Each
+node was then drained, updated and rebooted once, in turn: u13, u15, u17.
+The worker pool has no machines, so its 189 MachineConfigs change nothing.
+
+Checked on every node afterwards: the boot arguments (`audit=1`,
+`audit_backlog_limit=8192`, `pti=on`, `vsyscall=none`, `page_poison=1`,
+`nousb`), blocked kernel modules, and every NFS mount still on
+`xprtsec=tls`.
+
+| Scan | Fail, stage A | Fail, after stage C |
+|---|---|---|
+| `rhcos4-moderate` (masters) | 191 | **1** |
+| `ocp4-moderate-node` (masters) | 4 | **1** |
+| `ocp4-cis-node` (masters) | 0 | **0** |
+| `nist-ocp4-moderate` (platform) | 25 | **18** |
+| `nist-ocp4-cis` (platform) | 9 | **8** |
+
+The two node failures left:
+
+- `reject-unsigned-images-by-default`: closed by the registry allowlist,
+  which stays off until the hub's images are inventoried.
+- `service-usbguard-enabled`: USBGuard is installed and its MachineConfig is
+  applied, but the service is disabled. Probably ordering: the package
+  arrives as an RHCOS extension in the same update that enables the service.
+  To verify. USB is off at boot (`nousb`) in any case.
+
+### During the rollout: etcd crashes on the nodes taking the load
+
+Each drain moved a node's pods, and their connections, to the other two
+nodes. There, etcd and the kubelets stalled on TLS handshakes, and etcd
+crashed:
+
+- **First drain (u13):** etcd on u15 and u17 stopped answering from about
+  21:28. etcd on u15 crashed at 21:33 and restarted. The API was unavailable
+  from about 21:36 to 21:39, while u13 rebooted. Everything recovered without
+  intervention.
+- **Second and third drains (u15, u17):** shorter kubelet stalls. etcd on u13
+  crashed at 22:15 and on u17 once, but quorum held and the API stayed up.
+- **Afterwards:** u13, first back, held most of the drained pods. Its kubelet
+  reached about 1,400 threads and a load average above 40, and HTTPS liveness
+  probes (1 s timeout) failed. About a dozen ACM and multicluster-engine pods
+  restarted repeatedly (63 restarts in all), then settled by about 22:40
+  without intervention.
+
+What the crash dumps show, for both etcd crashes:
+
+- `pthread_create failed: Resource temporarily unavailable`, then `SIGABRT`.
+  The kernel logged `fork rejected by pids controller` for the etcd pod: it
+  reached the per-pod limit of 4,096 (`podPidsLimit`).
+- About 4,650 goroutines, about 3,900 of them inside cgo calls to OpenSSL
+  (`golang-fips`): about 3,400 in `EVP_PKEY_keygen` and about 350 in
+  `RAND_bytes`. In FIPS mode, each TLS handshake's key generation is an
+  OpenSSL call that holds an OS thread.
+
+So, in FIPS mode, a burst of TLS reconnections can hold enough threads in
+OpenSSL to exhaust the pod's thread limit. A drain causes such a burst.
+Generating keys with the `openssl` command on the same nodes runs at normal
+speed, so the slowdown appears only with many concurrent callers in one
+process; contention inside OpenSSL is suspected, not shown.
+
+jetty, also FIPS, did not show this. The differences:
+
+| | jetty | nist-dev-infra |
+|---|---|---|
+| Layout | 3 control-plane nodes and 2 workers | Compact: 3 nodes run everything |
+| CPUs per control-plane node | 40 | 176 |
+| ACM, multicluster-engine, HyperShift, Hive | None | All |
+| OpenShift, kernel | 4.22.16, `687.50` | 4.22.14, `687.46` |
+
+On a compact hub, a drain moves every workload onto the nodes that run etcd
+and the API servers, and ACM's many controllers all reconnect at once. With
+176 CPUs, Go runs far more of those handshakes in parallel.
+
+**Why it matters beyond stage C:** upgrades drain every node the same way.
+To decide:
+
+- a Red Hat support case, with the crash dumps (kept outside the repo);
+- whether to raise `podPidsLimit` on control-plane nodes (a KubeletConfig,
+  itself a rollout);
+- whether compliant hubs should use a standard layout (separate control
+  plane) rather than a compact one;
+- whether the next upgrade of this hub reproduces it.

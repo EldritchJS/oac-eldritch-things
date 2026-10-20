@@ -210,6 +210,15 @@ oc wait mcp/master --for=condition=Updated --timeout=60m
 A compact hub has only `master` nodes, so unpausing `master` restarts every
 node, one at a time.
 
+**Expect etcd to crash on a compact FIPS hub.** On nist-dev-infra (176 CPUs
+per node, with ACM), each drain moved a node's workloads onto the other two.
+There, TLS reconnections in FIPS mode held enough threads in OpenSSL to push
+etcd past the per-pod limit of 4,096, and it crashed. The first drain cost
+about ten minutes of API availability; all three recovered without
+intervention. Upgrades drain nodes the same way. Watch `etcd` restarts and
+the API during the rollout, and allow a quiet window. Details:
+[nist-dev-infra/README.md](nist-dev-infra/README.md), "Stage C results".
+
 ### 6. Scan, fix in git, repeat
 
 The Compliance Operator only scans (`autoApplyRemediations: false`). Each
