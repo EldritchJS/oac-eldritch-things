@@ -409,6 +409,48 @@ etcd with a lower `GOMAXPROCS` (the static pod is the etcd operator's, so
 this is a question for Red Hat), fewer etcd connections (fewer resource
 types), and smaller nodes for the control plane (the standard layout).
 
+**Where the CPU goes (profiled the same day).** Same harness, with `perf`
+attached to the test server from a node debug pod during the bursts
+(`PERF=1`), and a control server that does the same handshakes with Go's
+own crypto and no OpenSSL (`NATIVE=1`, [server/](tls-handshake-test/server/)).
+
+| Server | Peak threads | Kernel | Real crypto | OpenSSL's read-write locks | Kernel mutex spinning (`osq_lock`) |
+|---|---|---|---|---|---|
+| FIPS etcd, this hub (176 CPUs) | 874 | 35.6% | 27.5% (OpenSSL FIPS module) | 8.3% | 13.7% |
+| FIPS etcd, jetty master (40 CPUs) | 86 | 15.3% | 55.8% | 2.5% | not in the top symbols |
+| Go-native control, this hub | 186 | 24.6% | 75% (Go) | none | 2.5% |
+
+1. **FIPS is what turns concurrent handshakes into threads.** The native
+   control peaks at about `GOMAXPROCS` (176) threads; FIPS etcd peaks well
+   above it. Each OpenSSL call holds a thread while it runs.
+2. **On this hub a third of FIPS etcd's CPU is kernel lock spinning, not
+   crypto.** Kernel stacks show the spinning in `mprotect`, waiting for
+   the process's memory-map lock. Tracing the syscalls: 13,600 to 33,500
+   `mprotect` calls per 9,000 handshakes, against about 180 thread
+   creations. About 98% come from OpenSSL's allocations
+   (`CRYPTO_malloc` → glibc `malloc` → `sysmalloc` growing a heap): glibc
+   gives each thread its own heap, and a new one grows in small steps,
+   each step an `mprotect` under a lock the whole process shares.
+3. **Making heaps grow in larger steps removes that, but the time moves
+   to OpenSSL's locks.** With `GLIBC_TUNABLES=glibc.malloc.top_pad=67108864`
+   (64 MiB) the test server made 350 `mprotect` calls and `osq_lock`
+   disappeared from the profile. CPU per handshake did not improve,
+   though (about 23 ms): OpenSSL's read-write lock calls rose from 8% to
+   17%. Sampled stacks show those locks taken at the start of nearly every
+   OpenSSL operation the Go FIPS bridge calls (`EVP_DigestInit_ex`,
+   `EVP_DigestFinal`, `EVP_PKEY_sign`, `EVP_PKEY_derive_init`,
+   `EVP_PKEY_generate`, `EVP_MAC_init`, `EVP_CipherInit_ex`). The frame
+   that takes the lock is inside stripped code; the pattern fits
+   OpenSSL 3 looking up the algorithm's provider on each call, but that is
+   inferred, not shown. `glibc.malloc.arena_max=8` made things worse.
+
+So, on a large FIPS node, concurrent handshakes in one process contend
+first on the kernel's memory-map lock (through glibc's heaps) and then on
+OpenSSL's own locks. Cores beyond about 40 add contention, not throughput.
+For a Red Hat case: these profiles, the crash dumps, and the question of
+whether golang-fips can avoid a lock on each OpenSSL operation (for
+example by looking algorithms up once and reusing them).
+
 jetty, also FIPS, did not show this. The differences:
 
 | | jetty | nist-dev-infra |

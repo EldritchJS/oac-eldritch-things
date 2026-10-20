@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Render the handshake test for the cluster in $KUBECONFIG.
-# Usage: render.sh <server-node> <client-node>
+# Usage: [NATIVE=1] [GOMAXPROCS=n] [GLIBC_TUNABLES=...] render.sh <server-node> <client-node>
+# NATIVE=1 runs hsserve (Go crypto, no OpenSSL) in place of etcd; measure.sh
+# copies it into the pod, which starts it as PID 1.
 set -euo pipefail
 SERVER_NODE=$1 CLIENT_NODE=$2
 EP=$(oc get pod -n openshift-etcd -l app=etcd -o name | head -1)
@@ -9,6 +11,32 @@ CIPHERS=$(oc get -n openshift-etcd "$EP" -o jsonpath='{.spec.containers[?(@.name
 SEC='securityContext: {allowPrivilegeEscalation: false, runAsNonRoot: true, capabilities: {drop: [ALL]}, seccompProfile: {type: RuntimeDefault}}'
 EXTRA=""
 [ -n "${GOMAXPROCS:-}" ] && EXTRA="        - {name: GOMAXPROCS, value: \"$GOMAXPROCS\"}"
+[ -n "${GLIBC_TUNABLES:-}" ] && EXTRA="$EXTRA
+        - {name: GLIBC_TUNABLES, value: \"$GLIBC_TUNABLES\"}"
+if [ "${NATIVE:-}" = 1 ]; then
+  IMAGE=registry.access.redhat.com/ubi9/ubi:latest
+  SERVER_CMD="      command: [sh, -c, 'until [ -x /data/hsserve ]; do sleep 1; done; exec /data/hsserve']
+      env:
+$EXTRA"
+else
+  SERVER_CMD=$(cat <<EOS
+      command: [etcd]
+      args:
+        - --name=etcd-test
+        - --data-dir=/data
+        - --listen-client-urls=https://0.0.0.0:2379
+        - --advertise-client-urls=https://etcd-test:2379
+        - --cert-file=/certs/server.crt
+        - --key-file=/certs/server.key
+        - --trusted-ca-file=/certs/ca.crt
+        - --client-cert-auth=true
+      env:
+        - {name: ETCD_CIPHER_SUITES, value: "$CIPHERS"}
+        - {name: ETCD_TLS_MIN_VERSION, value: TLS1.2}
+$EXTRA
+EOS
+)
+fi
 cat <<EOF
 apiVersion: v1
 kind: Namespace
@@ -28,20 +56,7 @@ spec:
   containers:
     - name: etcd
       image: $IMAGE
-      command: [etcd]
-      args:
-        - --name=etcd-test
-        - --data-dir=/data
-        - --listen-client-urls=https://0.0.0.0:2379
-        - --advertise-client-urls=https://etcd-test:2379
-        - --cert-file=/certs/server.crt
-        - --key-file=/certs/server.key
-        - --trusted-ca-file=/certs/ca.crt
-        - --client-cert-auth=true
-      env:
-        - {name: ETCD_CIPHER_SUITES, value: "$CIPHERS"}
-        - {name: ETCD_TLS_MIN_VERSION, value: TLS1.2}
-$EXTRA
+$SERVER_CMD
       ports: [{containerPort: 2379}]
       $SEC
       volumeMounts:
