@@ -175,7 +175,7 @@ if [ "$FUNCTIONAL" = 1 ] && [ "$HAS_VIRT" = 1 ]; then
     else
       skip "live migration: fewer than 2 VM-capable nodes"
     fi
-    oc delete ns "$ns" --wait=false >/dev/null 2>&1
+    oc delete ns "$ns" --timeout=300s >/dev/null 2>&1   # billing below needs the GPU released
   else
     bad "could not create project $ns for the VM tests"
   fi
@@ -194,7 +194,7 @@ if [ "$GPU" = 1 ] && [ -n "$GPU_NODES" ]; then
     ns="acceptance-gpuvm-$(date +%s)"
     if oc create ns "$ns" >/dev/null 2>&1; then
       functional "CUDA runs in a VM (passthrough)" env NAMESPACE="$ns" ../vms/gpu/test-gpu-vm.sh
-      oc delete ns "$ns" --wait=false >/dev/null 2>&1
+      oc delete ns "$ns" --timeout=300s >/dev/null 2>&1   # billing below needs the GPU released
     else
       bad "could not create project $ns for the GPU VM test"
     fi

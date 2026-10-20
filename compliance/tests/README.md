@@ -21,9 +21,11 @@ export KUBECONFIG=...
 | `--gpu` | `test-gpu-pod.sh` (a CUDA sample in a pod) and `../vms/gpu/test-gpu-vm.sh` (CUDA in a VM) |
 
 Results (2026-10-20): jetty 24 PASS, 0 FAIL read-only; 27 PASS, 0 FAIL
-with `--functional` (all three VM tests). `--gpu` has not been run:
-`test-gpu-pod.sh` is new and untested, and CUDA in a VM passed only by
-hand the same day (`../vms/gpu/README.md`). nist-dev-infra:
+with `--functional` (all three VM tests). `--gpu`: CUDA in a pod and CUDA
+in a VM both passed (about 10 minutes of GPU time). The billing check
+then failed only because the VM's project was still being deleted; the
+suite now waits for deletion first, which has not yet been re-run.
+nist-dev-infra:
 fails only on its missing default StorageClass; no VMs or GPUs there. Not
 yet run on a hosted spoke. Checks that need a debug pod report WARN where
 a spoke does not allow one.

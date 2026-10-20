@@ -25,7 +25,7 @@ FREE=$(oc get nodes -o jsonpath='{range .items[*]}{.status.allocatable.nvidia\.c
   | awk '$1 > 0 {s += $1} END {print s + 0}')
 [ "$FREE" -gt 0 ] || { echo "no node advertises nvidia.com/gpu (no node in container mode?)" >&2; exit 2; }
 
-cleanup() { oc delete ns "$NAMESPACE" --wait=false >/dev/null 2>&1; }
+cleanup() { oc delete ns "$NAMESPACE" --timeout=300s >/dev/null 2>&1; }   # waits: the GPU is released when the pod is gone
 trap cleanup EXIT
 
 oc create ns "$NAMESPACE" >/dev/null || exit 2
