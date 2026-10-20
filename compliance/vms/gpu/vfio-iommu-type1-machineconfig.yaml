@@ -1,0 +1,34 @@
+# Loads vfio_iommu_type1 at boot, which GPU passthrough needs and nothing
+# else loads. The GPU Operator's VFIO manager loads vfio-pci but not this
+# IOMMU backend, so without it every GPU VM fails with "No available IOMMU
+# models". See README.md.
+#
+# STANDALONE OPENSHIFT ONLY (no MachineConfig API on a hosted cluster; there
+# the same file goes in the NodePool config).
+#
+# Targets the worker pool. On jetty that pool is just the two GPU nodes, so
+# this reboots both, one at a time. Loading the module on a node in container
+# mode is harmless, and it lets a node switch modes without a reboot. On a
+# cluster with other workers, label it for a dedicated pool instead (as in
+# iommu-machineconfig.yaml) so the change does not roll the whole fleet.
+#
+#   oc apply -f vfio-iommu-type1-machineconfig.yaml
+#   oc get mcp worker -w
+#   oc debug node/<node> -- chroot /host ls -d /sys/module/vfio_iommu_type1
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  name: 99-worker-vfio-iommu-type1
+  labels:
+    machineconfiguration.openshift.io/role: worker
+spec:
+  config:
+    ignition:
+      version: 3.2.0
+    storage:
+      files:
+        - path: /etc/modules-load.d/vfio-iommu-type1.conf
+          mode: 0644
+          overwrite: true
+          contents:
+            source: data:,vfio_iommu_type1%0A
