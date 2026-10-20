@@ -451,6 +451,31 @@ For a Red Hat case: these profiles, the crash dumps, and the question of
 whether golang-fips can avoid a lock on each OpenSSL operation (for
 example by looking algorithms up once and reusing them).
 
+**Reconnection storms on jetty (same day).** `storm.sh` has N clients
+connect at once, abandon a handshake after a timeout and retry, and
+reconnect together every cycle: the shape of the stage C incident. Server
+on a jetty worker (512 CPUs, AMD EPYC 9754):
+
+| Storm | GOMAXPROCS | Peak threads | Failed handshakes per cycle | All connected after |
+|---|---|---|---|---|
+| 2,250 connections, 20 s timeout | default | 551 | 0 | 1.0 to 2.0 s |
+| Same, 480 of 512 cores busy | default | 463 | 0 | 0.7 to 1.9 s |
+| 2,250, 1 s timeout | default | 554 | 157 to 2,154 | 1.6 to 2.9 s |
+| 6,750, 1 s timeout | default | 631 | 6,574 to 8,626 | 4.0 to 5.6 s |
+| 6,750, 1 s timeout | 40 | 88 | 56 to 2,959 | 1.9 to 3.7 s |
+
+- **The crash did not reproduce on jetty.** Even the worst storm stayed
+  near `GOMAXPROCS` threads. CPU load on the node made no difference.
+- **Capping `GOMAXPROCS` at 40 helped on every measure:** 7 times fewer
+  threads, fewer failed handshakes, and all clients connected sooner.
+- **This hub's hardware is the likely difference.** Its nodes are 4-socket
+  Intel Xeon E5-4669 v4 (Broadwell); jetty's worker is a 2-socket AMD
+  EPYC 9754. Contended locks (the memory-map lock, OpenSSL's) are much
+  more expensive across four sockets, so OpenSSL calls stall long enough
+  for Go to start extra threads. Here the count ran to 1,841 on 176 CPUs;
+  on jetty it never passed about 630 on 512. Inferred from the profiles
+  and the thread counts, not shown directly.
+
 jetty, also FIPS, did not show this. The differences:
 
 | | jetty | nist-dev-infra |
