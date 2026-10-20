@@ -20,7 +20,10 @@ export KUBECONFIG=...
 | `--functional` | `../vms/test-vm.sh`, `test-vm-storage.sh`, `test-vm-migration.sh` in a throwaway project |
 | `--gpu` | `test-gpu-pod.sh` (a CUDA sample in a pod) and `../vms/gpu/test-gpu-vm.sh` (CUDA in a VM) |
 
-Results (2026-10-20): jetty 24 PASS, 0 FAIL read-only. nist-dev-infra:
+Results (2026-10-20): jetty 24 PASS, 0 FAIL read-only; 27 PASS, 0 FAIL
+with `--functional` (all three VM tests). `--gpu` has not been run:
+`test-gpu-pod.sh` is new and untested, and CUDA in a VM passed only by
+hand the same day (`../vms/gpu/README.md`). nist-dev-infra:
 fails only on its missing default StorageClass; no VMs or GPUs there. Not
 yet run on a hosted spoke. Checks that need a debug pod report WARN where
 a spoke does not allow one.
