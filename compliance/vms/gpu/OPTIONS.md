@@ -129,9 +129,10 @@ Not a no, but a purchase and some setup:
 
 In order of what each one unblocks:
 
-1. **Reset between tenants:** whether the GPU's memory is cleared when a VM
-   releases it (`test-gpu-memclear.sh`). This decides passthrough on
-   compliant spokes.
+1. **Reset between tenants: cleared (2026-10-20).** Memory written by one
+   VM read as zero, past the driver, after the VM was stopped and the GPUs
+   handed back (`test-gpu-memclear.sh`; sampled, one node). Ask NVIDIA to
+   confirm for H100 before relying on it for compliance.
 2. **NVLink between tenants:** a 1-GPU VM works with its NVLink peers in
    other VMs, and most links stay physically up. Whether one guest can use
    them to reach a peer's memory must be settled before compliant use.
