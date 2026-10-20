@@ -21,6 +21,7 @@ This is a test setup. A compliant hub would get its compliance charts as an
 | S | Storage, TLS only, before any volume exists: `tlshd` on every node, and `pure-fb-nfsv4` as a TLS class (`portworx.tls: true`), the default and the only FlashBlade class | none |
 | B | Admission policy, FIO, system use notice, etcd backup, ACS (Central and the hub's SecuredCluster), NetworkPolicies and quotas for those namespaces | none |
 | C | Node hardening: about 380 MachineConfigs | **every node**. On this compact hub that is the whole cluster, one node at a time |
+| D | The first hosted cluster, `nist-dev-workload0`: its hub-side pieces (agent discovery, the hosted-cluster router, DNS, certificates) and the cluster itself | none on the hub; the workers' first boot |
 
 On nist-dev-infra, NFS over TLS went in with stage B, after Portworx had
 already made `pure-fb-nfsv4` the default. Five volumes landed on it, and
@@ -359,3 +360,49 @@ To decide:
 - whether compliant hubs should use a standard layout (separate control
   plane) rather than a compact one;
 - whether the next upgrade of this hub reproduces it.
+
+## Stage D: the first hosted cluster (in preparation)
+
+Unlike A to C, stage D runs through `CCI-MOC/oac-apps` and `moc-aws`
+themselves: the hub's `hosted-clusters` and `hub-components`
+ApplicationSets read `main`.
+
+### What is written (2026-10-20)
+
+| Where | What |
+|---|---|
+| oac-apps `hosted-cluster-nodepool-config` | The chart: NodePool config from the hub, API server audit, image config. A pool's own `config` entries may be names or `{name: ...}` |
+| oac-apps, `values/nist-dev-infra/local-cluster/` | `acm.yaml` (agent discovery; the hub's ECDSA key, since sshd on a FIPS node refuses ed25519), `hcp-config.yaml`, `metallb.yaml`, `cert-manager.yaml`, `external-dns-operator.yaml` |
+| oac-apps, `hosted-clusters/nist-dev-infra/` | Hub-wide defaults (FIPS, node hardening, audit profile, registry allowlist) and `nist-dev-workload0/values.yaml` |
+| moc-aws `nist-dev-infra-hcp` | The zones `hcp.nist.int.massopen.cloud` and `hcp-int.nist.int.massopen.cloud`, delegated from `nist.int`; an external-dns user for them, whose key the hub reads where the iam-user module stores it; the hub may write `cluster/nist-dev-infra/hostedcluster/` (kubeconfig, etcd encryption key) |
+
+Every values file renders. The cluster's HostedCluster and NodePool, with
+test addresses in place of the placeholders, pass a server-side dry run
+on the hub.
+
+### Still needed
+
+- **Hardware:** at least two bare-metal workers, new or wiped, that can
+  reach the hub. Their resource class goes in the NodePool's selector.
+- **Addresses from ops:** a MetalLB range for hosted API servers, one
+  address for the hosted-cluster router, one for the cluster's ingress.
+  Then a wildcard record `*.hcp-int.nist.int.massopen.cloud` for the
+  router, in moc-aws.
+- **A second moc-aws change, after the zones exist:** add both zones to
+  the hub's cert-manager policy (`additional_zone_names`). The module looks
+  zones up by name, so it cannot plan in the same change that creates them.
+- **A default StorageClass** (oac-apps #148): the agent service's volumes
+  name no class.
+- **Hosted etcd storage, to decide:** the hub has no LVM storage (each
+  node's second disk holds its own etcd), and Red Hat does not support
+  etcd on NFS. The values use `pure-fb-nfsv4` for now.
+- **On the test branch,** once the `clusters` namespace exists:
+  `compliance-node-hardening` `nodePool.enabled: true`, so the NodePool's
+  ConfigMap exists. Then an ApplicationSet for the cluster's own
+  compliance components (BUILD.md Part 2, step 3).
+- **The hub's thread limit first:** a hosted control plane adds about 75
+  pods, many of them TLS clients, to the nodes whose etcd crashed during
+  stage C. Raise `podPidsLimit` (with the USBGuard fix) before stage D.
+- **Not yet:** an identity provider for the cluster (`oauth.mocsso` needs
+  a Keycloak client); external-dns with a web-identity role in place of a
+  stored key.

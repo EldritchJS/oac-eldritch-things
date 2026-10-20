@@ -283,22 +283,32 @@ EOF
    (2026-10-19) both did.
 
 4. Check that the hub refuses a non-compliant cluster, without creating
-   one. This is a server-side dry run:
+   one. Render a HostedCluster and a NodePool from the `hosted-cluster`
+   chart with the hub's values, and dry-run them on the server. The
+   namespace is `default` because `clusters` does not exist until the
+   first cluster:
 
 ```
-oc create --dry-run=server -f - <<'EOF'
-apiVersion: hypershift.openshift.io/v1beta1
-kind: HostedCluster
-metadata: {name: policy-test, namespace: clusters}
-spec:
-  fips: false
-  # ...minimal required fields...
+cat > /tmp/policy-test.yaml <<'EOF'
+clusterName: policy-test
+namespace: default
+nodePools: [{name: compute, replicas: 1, agentLabelSelector: {x: y}}]
 EOF
+render() {
+  helm template t charts/hosted-cluster \
+    -f hosted-clusters/<hub>/values.yaml -f /tmp/policy-test.yaml \
+    --show-only templates/hostedcluster.yaml --show-only templates/nodepool.yaml "$@"
+}
+render | oc apply --dry-run=server -f -                                    # both accepted
+render --set fips=false | oc apply --dry-run=server -f -                   # HostedCluster denied
+render --set apiServer.audit.profile=Default | oc apply --dry-run=server -f -  # denied
+render --set-json 'nodePoolConfig=[]' | oc apply --dry-run=server -f -     # NodePool denied
 ```
 
-The dry run must be denied by `compliant-hosted-clusters`. The field names
-in the policy have **not yet been checked** against real HyperShift objects.
-This is the first place they are.
+   Each denial must name `compliant-hosted-clusters`. On nist-dev-infra
+   (2026-10-20) all four checks behaved as above, as did a HostedCluster
+   with `spec.secretEncryption` removed (denied). That was the first check
+   of the policy's field names against real HyperShift objects.
 
 Only then is the hub ready for workload clusters.
 
