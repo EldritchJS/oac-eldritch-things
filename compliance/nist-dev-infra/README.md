@@ -541,9 +541,11 @@ on the hub.
   zones up by name, so it cannot plan in the same change that creates them.
 - **A default StorageClass** (oac-apps #148): the agent service's volumes
   name no class.
-- **Hosted etcd storage, to decide:** the hub has no LVM storage (each
-  node's second disk holds its own etcd), and Red Hat does not support
-  etcd on NFS. The values use `pure-fb-nfsv4` for now.
+- **Hosted etcd storage, accepted as a test-only gap (2026-10-20):** the
+  hub has no free local disk (each node's second disk holds its own etcd),
+  so the test spoke's etcd uses `pure-fb-nfsv4`, which Red Hat does not
+  support for etcd. A later iteration gives each node that runs hosted
+  control planes a dedicated local disk for LVM Storage.
 - **On the test branch,** once the `clusters` namespace exists:
   `compliance-node-hardening` `nodePool.enabled: true`, so the NodePool's
   ConfigMap exists. Then an ApplicationSet for the cluster's own
