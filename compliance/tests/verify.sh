@@ -21,7 +21,8 @@ set -uo pipefail
 
 cd "$(dirname "$0")" || exit 2
 BASELINE_FILE="${BASELINE_FILE:-./baseline-fail-counts.txt}"
-DEVICE_RESOURCE="${DEVICE_RESOURCE:-nvidia.com/GH100_H100_SXM5_80GB}"
+DEVICE_RESOURCE="${DEVICE_RESOURCE:-}"   # passthrough resource; read from each node when empty
+export DEVICE_RESOURCE
 GPU_NS=nvidia-gpu-operator
 CO_NS=openshift-compliance
 ACS_NS=stackrox
@@ -82,7 +83,13 @@ run_t01() {
     done
     case "$out" in
       *"|"*) ;;
-      *) bad "$n  could not read FIPS state after 3 attempts (oc debug failed)"; bad_nodes=$((bad_nodes+1)); continue ;;
+      *) # A hosted spoke may not allow debug pods: that is "unknown", not "off".
+         if [ "$(jp infrastructure cluster "" '{.status.controlPlaneTopology}')" = External ]; then
+           warn "$n  could not read FIPS state (no debug pod on this hosted cluster); check the HostedCluster's spec.fips on the hub"
+         else
+           bad "$n  could not read FIPS state after 3 attempts (oc debug failed)"; bad_nodes=$((bad_nodes+1))
+         fi
+         continue ;;
     esac
     fips="${out%%|*}"; policy="${out##*|}"; cmdline=$(echo "$out" | cut -d'|' -f2)
     if [ "$fips" = "1" ] && [ "$cmdline" = "fips=1" ] && [ "$policy" = "FIPS" ]; then
@@ -295,16 +302,30 @@ run_t06() {
 # --------------------------------------------------------------- T-07 ------
 run_t07() {
   hdr "T-07  GPU VM-passthrough modality"
-  local esc; esc=$(echo "$DEVICE_RESOURCE" | sed 's/\./\\./g')
-  local found=0
+  local found=0 seen=""
   for n in $(oc get nodes -o name 2>/dev/null | sed 's|node/||'); do
     local mode; mode=$(jp node "$n" "" '{.metadata.labels.nvidia\.com/gpu\.workload\.config}')
     [ "$mode" != "vm-passthrough" ] && continue
     found=1
-    local alloc; alloc=$(jp node "$n" "" "{.status.allocatable.$esc}")
-    [ -n "$alloc" ] && [ "$alloc" != "0" ] \
-      && ok "$n advertises $DEVICE_RESOURCE=$alloc" \
-      || bad "$n in vm-passthrough but advertises $DEVICE_RESOURCE='$alloc'"
+    # The sandbox device plugin advertises the card under its model name
+    # (nvidia.com/GH100_H100_SXM5_80GB on jetty). Read it from the node unless
+    # DEVICE_RESOURCE pins one, so other GPU models do not fail falsely.
+    local res
+    res=$(oc get node "$n" -o json 2>/dev/null | python3 -c '
+import json, os, sys
+a = json.load(sys.stdin)["status"].get("allocatable", {})
+want = os.environ.get("DEVICE_RESOURCE")
+for k, v in a.items():
+    if k.startswith("nvidia.com/") and k != "nvidia.com/gpu" and (not want or k == want):
+        print(k + "=" + v)')
+    if [ -z "$res" ]; then
+      bad "$n in vm-passthrough but advertises no device resource${DEVICE_RESOURCE:+ $DEVICE_RESOURCE}"
+    fi
+    local r
+    for r in $res; do
+      [ "${r#*=}" != "0" ] && ok "$n advertises $r" || bad "$n in vm-passthrough but advertises $r"
+      case " $seen " in *" ${r%%=*} "*) ;; *) seen="$seen ${r%%=*}" ;; esac
+    done
     local p; p=$(pods_on "$GPU_NS" "$n")
     if has_line "$p" 'nvidia-vfio-manager.*Running'; then
       ok "$n vfio-manager running"
@@ -317,7 +338,7 @@ run_t07() {
       ok "$n host driver absent (correct)"
     fi
   done
-  [ "$found" = "0" ] && skip "no node currently in vm-passthrough modality"
+  [ "$found" = "0" ] && { skip "no node currently in vm-passthrough modality"; return; }
 
   # permittedHostDevices must be present on BOTH the manager and the managed CR.
   # PATH GOTCHA: on hco.kubevirt.io/v1 this lives under spec.virtualization.
@@ -327,10 +348,12 @@ run_t07() {
   hco=$(jp hyperconverged kubevirt-hyperconverged openshift-cnv '{.spec.virtualization.permittedHostDevices.pciHostDevices[*].resourceName}')
   [ -z "$hco" ] && hco=$(jp hyperconverged kubevirt-hyperconverged openshift-cnv '{.spec.permittedHostDevices.pciHostDevices[*].resourceName}')
   kv=$(jp kubevirt kubevirt-kubevirt-hyperconverged openshift-cnv '{.spec.configuration.permittedHostDevices.pciHostDevices[*].resourceName}')
-  case "$hco" in *"$DEVICE_RESOURCE"*) ok "HCO permits $DEVICE_RESOURCE" ;;
-    *) bad "HCO does NOT permit $DEVICE_RESOURCE (got '$hco')" ;; esac
-  case "$kv" in *"$DEVICE_RESOURCE"*) ok "KubeVirt CR permits $DEVICE_RESOURCE" ;;
-    *) bad "KubeVirt CR does NOT permit $DEVICE_RESOURCE (got '$kv') — HCO propagation broken" ;; esac
+  for r in $seen; do
+    case "$hco" in *"$r"*) ok "HCO permits $r" ;;
+      *) bad "HCO does NOT permit $r (got '$hco')" ;; esac
+    case "$kv" in *"$r"*) ok "KubeVirt CR permits $r" ;;
+      *) bad "KubeVirt CR does NOT permit $r (got '$kv') — HCO propagation broken" ;; esac
+  done
 }
 
 # --------------------------------------------------------------- T-10 ------
@@ -679,7 +702,7 @@ run_t17() {
 command -v oc >/dev/null || { echo "oc not found" >&2; exit 2; }
 oc whoami >/dev/null 2>&1 || { echo "not logged in (set KUBECONFIG)" >&2; exit 2; }
 
-printf '%sjetty verification%s  —  %s  —  %s\n' "$B" "$N" "$(oc whoami --show-server)" "$(date -u '+%Y-%m-%d %H:%M UTC')"
+printf '%sverification%s  —  %s  —  %s\n' "$B" "$N" "$(oc whoami --show-server)" "$(date -u '+%Y-%m-%d %H:%M UTC')"
 
 ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12 t13 t14 t15 t16 t17"
 RUN="${ONLY:-$ALL}"

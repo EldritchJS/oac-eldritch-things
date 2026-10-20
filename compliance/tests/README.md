@@ -1,5 +1,35 @@
 # Verification suite
 
+## Any cluster: `cluster-acceptance.sh`
+
+Is a cluster set up properly for containers, VMs and GPUs? Works on a
+standalone cluster or a hosted spoke, compliant or not. It finds what the
+cluster has (virtualization, GPU nodes, Compliance Operator scans, hosted
+control plane) and checks only that.
+
+```sh
+export KUBECONFIG=...
+./cluster-acceptance.sh                # read-only, free, a few minutes
+./cluster-acceptance.sh --functional   # also boots test VMs (free)
+./cluster-acceptance.sh --gpu          # also claims GPUs: COSTS MONEY
+```
+
+| Level | Checks |
+|---|---|
+| Read-only | Nodes Ready; one default StorageClass. Compliant clusters: FIPS on every node (T-01), default StorageClass is NFS over TLS. Virtualization: HyperConverged healthy, VM-capable nodes and virt-handler, ReadWriteMany for live migration. GPUs: ClusterPolicy ready, both GPU modes (T-06, T-07), `vfio_iommu_type1` on passthrough nodes. Billing (T-17) last |
+| `--functional` | `../vms/test-vm.sh`, `test-vm-storage.sh`, `test-vm-migration.sh` in a throwaway project |
+| `--gpu` | `test-gpu-pod.sh` (a CUDA sample in a pod) and `../vms/gpu/test-gpu-vm.sh` (CUDA in a VM) |
+
+Results (2026-10-20): jetty 24 PASS, 0 FAIL read-only. nist-dev-infra:
+fails only on its missing default StorageClass; no VMs or GPUs there. Not
+yet run on a hosted spoke. Checks that need a debug pod report WARN where
+a spoke does not allow one.
+
+The rest of this page is `verify.sh`, jetty's own regression net, whose
+generic checks the acceptance suite reuses.
+
+## jetty: `verify.sh`
+
 *Last updated 2026-10-07. Current result: 38 PASS / 0 FAIL / 3 WARN.*
 
 A regression net for `jetty`, covering compliance posture, FIPS, RHACS, and
