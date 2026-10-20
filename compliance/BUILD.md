@@ -116,6 +116,17 @@ Upstream: `infra-cluster-deployment.md`. Hub name below: `<hub>`.
 2. Put the hub on the management network, VPN-only. Do not expose the hub
    API publicly (HUB-SPOKE.md §3).
 3. Networking, firewall and `open-accelerator-infra` inventory: as upstream.
+4. **A standard layout: three dedicated control-plane nodes, plus workers.**
+   Not compact. A drain then moves workloads onto workers, never onto the
+   nodes that run etcd.
+5. **Control-plane nodes on current, one- or two-socket hardware, about
+   40 cores.** Under FIPS, every TLS handshake etcd serves is an OpenSSL
+   call that holds a thread, and contended locks get slower with more
+   cores and more sockets. On nist-dev-infra's 4-socket, 176-thread
+   Broadwell nodes, reconnection bursts after drains pushed etcd past its
+   4,096-thread limit and crashed it. Extra cores add no handshake
+   throughput, only contention ([nist-dev-infra/README.md](nist-dev-infra/README.md),
+   "Why etcd had thousands of handshakes in flight" and after).
 
 ### 2. Install: the decisions that cannot change later
 
@@ -210,13 +221,15 @@ oc wait mcp/master --for=condition=Updated --timeout=60m
 A compact hub has only `master` nodes, so unpausing `master` restarts every
 node, one at a time.
 
-**Expect etcd to crash on a compact FIPS hub.** On nist-dev-infra (176 CPUs
-per node, with ACM), each drain moved a node's workloads onto the other two.
-There, TLS reconnections in FIPS mode held enough threads in OpenSSL to push
-etcd past the per-pod limit of 4,096, and it crashed. The first drain cost
-about ten minutes of API availability; all three recovered without
-intervention. Upgrades drain nodes the same way. Watch `etcd` restarts and
-the API during the rollout, and allow a quiet window. Details:
+**Expect etcd to crash on a compact FIPS hub, or on hardware like
+nist-dev-infra's** (step 1, items 4 and 5). There, each drain moved a node's
+workloads onto the other two, TLS reconnections held enough threads in
+OpenSSL to push etcd past its limit of 4,096, and it crashed. The first
+drain cost about ten minutes of API availability; all three recovered
+without intervention. Upgrades drain nodes the same way. On such a hub,
+record etcd's threads during the rollout with
+[nist-dev-infra/watch-etcd-threads.sh](nist-dev-infra/watch-etcd-threads.sh),
+and allow a quiet window. Details:
 [nist-dev-infra/README.md](nist-dev-infra/README.md), "Stage C results".
 
 ### 6. Scan, fix in git, repeat
