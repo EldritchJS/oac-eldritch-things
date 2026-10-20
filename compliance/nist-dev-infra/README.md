@@ -338,6 +338,33 @@ Generating keys with the `openssl` command on the same nodes runs at normal
 speed, so the slowdown appears only with many concurrent callers in one
 process; contention inside OpenSSL is suspected, not shown.
 
+**Why etcd had thousands of handshakes in flight** (dumps and logs
+re-read, and connections counted, on 2026-10-20):
+
+- The limit counts threads, not processes. etcd normally runs 35 to 223
+  threads on this hub.
+- In both dumps, about 3,900 threads each held one server-side TLS 1.3
+  handshake on etcd's client port (2379), in key generation or
+  `RAND_bytes`. Nearly all had been there less than a minute.
+- The clients are the kube-apiservers. Each holds about one etcd
+  connection per API resource type, to every etcd endpoint: 548 to 567
+  per endpoint here (567 resource types), 329 to 348 on jetty (347). So
+  each etcd member holds about 2,250 client connections at rest, against
+  about 1,350 on jetty. The difference is ACM, multicluster-engine,
+  HyperShift and Hive's CRDs.
+- When a member or an API server restarts, those connections all
+  handshake again at once.
+- On the member that crashed first, handshakes were already slow before
+  the client burst: its peers' TLS handshakes to it timed out from
+  4 minutes before the crash. Then API server handshakes on 2379 began
+  failing with `broken pipe` (the client gave up before etcd answered)
+  and being retried, until the threads ran out.
+
+So the thread count follows from two things: the number of connections,
+which is set by the number of resource types; and how slow a handshake
+is under concurrency, which is the open question. Raising `podPidsLimit`
+would only let more stalled handshakes pile up before the same failure.
+
 jetty, also FIPS, did not show this. The differences:
 
 | | jetty | nist-dev-infra |
@@ -355,8 +382,9 @@ and the API servers, and ACM's many controllers all reconnect at once. With
 To decide:
 
 - a Red Hat support case, with the crash dumps (kept outside the repo);
-- whether to raise `podPidsLimit` on control-plane nodes (a KubeletConfig,
-  itself a rollout);
+- why TLS handshakes in etcd slow down under concurrency on this hub,
+  before any change to `podPidsLimit` (see above: raising it alone does
+  not address the cause);
 - whether compliant hubs should use a standard layout (separate control
   plane) rather than a compact one;
 - whether the next upgrade of this hub reproduces it.
@@ -400,9 +428,9 @@ on the hub.
   `compliance-node-hardening` `nodePool.enabled: true`, so the NodePool's
   ConfigMap exists. Then an ApplicationSet for the cluster's own
   compliance components (BUILD.md Part 2, step 3).
-- **The hub's thread limit first:** a hosted control plane adds about 75
-  pods, many of them TLS clients, to the nodes whose etcd crashed during
-  stage C. Raise `podPidsLimit` (with the USBGuard fix) before stage D.
+- **The etcd crashes understood first:** a hosted control plane adds about
+  75 pods, many of them TLS clients, to the nodes whose etcd crashed
+  during stage C. Its own etcd is separate, but it runs on the same nodes.
 - **Not yet:** an identity provider for the cluster (`oauth.mocsso` needs
   a Keycloak client); external-dns with a web-identity role in place of a
   stored key.
