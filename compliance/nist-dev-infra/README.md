@@ -365,6 +365,50 @@ which is set by the number of resource types; and how slow a handshake
 is under concurrency, which is the open question. Raising `podPidsLimit`
 would only let more stalled handshakes pile up before the same failure.
 
+**Handshake bursts, measured (2026-10-20).** A test etcd (each cluster's
+own image and TLS settings: RSA-2048, client certificates, the same
+ciphers; FIPS OpenSSL confirmed loaded) took bursts of 3,000 simultaneous
+TLS handshakes from a client on another node, three bursts per run.
+[tls-handshake-test/](tls-handshake-test/) has the harness.
+
+| Server node | CPUs | etcd build (OpenSSL) | GOMAXPROCS | Peak threads | CPU per handshake |
+|---|---|---|---|---|---|
+| nist-dev-infra | 176 | 4.22.14 (3.5.5) | default | 1,350; 1,841 | 21; 25 ms |
+| nist-dev-infra | 176 | 4.22.14 (3.5.5) | 40 | 123; 110 | 13; 13 ms |
+| nist-dev-infra | 176 | 4.22.16 (3.5.8) | default | 505 | 24 ms |
+| jetty master | 40 | 4.22.16 (3.5.8) | default | 94 | 11 ms |
+| jetty worker | 512 | 4.22.16 (3.5.8) | default | 534; 554 | 82; 94 ms |
+| jetty worker | 512 | 4.22.14 (3.5.5) | default | 526; 519 | 276; 76 ms |
+
+One handshake at a time cost 5 to 10 ms of server CPU everywhere. Every
+burst completed, at about 2,000 to 2,400 handshakes a second in every
+configuration.
+
+What this shows:
+
+- **Threads follow how many handshakes Go lets into OpenSSL at once,
+  which follows `GOMAXPROCS` (by default, the node's CPU count).** On
+  the same node and image, capping it at 40 cut peak threads by 11 to 17
+  times, cut CPU per handshake by about 40%, and did not change
+  throughput. The extra threads on large nodes buy nothing.
+- **CPU per handshake grows with core count** (11 ms on 40 CPUs, about
+  80 ms on 512), for the same work. The Go client, which does not use
+  OpenSSL, showed the same growth. So that part is Go's runtime on large
+  machines, not FIPS OpenSSL.
+- **Bursts sometimes go badly.** One run took 276 ms of CPU per handshake,
+  1,404 s of it in the kernel, and 7 s for one burst, on an idle node;
+  the same run repeated was normal. The incident looked like such an
+  episode, on a node already loaded by a drain.
+- **Not shown:** that OpenSSL 3.5.8 (4.22.16) helps. Its one run on this
+  hub peaked at 505 threads, against 1,350 and 1,841, but one run is not
+  enough. Nor did a single burst reach 4,096 threads in isolation; the
+  incident added client retries and a loaded node.
+
+What would reduce the thread count, instead of raising the limit:
+etcd with a lower `GOMAXPROCS` (the static pod is the etcd operator's, so
+this is a question for Red Hat), fewer etcd connections (fewer resource
+types), and smaller nodes for the control plane (the standard layout).
+
 jetty, also FIPS, did not show this. The differences:
 
 | | jetty | nist-dev-infra |
