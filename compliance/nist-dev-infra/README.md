@@ -476,6 +476,15 @@ on a jetty worker (512 CPUs, AMD EPYC 9754):
   on jetty it never passed about 630 on 512. Inferred from the profiles
   and the thread counts, not shown directly.
 
+The same storms on this hub (server on u13): 2,250 connections with a
+20 s timeout peaked at 1,041 threads (551 on jetty); with half the node's
+CPUs busy, 231; 6,750 connections with a 1 s timeout, 232. No crash, and
+the hub's etcd stayed healthy. Peaks here vary a lot between runs. So the
+test server alone does not reproduce the crash on either cluster. What it
+lacks is the real etcd's state (a large heap and its garbage collection,
+raft and disk work) and a node full of ACM, multicluster-engine and
+HyperShift pods.
+
 jetty, also FIPS, did not show this. The differences:
 
 | | jetty | nist-dev-infra |
