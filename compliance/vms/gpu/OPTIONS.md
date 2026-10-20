@@ -133,9 +133,17 @@ In order of what each one unblocks:
    VM read as zero, past the driver, after the VM was stopped and the GPUs
    handed back (`test-gpu-memclear.sh`; sampled, one node). Ask NVIDIA to
    confirm for H100 before relying on it for compliance.
-2. **NVLink between tenants:** a 1-GPU VM works with its NVLink peers in
-   other VMs, and most links stay physically up. Whether one guest can use
-   them to reach a peer's memory must be settled before compliant use.
+2. **NVLink between tenants (no licence involved).** On jetty's H100 boards
+   each GPU is wired to the other three by NVLink, and with 1-GPU VMs the
+   links between different tenants' GPUs stay physically up. A guest with
+   the stock driver sees no peers, so has no path to them. Whether a guest
+   running its own driver can send NVLink traffic to a peer without the
+   peer's cooperation is unknown, and cannot be tested without writing such
+   a driver. Until NVIDIA answers, compliant spokes give one tenant whole
+   nodes (or 4-GPU VMs), so linked GPUs never belong to different tenants.
+   Ask NVIDIA, together with item 1: what a reset clears on H100, whether
+   NVLink between GPUs passed to different VMs is isolated, and whether the
+   links can be turned off from the host.
 3. **On a spoke:** passthrough on a hosted cluster, with a GPU-VM NodePool.
    `nist-dev-workload0` (being built, with H100s) or `oac-dev-workload0`.
 4. **Billing:** whether MOC's billing counts GPUs held by VMs.
