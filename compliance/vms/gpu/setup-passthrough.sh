@@ -204,14 +204,32 @@ echo "=== 2. IOMMU ==="
 # kernel build config, which every authenticated user can read.
 IOMMU_STATE=""
 if IOMMU_OUT="$(oc debug "node/${NODE}" --quiet -- chroot /host sh -c \
-      'ls /sys/kernel/iommu_groups 2>/dev/null | wc -l; cat /proc/cmdline' 2>/dev/null)"; then
+      'ls /sys/kernel/iommu_groups 2>/dev/null | wc -l; cat /proc/cmdline;
+       if [ -d /sys/module/vfio ]; then
+         [ -d /sys/module/vfio_iommu_type1 ] && echo type1 || echo no-type1
+       else echo no-vfio; fi' 2>/dev/null)"; then
   IOMMU_GROUPS="$(printf '%s' "${IOMMU_OUT}" | head -1 | tr -d '[:space:]')"
   CMDLINE="$(printf '%s' "${IOMMU_OUT}" | sed -n '2p')"
+  VFIO_TYPE1="$(printf '%s' "${IOMMU_OUT}" | sed -n '3p')"
   IOMMU_STATE="${IOMMU_GROUPS}"
   echo "  IOMMU groups: ${IOMMU_GROUPS:-0}"
   echo "  cmdline:      ${CMDLINE}"
   if [ "${IOMMU_GROUPS:-0}" -gt 0 ] 2>/dev/null; then
     pass "IOMMU is enabled (${IOMMU_GROUPS} groups)"
+    # QEMU maps guest memory for a passed-through device through the vfio
+    # type1 backend. vfio-manager loads vfio-pci but not this module, and
+    # without it every GPU VM fails to start with "No available IOMMU
+    # models" (jetty u16, 2026-10-20). Only meaningful once VFIO is in use.
+    case "${VFIO_TYPE1}" in
+      type1)   pass "vfio_iommu_type1 is loaded" ;;
+      no-type1)
+        fail "vfio_iommu_type1 is loaded (VFIO is, but not its IOMMU backend)"
+        info "Load it now (until the next reboot):"
+        info "  oc debug node/${NODE} -- chroot /host modprobe vfio_iommu_type1"
+        info "Load it at every boot with a MachineConfig adding"
+        info "/etc/modules-load.d/vfio-iommu-type1.conf (one line: vfio_iommu_type1)." ;;
+      *)       info "VFIO not loaded yet; vfio_iommu_type1 is checked once it is" ;;
+    esac
   else
     fail "IOMMU is enabled (no groups under /sys/kernel/iommu_groups)"
     iommu_remediation

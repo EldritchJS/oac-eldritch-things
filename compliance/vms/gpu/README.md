@@ -4,7 +4,12 @@
 
 Giving a VM a physical NVIDIA GPU, and measuring what it costs to move a node between serving containers and serving VMs.
 
-> **Status: the passthrough path is built and partly proven on `jetty`.** `preflight.sh`, `install-operators.sh` and `setup-passthrough.sh` (including `APPLY=1`) have all run against real hardware. A GPU VM **schedules and is allocated an H100**. The original blocker — no working storage — was resolved on 2026-10-02, but `test-gpu-vm.sh` has **not been re-run since**, so a full guest boot is still unproven. `test-gpu-switch.sh` has not been run. Node-level modality switching *has* been measured independently: see `tests/gpu-switch-timing.sh` (73s / 208s, no reboot).
+> **Status: passthrough is proven on `jetty` (2026-10-20).** An Ubuntu 24.04 VM on `moc-r4pcc02u16` was given one H100; the guest saw it on its PCI bus (tier 1), the 580-server driver bound it and `nvidia-smi` reported *NVIDIA H100 80GB HBM3* (tier 2), and a CUDA kernel returned correct results with 15.4 GB/s host-to-device (tier 3). Two fixes were needed:
+>
+> - **`vfio_iommu_type1` was not loaded on the node.** The GPU Operator's VFIO manager loads `vfio-pci` but not this backend, and every GPU VM failed with `vfio 0000:06:00.0: failed to setup container for group 42: No available IOMMU models`. It was loaded by hand (`modprobe vfio_iommu_type1`), which a reboot undoes; loading it at boot needs a MachineConfig. `setup-passthrough.sh` now checks for it.
+> - **The in-guest driver install hung** until its 25-minute timeout on the first full run. The script exported `DEBIAN_FRONTEND`, which `sudo` drops, so a package could stop to ask a question with no terminal; the cause is likely, not proven. The script now passes the settings after `sudo` and closes stdin. Tiers 2 and 3 were then run by hand, with those settings, in a VM kept by `KEEP_VM=1`; the fixed script itself has not yet run end to end.
+>
+> `test-gpu-switch.sh` has not been run. Node-level modality switching *has* been measured independently: see `tests/gpu-switch-timing.sh` (73s / 208s, no reboot).
 
 ## Cost warning
 

@@ -9,13 +9,13 @@ Three questions came up:
 This page answers them for OAC spokes, compliant and non-compliant, and
 says what each answer would take. The hands-on runbook, scripts and
 measurements from jetty are in [README.md](README.md). Status is as of
-2026-10-19. "To verify" marks what has not been tested.
+2026-10-20. "To verify" marks what has not been tested.
 
 ## Short answers
 
 | Question | Answer | Licence | Status |
 |---|---|---|---|
-| 1. A VM with a GPU | **PCI passthrough**: a whole GPU is bound to `vfio-pci` and handed to one VM | None | On jetty, a GPU VM schedules and is given an H100. A full guest boot with the driver and CUDA has not been run yet |
+| 1. A VM with a GPU | **PCI passthrough**: a whole GPU is bound to `vfio-pci` and handed to one VM | None | **Proven on jetty (2026-10-20):** an Ubuntu VM got an H100, loaded the driver and ran a CUDA kernel correctly |
 | 2. Several VMs per host | **Yes**, one or more whole GPUs each. A 4-GPU node serves up to four 1-GPU VMs, two 2-GPU VMs, or one 4-GPU VM | None | Follows from 1; not yet run with more than one VM |
 | 3. One GPU shared by several VMs | Only with **NVIDIA vGPU**: MIG-backed slices or time-sliced shares | NVIDIA AI Enterprise, plus a licence server | MOC has no licence today |
 
@@ -32,7 +32,7 @@ cannot: the GPU Operator's sharing features for VMs all go through vGPU.
 | Host driver | None (`vfio-pci`) | NVIDIA vGPU manager | NVIDIA vGPU manager |
 | Licence | None | NVIDIA AI Enterprise | NVIDIA AI Enterprise |
 | GPU Operator node label | `vm-passthrough` | `vm-vgpu` | `vm-vgpu` |
-| Status at MOC | Partly proven on jetty | Not started | Not started |
+| Status at MOC | Proven on jetty | Not started | Not started |
 
 ## What OAC already has
 
@@ -60,10 +60,16 @@ cannot: the GPU Operator's sharing features for VMs all go through vGPU.
    IOMMU groups with no kernel argument. So hosted clusters, which have no
    MachineConfig API, should not need kernel arguments either. To verify on
    a hosted cluster.
-5. **A StorageClass for VM disks.** A `containerDisk` VM does not boot with
-   a GPU attached (jetty, CNV 4.22.9; cause unknown), so the root disk has
-   to be a PVC.
-6. **Quotas and billing:** VM GPUs appear under the model's resource name,
+5. **The `vfio_iommu_type1` kernel module, loaded at boot.** The GPU
+   Operator's VFIO manager loads `vfio-pci` but not this backend, and
+   without it every GPU VM fails to start ("No available IOMMU models").
+   On jetty it was loaded by hand; it needs a MachineConfig (or, on a
+   hosted cluster, NodePool config) listing it in `/etc/modules-load.d/`.
+   `setup-passthrough.sh` checks for it.
+6. **A StorageClass for VM disks.** A `containerDisk` VM did not boot with
+   a GPU attached (jetty, CNV 4.22.9), so the root disk has been a PVC. The
+   cause may have been the missing `vfio_iommu_type1`; not retested.
+7. **Quotas and billing:** VM GPUs appear under the model's resource name,
    not `nvidia.com/gpu`. A quota or a billing count keyed on
    `nvidia.com/gpu` misses them. Our T-17 check already counts GPU VMs.
    Whether MOC's billing does is to verify.
@@ -123,12 +129,9 @@ Not a no, but a purchase and some setup:
 
 In order of what each one unblocks:
 
-1. **Finish the passthrough proof on jetty**: `test-gpu-vm.sh` tiers 1 to 3
-   (the guest sees the card, loads the driver, runs CUDA). It claims one
-   H100 for about an hour, so it is billable. First re-run
-   `setup-passthrough.sh`: on 2026-10-19 jetty's HyperConverged no longer
-   listed the GPU in `permittedHostDevices`, although KubeVirt's own config
-   still did. Why is not known.
+1. **Load `vfio_iommu_type1` at boot on jetty's GPU workers** (a
+   MachineConfig; reboots them). It was loaded by hand on u16 for the
+   2026-10-20 test and is lost at the next reboot.
 2. **The NVLink subset question:** a 1-GPU VM on a node with peers absent.
 3. **Reset between tenants:** whether the GPU's memory is cleared when a VM
    releases it. This decides passthrough on compliant spokes.

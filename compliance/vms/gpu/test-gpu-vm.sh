@@ -104,11 +104,17 @@ cleanup() {
     echo ""
     echo "A VM holding a GPU keeps that GPU out of every other pool until it is"
     echo "deleted — the device is bound to this guest, not time-shared."
+    # The guest only accepts this run's key, so keep it with the VM.
+    if [ -n "${WORKDIR}" ]; then
+      echo ""
+      echo "SSH key kept in ${WORKDIR} (delete it with the VM):"
+      echo "  virtctl ssh -i ${SSH_KEY} ${GUEST_USER}@vmi/${VM_NAME} -n ${NAMESPACE}"
+    fi
   else
     oc delete vm "${VM_NAME}" -n "${NAMESPACE}" --ignore-not-found --wait=false
     oc delete dv "${DV_NAME}" -n "${NAMESPACE}" --ignore-not-found --wait=false
+    [ -n "${WORKDIR}" ] && rm -rf "${WORKDIR}"
   fi
-  [ -n "${WORKDIR}" ] && rm -rf "${WORKDIR}"
   echo "Done!"
 }
 
@@ -578,12 +584,16 @@ else
   # recommends for this card.
   INSTALL_CMD="${DRIVER_INSTALL:-}"
   if [ -z "${INSTALL_CMD}" ]; then
+    # The settings go after sudo, which drops an exported environment, and
+    # stdin is closed: otherwise debconf or needrestart can stop to ask a
+    # question with no terminal to answer it, and the install hangs until
+    # INSTALL_TIMEOUT (jetty, 2026-10-20).
     INSTALL_CMD="set -x
-export DEBIAN_FRONTEND=noninteractive
-sudo apt-get update -qq
-sudo apt-get install -y -qq \"linux-headers-\$(uname -r)\" || true
-sudo apt-get install -y -qq nvidia-driver-${DRIVER_BRANCH}-server \
-  || { sudo apt-get install -y -qq ubuntu-drivers-common && sudo ubuntu-drivers install --gpgpu; }
+APT='sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get -y -qq'
+\$APT update </dev/null
+\$APT install \"linux-headers-\$(uname -r)\" </dev/null || true
+\$APT install nvidia-driver-${DRIVER_BRANCH}-server </dev/null \
+  || { \$APT install ubuntu-drivers-common </dev/null && sudo ubuntu-drivers install --gpgpu </dev/null; }
 sudo modprobe nvidia || true"
   fi
   if guest_ssh "${INSTALL_CMD}" "${INSTALL_TIMEOUT}"; then
@@ -697,7 +707,7 @@ CUEOF
   # Ubuntu's own nvidia-cuda-toolkit package rather than NVIDIA's network repo:
   # one well-known package name that tracks the distro, instead of a repo URL
   # and version-suffixed package names that change every CUDA release.
-  guest_ssh "${CUDA_TOOLKIT_INSTALL:-export DEBIAN_FRONTEND=noninteractive; sudo apt-get install -y -qq nvidia-cuda-toolkit}" "${INSTALL_TIMEOUT}" \
+  guest_ssh "${CUDA_TOOLKIT_INSTALL:-sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y -qq nvidia-cuda-toolkit </dev/null}" "${INSTALL_TIMEOUT}" \
     || echo "  toolkit install returned non-zero; trying to build anyway"
 
   if guest_ssh 'cd /tmp && nvcc -O2 -o gpucheck gpucheck.cu 2>&1 && ./gpucheck' 300; then
