@@ -6,8 +6,10 @@ Giving a VM a physical NVIDIA GPU, and measuring what it costs to move a node be
 
 > **Status: passthrough is proven on `jetty` (2026-10-20).** An Ubuntu 24.04 VM on `moc-r4pcc02u16` was given one H100; the guest saw it on its PCI bus (tier 1), the 580-server driver bound it and `nvidia-smi` reported *NVIDIA H100 80GB HBM3* (tier 2), and a CUDA kernel returned correct results with 15.4 GB/s host-to-device (tier 3). Two fixes were needed:
 >
-> - **`vfio_iommu_type1` was not loaded on the node.** The GPU Operator's VFIO manager loads `vfio-pci` but not this backend, and every GPU VM failed with `vfio 0000:06:00.0: failed to setup container for group 42: No available IOMMU models`. It was loaded by hand (`modprobe vfio_iommu_type1`), which a reboot undoes; loading it at boot needs a MachineConfig. `setup-passthrough.sh` now checks for it.
+> - **`vfio_iommu_type1` was not loaded on the node.** The GPU Operator's VFIO manager loads `vfio-pci` but not this backend, and every GPU VM failed with `vfio 0000:06:00.0: failed to setup container for group 42: No available IOMMU models`. It was loaded by hand (`modprobe vfio_iommu_type1`), which a reboot undoes; `vfio-iommu-type1-machineconfig.yaml` now loads it at boot on jetty's GPU workers (applied 2026-10-20). `setup-passthrough.sh` checks for it.
 > - **The in-guest driver install hung** until its 25-minute timeout on the first full run. The script exported `DEBIAN_FRONTEND`, which `sudo` drops, so a package could stop to ask a question with no terminal; the cause is likely, not proven. The script now passes the settings after `sudo` and closes stdin. Tiers 2 and 3 were then run by hand, with those settings, in a VM kept by `KEEP_VM=1`. The fixed script then passed all three tiers on its own the same day, run by `../../tests/cluster-acceptance.sh --gpu`.
+>
+> **Several VMs per node (2026-10-20):** four 1-GPU VMs ran at once on `moc-r4pcc02u16`, each on a different H100 (four distinct UUIDs, overlapping runs), and all passed tiers 1–3 at 15.4–15.7 GB/s host-to-device.
 >
 > `test-gpu-switch.sh` has not been run. Node-level modality switching *has* been measured independently: see `tests/gpu-switch-timing.sh` (73s / 208s, no reboot).
 
@@ -21,6 +23,7 @@ exists:
 |---|---|
 | `gpu-vm.yaml` / `test-gpu-vm.sh` | yes — a VM with a GPU hostDevice |
 | `test-gpu-switch.sh` | yes — a pod requesting `nvidia.com/gpu: 1` |
+| `test-gpu-memclear.sh` | yes — every passthrough GPU on one node |
 | `preflight.sh`, `setup-passthrough.sh` | no |
 | `../../tests/gpu-switch-timing.sh` | no — and refuses to run if anything else is holding one |
 | `../../tests/verify.sh` (T-06/T-07) | no — reads node state only |
@@ -119,9 +122,11 @@ Untested options, recorded so nobody re-derives them:
 |---|---|---|
 | `preflight.sh` | anyone, first | **Start here on any cluster.** Read-only: reports whether GPU passthrough is feasible, what is missing, and what *you* are allowed to do. Creates nothing, needs no admin. |
 | `install-operators.sh` | admin, once | Installs NFD, the NVIDIA GPU Operator and OpenShift Virtualization on a cluster that has the hardware but none of the software. Report-only until `APPLY=1`. |
+| `vfio-iommu-type1-machineconfig.yaml` | admin, once | Loads `vfio_iommu_type1` at boot. Reboots the pool's nodes. Standalone OpenShift only |
 | `iommu-machineconfig.yaml` | admin, once, **if needed** | Dedicated MachineConfigPool + IOMMU kernel arguments. Costs reboots. Standalone OpenShift only — not usable on a hosted control plane, and expected to be unnecessary on AMD. |
 | `setup-passthrough.sh` | admin | Reports, and with `APPLY=1` configures, one node for passthrough; teaches KubeVirt the device |
 | `test-gpu-vm.sh` | project user | Boots a VM with a GPU and verifies it in three tiers |
+| `test-gpu-memclear.sh` | project user | Whether GPU memory is cleared when a VM hands its GPUs back. Holds every passthrough GPU on a node for about 30 minutes |
 | `gpu-vm.yaml` | project user | The same VM as a hand-applied Template, for poking at by console |
 | `test-gpu-switch.sh` | admin | **Destructive.** Times a container → VM → container round trip on a node |
 | `cleanup.sh` | either | Tears down test objects; `REVERT_NODE=1` also puts the node back |
@@ -365,7 +370,8 @@ Both nodes on `jetty` currently have zero GPU-holding pods, so the drain half of
 
 Written down because they are the reason to run this at all, not afterthoughts.
 
-- **Does passing a subset of an NVLink clique work?** The jetty GPU nodes are 4× H100-80GB-HBM3 SXM. SXM boards are not discrete PCIe cards; handing one GPU of a directly-linked mesh to a VM leaves its peers absent. `test-gpu-vm.sh` reports `nvidia-smi nvlink -s` and `topo -m` from inside the guest for exactly this reason. If the links read as inactive with one GPU passed through, the usable unit is **all four to one VM**, which changes the economics considerably.
+- **Does passing a subset of an NVLink clique work?** **Yes (2026-10-20).** With four 1-GPU VMs on one node, each guest ran CUDA normally. `nvidia-smi nvlink -s` in three guests showed all 18 links up at 26.562 GB/s, and in one guest 12 up and 6 inactive (one peer's links, likely while that peer's guest was still loading its driver). A 1-GPU VM cannot use NVLink, since its peers are not in the guest, but the usable unit is one GPU, not four. **Open:** links between GPUs held by different tenants are physically up; whether a guest can use them to reach a peer's memory needs settling before compliant use.
 - **How long does the driver stack actually take to come back?** This is the number that decides whether node-level time-sharing is practical or whether GPU VM nodes should just be permanently dedicated.
-- **What is the CUDA bandwidth penalty, if any?** Tier 3 reports host-to-device bandwidth measured in the guest. Comparing it against a container on the same node is the obvious follow-on.
-- **Does any of this survive a node reboot?** The label is persistent and `vfio-manager` re-binds on boot, but that is a claim worth checking rather than assuming.
+- **What is the CUDA bandwidth penalty, if any?** **About 7% (2026-10-20).** The tier-3 program (pageable host memory, 512 MiB host-to-device) gave 16.6–16.8 GB/s in a container on `moc-r4pcc02u15` (5 runs) and 15.4–15.7 GB/s in VMs on `moc-r4pcc02u16` (5 runs). Same program, so a fair comparison, but not the card's peak.
+- **Does any of this survive a node reboot?** **Yes (2026-10-20).** After the MachineConfig rebooted both nodes, `u16` came back with its 4 GPUs on `vfio-pci` and `vfio_iommu_type1` loaded, and the four-VM run above passed on it.
+- **Is GPU memory cleared between tenants?** `test-gpu-memclear.sh` fills every GPU's memory with a pattern, stops the VM so the GPUs go back to the host, starts it and scans. A control scan without the reset shows whether the method can see leftovers at all. **Inconclusive (2026-10-20):** 78 GiB written on each of the 4 GPUs, but the control scan found none of it, so the guest's NVIDIA driver clears memory before handing it out and CUDA cannot see leftovers. That protects tenants running the stock driver, not one who loads their own. Settling it needs a read that bypasses the driver (raw VRAM through BAR0 with the driver unloaded), or NVIDIA's statement on what a function-level reset clears.

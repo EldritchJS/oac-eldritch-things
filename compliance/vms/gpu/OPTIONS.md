@@ -16,7 +16,7 @@ measurements from jetty are in [README.md](README.md). Status is as of
 | Question | Answer | Licence | Status |
 |---|---|---|---|
 | 1. A VM with a GPU | **PCI passthrough**: a whole GPU is bound to `vfio-pci` and handed to one VM | None | **Proven on jetty (2026-10-20):** an Ubuntu VM got an H100, loaded the driver and ran a CUDA kernel correctly |
-| 2. Several VMs per host | **Yes**, one or more whole GPUs each. A 4-GPU node serves up to four 1-GPU VMs, two 2-GPU VMs, or one 4-GPU VM | None | Follows from 1; not yet run with more than one VM |
+| 2. Several VMs per host | **Yes**, one or more whole GPUs each. A 4-GPU node serves up to four 1-GPU VMs, two 2-GPU VMs, or one 4-GPU VM | None | **Proven on jetty (2026-10-20):** four 1-GPU VMs ran at once on one node, each on a different H100, and all passed |
 | 3. One GPU shared by several VMs | Only with **NVIDIA vGPU**: MIG-backed slices or time-sliced shares | NVIDIA AI Enterprise, plus a licence server | MOC has no licence today |
 
 Containers can share a GPU without a licence (MIG, time-slicing). VMs
@@ -129,13 +129,13 @@ Not a no, but a purchase and some setup:
 
 In order of what each one unblocks:
 
-1. **Load `vfio_iommu_type1` at boot on jetty's GPU workers** (a
-   MachineConfig; reboots them). It was loaded by hand on u16 for the
-   2026-10-20 test and is lost at the next reboot.
-2. **The NVLink subset question:** a 1-GPU VM on a node with peers absent.
-3. **Reset between tenants:** whether the GPU's memory is cleared when a VM
-   releases it. This decides passthrough on compliant spokes.
-4. **On a spoke:** passthrough on a hosted cluster, with a GPU-VM NodePool.
-   `oac-dev-workload0` has H100s and OpenShift Virtualization already.
-5. **Billing:** whether MOC's billing counts GPUs held by VMs.
-6. **vGPU:** price the licence, then decide.
+1. **Reset between tenants:** whether the GPU's memory is cleared when a VM
+   releases it (`test-gpu-memclear.sh`). This decides passthrough on
+   compliant spokes.
+2. **NVLink between tenants:** a 1-GPU VM works with its NVLink peers in
+   other VMs, and most links stay physically up. Whether one guest can use
+   them to reach a peer's memory must be settled before compliant use.
+3. **On a spoke:** passthrough on a hosted cluster, with a GPU-VM NodePool.
+   `nist-dev-workload0` (being built, with H100s) or `oac-dev-workload0`.
+4. **Billing:** whether MOC's billing counts GPUs held by VMs.
+5. **vGPU:** price the licence, then decide.
