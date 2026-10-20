@@ -245,3 +245,30 @@ The router's configuration shows both limits on all seven backends. Sensor
 stayed connected, and every `local-cluster` add-on stayed Available.
 
 `routes-rate-limit` passes, and `nist-ocp4-moderate` is at **19** failures.
+
+### Quotas and the first NetworkPolicies (2026-10-19)
+
+Through the `namespace-guardrails` values:
+
+- **Quotas on all 25 non-platform namespaces.** Object counts and storage
+  only, sized from what each namespace held: pods and services at twice the
+  count (rounded up to 5; at least 10 and 5), 2 volumes and 20Gi where none
+  were used, and no NodePort or LoadBalancer services. No quota was below
+  current use, and running pods are not affected.
+- **Default-deny NetworkPolicies on five small namespaces** whose traffic is
+  fully known. `patch-operator` and `external-dns-operator` each serve only
+  an API server webhook (9443) and call only the API server and DNS.
+  `nfs-tls` runs only host-network pods, which policies do not affect.
+  `node-labels` and `moc-metrics-collector` hold only service accounts.
+  Neither Prometheus scrapes any of the five.
+
+Checked after the sync: each webhook answered a dry-run request in about
+0.35 s, and neither operator restarted.
+
+`resource-requests-quota` passes; `nist-ocp4-moderate` is at **18**
+failures. `configure-network-policies-namespaces` still fails, in CIS and
+moderate: 13 namespaces have no policy yet. ACM, multicluster-engine,
+HyperShift, Portworx and the others wait until a spoke exists, so their
+traffic, including the spoke's, can be measured first. The policy must be
+real: the check passes on any NetworkPolicy, including one that allows
+everything.
