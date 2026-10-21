@@ -1,19 +1,23 @@
-# Boots the masters with 40 CPUs online instead of 176: the size of jetty's
+# Boots the masters with 40 CPUs instead of 176: the size of jetty's
 # masters. TEST HUB ONLY. It stands in for smaller control-plane nodes, to
 # show whether core count is what makes FIPS TLS handshakes contend here
 # (README.md, stage C and stage D). The masters request 4 to 17 cores each,
 # and use 10 to 13 when quiet.
 #
+# nr_cpus, not maxcpus: maxcpus=40 brought up 40 CPUs at boot, but RHCOS's
+# udev rule (/usr/lib/udev/rules.d/40-redhat.rules) then onlined the other
+# 136, so the node still had 176 (u13, 2026-10-21). nr_cpus caps the CPUs the
+# kernel can ever use, so there is nothing left to online.
+#
 # Reboots every master, one at a time. Apply with the master pool paused,
 # together with usbguard-enable-machineconfig.yaml; see MASTER-ROUND.md.
 #
 # Check afterwards:
-#   oc debug node/<node> -- chroot /host nproc        # 40
-#   oc get node <node> -o jsonpath='{.status.capacity.cpu}'
+#   oc get node <node> -o jsonpath='{.status.capacity.cpu}'   # 40
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
-  name: 99-master-maxcpus
+  name: 99-master-nr-cpus
   labels:
     machineconfiguration.openshift.io/role: master
 spec:
@@ -21,4 +25,4 @@ spec:
     ignition:
       version: 3.2.0
   kernelArguments:
-    - maxcpus=40
+    - nr_cpus=40

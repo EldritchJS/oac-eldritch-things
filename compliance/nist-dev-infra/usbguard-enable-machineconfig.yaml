@@ -9,7 +9,7 @@
 # USB is off at boot (nousb) in any case.
 #
 # Apply with the master pool paused, together with
-# maxcpus-machineconfig.yaml; see MASTER-ROUND.md.
+# nr-cpus-machineconfig.yaml; see MASTER-ROUND.md.
 #
 # Check afterwards:
 #   oc debug node/<node> -- chroot /host systemctl is-enabled usbguard

@@ -11,7 +11,7 @@ be judged alone.
 
 | File | What |
 |---|---|
-| `maxcpus-machineconfig.yaml` | `maxcpus=40` on the masters |
+| `nr-cpus-machineconfig.yaml` | `nr_cpus=40` on the masters |
 | `usbguard-enable-machineconfig.yaml` | Enables `usbguard.service` at boot |
 
 ## Before
@@ -32,12 +32,12 @@ K="--kubeconfig $HOME/kubeadmin-nist-dev-infra"
 oc $K patch mcp master --type merge -p '{"spec":{"paused":true}}'
 
 # 2. Apply both, after a server-side dry run.
-oc $K apply --dry-run=server -f maxcpus-machineconfig.yaml -f usbguard-enable-machineconfig.yaml
-oc $K apply -f maxcpus-machineconfig.yaml -f usbguard-enable-machineconfig.yaml
+oc $K apply --dry-run=server -f nr-cpus-machineconfig.yaml -f usbguard-enable-machineconfig.yaml
+oc $K apply -f nr-cpus-machineconfig.yaml -f usbguard-enable-machineconfig.yaml
 
 # 3. Check the new rendered config has both, then unpause.
 oc $K get mcp master -o jsonpath='{.spec.configuration.name}{"\n"}'
-oc $K get mc <that name> -o jsonpath='{.spec.kernelArguments}{"\n"}'   # includes maxcpus=40
+oc $K get mc <that name> -o jsonpath='{.spec.kernelArguments}{"\n"}'   # includes nr_cpus=40
 oc $K patch mcp master --type merge -p '{"spec":{"paused":false}}'
 
 # 4. Watch. Each master drains, reboots and returns in turn.
@@ -71,5 +71,5 @@ and kube-apiserver; the kubelet's from `/proc`). Rescan: the node scans'
 
 ## Undo
 
-Delete `99-master-maxcpus` (and, if needed, `99-master-usbguard-enable`).
+Delete `99-master-nr-cpus` (and, if needed, `99-master-usbguard-enable`).
 That is another reboot round.
