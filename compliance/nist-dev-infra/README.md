@@ -509,11 +509,82 @@ To decide:
   plane) rather than a compact one;
 - whether the next upgrade of this hub reproduces it.
 
-## Stage D: the first hosted cluster (in preparation)
+## Stage D: the first hosted cluster
 
 Unlike A to C, stage D runs through `CCI-MOC/oac-apps` and `moc-aws`
 themselves: the hub's `hosted-clusters` and `hub-components`
 ApplicationSets read `main`.
+
+### First build (2026-10-21)
+
+Times are EDT. Two FC430 workers, `nist-dev-workload0` from oac-apps #159
+(merged 11:25). The HostedCluster was created at 11:48 and its control
+plane came up. The workers have not installed yet.
+
+**Two blockers before the workers could boot, both fixed:**
+
+- **external-dns could not reach Route 53.** The `external-dns-operator`
+  namespace's guardrails allow egress only to the API and DNS, so no
+  records were written. Fixed with an `extraPolicies` entry
+  (`allow-egress-route53`: the external-dns pod, TCP 443, any address
+  outside RFC 1918), on the test branch.
+- **The Ignition, Konnectivity and OAuth hostnames did not resolve.** They
+  are served by the hosted-clusters router and need a static
+  wildcard, as the oac hubs have. Added in moc-aws #57 (merged 13:42); the
+  name resolved from 13:50.
+
+**The hub overloaded from 12:00, twelve minutes after the control plane
+came up.**
+
+- Masters went NotReady in turn, for minutes at a time, most of the
+  afternoon. At 14:05 all three were NotReady at once; the API mostly
+  stayed up.
+- etcd members failed their liveness probes and were restarted: 14 to 22
+  restarts per member by 14:10, 29, 22 and 19 by 16:18. Their logs show
+  clean exits, not the thread exhaustion of stage C.
+- The agents showed `disconnected` whenever the masters dropped, and the
+  assisted-service and image-service pods were stuck on a NotReady master,
+  so re-provisioned agents could not register.
+- u13's kubelet stopped reporting at 14:42 and stayed that way. The node
+  itself reached the API in 0.1 s, but every call from the kubelet timed
+  out. The kubelet had 3,771 threads, all but 3 parked on a futex, none in
+  the kernel; no hung tasks, no NFS stalls. Restarting the kubelet at 16:02
+  brought the node Ready within a minute, with 123 threads.
+
+**Taking the hosted control plane off the hub.** At about 15:05 the
+HostedCluster was paused and its deployments and statefulsets scaled to 0.
+Its pods on u13 could only go once the kubelet was restarted. From 16:06 to
+17:06 the hub was steady: all three masters Ready, no etcd restarts. **Then
+it flapped again, with no hosted control plane pods at all:** masters
+NotReady in turn from 17:06, kube-apiservers and etcd members failing their
+liveness probes and restarting (clean exits). So the hosted control plane
+added load, but it is not the whole cause. The spells began at about 12:00,
+12:53, 13:47, 14:42 and 17:06, roughly every 55 minutes; what recurs on that
+period is not yet known.
+
+**FIPS is the difference.** oac-dev-infra is also compact, on the same
+FC830s (176 CPUs), and runs hosted control planes without this. It is not
+FIPS. Under FIPS, every TLS handshake holds an OS thread in OpenSSL, and on
+these nodes concurrent handshakes contend (see stage C). A
+`HighlyAvailable` hosted control plane runs three copies of etcd,
+kube-apiserver and the rest on the same three masters, all TLS clients and
+servers.
+
+**Next:**
+
+- oac-apps #163 (merged 14:11) moves the cluster to 4.22.18, whose OpenSSL
+  (3.5.8 or later) peaked lower in the handshake test.
+- Find what recurs about every 55 minutes, and why one probe failure
+  turns into a restart loop.
+- Upgrade the hub itself to 4.22.18, since it flaps without the hosted
+  control plane. The upgrade drains each master in turn, which caused the
+  storms in stage C.
+- Then run the control plane as `SingleReplica`, about a third of the
+  processes and connections. The field is immutable, so the HostedCluster
+  is recreated; no nodes have joined, so nothing is lost. Then unpause and
+  re-provision the agents.
+- Watch kubelet thread counts on the masters, and restart a kubelet that
+  climbs into the thousands.
 
 ### What is written (2026-10-20)
 
@@ -528,7 +599,7 @@ Every values file renders. The cluster's HostedCluster and NodePool, with
 test addresses in place of the placeholders, pass a server-side dry run
 on the hub.
 
-### Still needed
+### Still needed (as of 2026-10-20)
 
 - **Hardware:** at least two bare-metal workers, new or wiped, that can
   reach the hub. Their resource class goes in the NodePool's selector.
