@@ -1,0 +1,42 @@
+# Enables USBGuard on the masters. The compliance remediation
+# 75-rhcos4-moderate-master-service-usbguard-enabled asks for it, but it
+# arrived in the same update as the usbguard extension, before the unit
+# existed, so the service was never enabled (stage C results). A second
+# copy of the same setting would not change the rendered config, so this
+# is a oneshot unit that enables it at boot instead.
+#
+# The rules come from 75-rhcos4-moderate-master-usbguard-allow-hid-and-hub;
+# USB is off at boot (nousb) in any case.
+#
+# Apply with the master pool paused, together with
+# maxcpus-machineconfig.yaml; see MASTER-ROUND.md.
+#
+# Check afterwards:
+#   oc debug node/<node> -- chroot /host systemctl is-enabled usbguard
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  name: 99-master-usbguard-enable
+  labels:
+    machineconfiguration.openshift.io/role: master
+spec:
+  config:
+    ignition:
+      version: 3.2.0
+    systemd:
+      units:
+        - name: usbguard-enable.service
+          enabled: true
+          contents: |
+            [Unit]
+            Description=Enable USBGuard (installed as an RHCOS extension)
+            ConditionPathExists=/usr/lib/systemd/system/usbguard.service
+            After=local-fs.target
+
+            [Service]
+            Type=oneshot
+            ExecStart=/usr/bin/systemctl enable --now usbguard.service
+            RemainAfterExit=yes
+
+            [Install]
+            WantedBy=multi-user.target
