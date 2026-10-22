@@ -718,6 +718,42 @@ unsupported test), and enables USBGuard there in the same change
 on the hub, so it also measures the second part of E2: an `InPlace`
 rollout of node configuration on agent workers.
 
+### Tailoring for hosted clusters (2026-10-22)
+
+Each platform rule that failed only because the control plane is on the
+hub was checked there, in workload0's control-plane namespace
+(`clusters-nist-dev-workload0`): the kube-apiserver's config and
+deployment, the kube-controller-manager's, the openshift-apiserver's, and
+etcd's StatefulSet. All of them were set correctly, with one exception
+(below). Two tailored profiles, `hosted-ocp4-cis` and
+`hosted-ocp4-moderate`, disable those rules, each with a rationale that
+says what was checked. They live in
+`values/nist-dev-infra/hosted-clusters/compliance-operator.yaml` on the test
+branch, shared by every hosted cluster on the hub.
+
+| | Fail | Disabled | Still failing |
+|---|---|---|---|
+| CIS | 44 | 35 | 9 |
+| Moderate | 58 | 39 | 19 |
+
+Also disabled: three kubelet rules that read objects a hosted cluster
+lacks (the workers' kubelet config matches the hub's masters, which pass,
+and no read-only port listens), and `fips-mode-enabled-on-all-nodes`, which
+reads MachineConfigs (`spec.fips` is set, and `enable-fips-mode` passes on
+every worker).
+
+**Found on the hub, not tailored:** the hosted API servers keep one audit
+log file of 10 MB (`audit-log-maxbackup=1`, `audit-log-maxsize=10`, for
+both kube-apiserver and openshift-apiserver). The rules want 10 files of
+100 MB. Nothing in our values sets these, so HyperShift chose them; whether
+the HostedCluster API can change them is to verify. It goes with audit
+forwarding (E4) as the open audit gap for workload clusters.
+
+What stays failing is the known list: audit retention and forwarding, no
+identity provider, kubeadmin, NetworkPolicies, the registry allowlist for
+import, resource requests and quotas, and (moderate) the proxy, ingress
+certificate and two alert rules.
+
 ### The rollout, and a NIC race on the workers (2026-10-22)
 
 Times are EDT. The hardening change (USBGuard on hosted workers, and the
@@ -750,9 +786,12 @@ goes on the NodePool: the hosted-cluster chart gains per-pool
 `machineConfigs`, and workload0's compute pool sets the profile (oac-apps
 PR, 2026-10-22).
 
-**After the reboot, on u37-s1d:** USBGuard active and enabled, the FIO
-directory present, and the AIDE pod running. FIO's one obstacle on hosted
-workers was the directory.
+**After the rollout (12:58), on both workers:** USBGuard active and
+enabled, the FIO directory present, and AIDE running; u37-s1d's first AIDE
+check succeeded. FIO's one obstacle on hosted workers was the directory.
+A rescan at 13:05: `rhcos4-moderate` on the workers **COMPLIANT, 0
+failures** (was 1, `service-usbguard-enabled`). All three node scans now
+pass.
 
 ### What is written (2026-10-20)
 
