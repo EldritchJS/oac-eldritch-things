@@ -1,479 +1,91 @@
-# jetty: compliance, VMs, and GPUs
+# Compliant OAC clusters: FIPS, HIPAA and NIST 800-171
 
-*Read this one. Everything else is detail you can drill into if you want it.*
+*Start here. Last updated 2026-10-22.*
 
-*Doing this on another cluster? Start with [PLAYBOOK.md](PLAYBOOK.md) — the
-method, order of operations and cautions, generalised from jetty. For OAC's
-hub and hosted workload clusters, see [HUB-SPOKE.md](HUB-SPOKE.md).*
+The goal is OAC hubs and workload clusters that are compliant from first
+boot, and kept that way by GitOps from
+[CCI-MOC/oac-apps](https://github.com/CCI-MOC/oac-apps). A compliant hub
+carries only compliant workload clusters. A workload cluster is compliant
+because of the hub-wide settings, not its own files
+([HUB-SPOKE.md](HUB-SPOKE.md) §2).
 
-Last updated 2026-10-08.
+## How it got here
 
----
+| Step | Question | Answer | Record |
+|---|---|---|---|
+| 1. jetty | Can this stack be made compliant, with GPUs in containers and VMs? | **Yes.** Hardened by hand: node failures 377 → 0, `ocp4-moderate` 25 → 8, both GPU modalities intact | [JETTY.md](JETTY.md), [PLAYBOOK.md](PLAYBOOK.md) |
+| 2. Charts | Can that work ship as oac-apps charts? | **Yes.** Nine charts reproduce jetty: an empty `oc diff` against the live cluster | [oac-apps/README.md](oac-apps/README.md) |
+| 3. nist-dev-infra | Do the charts work on a FIPS hub built the OAC way? | **Yes, in stages.** RHCOS failures 191 → 1 on the masters, storage TLS-only, ACS, etcd backups, NetworkPolicies | [nist-dev-infra/README.md](nist-dev-infra/README.md) |
+| 4. nist-dev-workload0 | Can a compliant hub build a compliant workload cluster? | **In progress.** Control plane came up 2026-10-21; workers not yet installed | [nist-dev-infra/README.md](nist-dev-infra/README.md), stage D |
 
-## What this is
-
-`jetty` is a 5-node baremetal OpenShift 4.22.16 cluster (3 masters, 2 workers)
-built with the Assisted Installer. The two workers are large — 512 CPU, 1.5 TB
-RAM, **4× NVIDIA H100** each.
-
-Two efforts live here, merged into one tree because they genuinely collide:
-
-1. **Compliance** — getting the cluster to NIST 800-171, HIPAA, and FIPS.
-2. **Virtualisation** — running VMs, including handing them physical GPUs.
-
-### Prerequisites
-
-**This repo does not ship a kubeconfig, and must not.** A `jetty` kubeconfig
-carries cluster-admin; `.gitignore` deliberately excludes `kubeadmin-*`,
-`*kubeconfig*`, and `*init-bundle*` so credential material never lands in
-version control.
-
-Before running anything here, point `KUBECONFIG` at a cluster-admin kubeconfig
-for `jetty`. Every script and command in these docs assumes it is set:
-
-```sh
-export KUBECONFIG=/path/to/kubeadmin-jetty    # ← you must supply this
-oc whoami                                      # confirm: system:admin
-```
-
-Obtain it from whoever administers the cluster, or from the Assisted Installer
-output for `jetty`. Keep it outside this working tree.
-
----
-
-## Where things stand
+## Where things stand (2026-10-22)
 
 | | Status |
 |---|---|
-| FIPS | ✅ Verified at runtime, all 5 nodes |
-| Compliance Operator | ✅ v1.10.0 — CIS and NIST scans running nightly |
-| RHACS (StackRox) | ✅ v4.11.4 — fully deployed, all components healthy |
-| Storage | ✅ Working |
-| GPU — container mode | ✅ Live on `u15` |
-| GPU — VM passthrough | ✅ Live on `u16` |
-| **Cluster hardening** | ✅ **Complete.** 385/385 remediations applied, stage 3 done; node failures 377 → **0**; platform `ocp4-moderate` 25 → **8**, `ocp4-cis` 10 → **3** — every remaining failure is blocked on others or a documented gap (PLAN.md §7, triage 2026-10-09) |
-| Audit retention | ⚠️ 5.8 h — volume cut 73%, but still no forwarding |
-| Storage encryption | ✅ **All NFS traffic encrypted** — 18/18 PVCs on NFS-over-TLS |
-| CNV golden images | ✅ Fixed — all 6 imported, on encrypted storage |
-| HIPAA (ACS `HIPAA_164`) | ⚠️ 9/18 controls pass (2026-10-08, unchanged by the 4.22.16 upgrade). Egress done (28/31 of ours now pass; 3 are hostNetwork). NVIDIA images now scanned (were never scanned before; the one Critical, CVE-2025-23266, is a scanner false positive). Fixable: ACS notifier. Fixable-CVE controls need a patch cadence, not a fix — [STANDARDS.md](STANDARDS.md) §5 |
-
-The headline: **the cluster is hardened and the GPUs survived it.** Platform
-and node remediation are applied — node failures went **377 → 0** — and both
-GPU modalities still work after two full rolling reboots. That was the central
-open question and it is now answered with a measurement, not a prediction.
-
-Node hardening is finished: all 385 remediations are applied, and so are the
-three GPU-dangerous manual checks (stage 3, 2026-10-08) — without breaking
-either GPU modality. The last node rule, `sshd-limit-user-access` (no
-auto-remediation), was closed 2026-10-09 with an `AllowUsers core` drop-in
-rolled out **without a reboot** (`manifests/21-*`).
-
-What remains is not hardening: **audit log forwarding is the one genuinely
-open gap**, followed by the identity provider. Everything left — decisions,
-vendor questions, and items blocked on other teams — is in one table:
-**[PLAN.md → Open](PLAN.md#open--what-remains-what-it-needs-and-from-whom)**.
-
----
-
-## 1. FIPS is genuinely on
-
-Checked three independent ways on every node, not just the declared intent:
-`fips=1` in the kernel command line, `/proc/sys/crypto/fips_enabled = 1`, and
-the system-wide crypto policy set to `FIPS`. All 5/5 agree, and both
-MachineConfigPools carry `fips: true`.
-
-Two things worth knowing.
-
-**The install-config is not usable as evidence here.** It has no `fips:` key at
-all. That is expected — this cluster came from the Assisted Installer, which
-expresses FIPS as separate `99-master-fips`/`99-worker-fips` MachineConfigs
-rather than through install-config. So cite the node-level evidence to an
-assessor, not the install-config.
-
-And the distinction that actually matters: **FIPS mode is not FIPS validation.**
-We proved the OS runs in FIPS mode. That is not the same as proving the
-cryptographic modules carry active CMVP certificates — those are tied to
-specific module *versions*, which can drift. **Checked 2026-10-09
-([tests/fips-cmvp-certificates.md](tests/fips-cmvp-certificates.md)):** for
-RHEL 9.8 (OpenShift 4.22) only the OpenSSL FIPS provider has a certificate
-(#4857), and the nodes run a later security build of it whose validation is
-in process; the kernel crypto API and GnuTLS — which carry NFS-over-TLS —
-have no 9.8 certificate. Normal for a current release, but say it plainly.
-
-→ Detail: [STANDARDS.md](STANDARDS.md) §3
-
----
-
-## 2. What the two security tools actually do
-
-They solve different problems. Neither is a superset of the other, and most
-frameworks need both.
-
-**The Compliance Operator** answers *"is the cluster built to the standard?"*
-It scans the cluster API and the RHCOS hosts against named control frameworks,
-maps each finding to a rule an auditor recognises, and can auto-generate fixes.
-It knows nothing about running workloads.
-
-**RHACS** answers *"is what's running on it safe, and can I stop it?"* Image
-CVE scanning, runtime detection via eBPF, and — the part the Compliance
-Operator entirely lacks — **enforcement**, at both deploy time and runtime.
-
-Neither ships an 800-171 or a HIPAA profile, which sounds alarming and is not.
-800-171 is not a configuration standard; it is a tailored subset of NIST 800-53
-for protecting CUI, and its Appendix D maps every requirement back to an 800-53
-control. So the **800-53 Moderate baseline is the correct proxy**, and it is the
-mapping an assessor expects. HIPAA lives in ACS as the `HIPAA_164` standard.
-
-Both tools only cover the *technical* subset. Whole 800-171 families — training,
-personnel security, assessment — are policy and process. HIPAA's Administrative
-and Physical safeguards likewise. No scanner produces a BAA or an incident
-response plan.
-
-→ Detail: [STANDARDS.md](STANDARDS.md) §1
-
----
-
-## 3. What the scans found
-
-Failure counts, as first measured and as they stand after remediation:
-
-| Scan | Initial | After stage 1 | **Now** |
-|---|---|---|---|
-| `ocp4-cis` (platform) | 10 | 8 | **4** |
-| `ocp4-moderate` (platform) | 25 | 21 | **15** |
-| Node-level OpenShift config | 4 master / 1 worker | 4 / 1 | **0 / 0** |
-| **RHCOS operating system** | **191 per node** | 191 | **1 per node** |
-
-Stage 3 (2026-10-08) took the platform rows down by three each — the SCC
-exception and the registry allowlist pair — and the node-config rows to zero
-(`reject-unsigned-images-by-default`). The two platform scans are now named
-`jetty-ocp4-cis` and `jetty-ocp4-moderate`, because they run the jetty
-TailoredProfiles. Moderate then dropped two more (18 → 16) for the AC-8
-system use notice — console banner and `oc login` MOTD — which is
-**placeholder text**, not legally approved (`manifests/16-*`). Then one more
-each (CIS 5 → 4, moderate 16 → 15) for default-deny NetworkPolicies, the
-only high-severity platform finding (`manifests/17-*`).
-
-The RHCOS number looked frightening and mostly was not: 112 of the 191 were
-audit rules, 27 sysctls, 18 kernel modules — bulk, not depth, and nearly all
-auto-remediable. **Node failures went 377 → 0.**
-
-Getting there meant 377 MachineConfigs and a rolling reboot of every node, one
-at a time. That was the single biggest operational fact in this document, and
-it has now been paid: all 5 nodes rebooted on 2026-10-05, one went Degraded
-mid-run and recovered on its own. A second, smaller round on 2026-10-07
-applied 6 usbguard remediations that only became eligible after the first
-round's rescan, taking failures 10 → 4.
-
-Those 4 were two rules on both pools. Stage 3 cleared
-`reject-unsigned-images-by-default`, leaving **2**: `sshd-limit-user-access`
-on each pool, which offers no remediation.
-
-Raw ARF evidence is archived to persistent storage, so these results are
-durable audit artefacts rather than a transient read.
-
-> **Trap:** the nightly scan is not sufficient evidence after a remediation
-> stage. `verify.sh` once reported "matches baseline" from a scan that predated
-> the hardening by 12 hours. Always rescan before trusting a comparison.
-
----
-
-## 4. The gaps no scanner will fix for you
-
-The scans flag configuration. These are real and mostly invisible to them:
-
-- ~~**etcd encryption is off.**~~ ✅ **Closed** — `aesgcm`, re-encryption
-  completed 2026-10-02. Matters more than its "medium" severity implies,
-  because HIPAA treats FIPS-validated encryption as **breach-notification
-  safe harbour**.
-- **Audit logs are still not retained or forwarded.** ⚠️ **The one genuinely
-  open gap.** Measured: retention was **94 minutes**, now **5.8 hours** after
-  a 73% volume cut. Still not the months 800-171 3.3.1 / HIPAA §164.312(b)
-  expect — and logs sitting on the host they audit fail AU-9 at *any*
-  retention. No scanner checks for this. See PLAN.md §6b.
-- **No identity provider.** Authentication is `kubeadmin` — one shared
-  break-glass account, so no per-user attribution at all. Also why the
-  GPU-switch admission policy ships in Warn rather than Deny.
-- ~~**No etcd backups**~~ — ✅ nightly since 2026-10-08, 14 kept, guarded by
-  `verify.sh` T-14; a restore of the backup is rehearsed
-  (`tests/etcd-restore-rehearsal.sh`), the full control-plane recovery is not (PLAN.md §7).
-- ~~No default-deny network policies~~ — ✅ ingress and egress default-deny
-  since 2026-10-08; internet egress only for ACS's vulnerability feeds.
-- ~~TLS profile unset~~ — ✅ measured instead of changed: FIPS already limits
-  every endpoint to TLS 1.3 / 1.2 AES-GCM (`verify.sh` T-15).
-- ~~No file integrity monitoring~~ — ✅ AIDE on all nodes since 2026-10-09,
-  canary-tested (`verify.sh` T-16); alerts have no receiver yet. Image signing is **partial**: pulls are restricted to 8
-  registries, but only the OpenShift release images are signature-verified
-  (NVIDIA's index-only signing defeats CRI-O enforcement — see §6).
-
-Plus the non-technical half of both frameworks, which is usually the larger
-share of an authorisation package and which no tool produces.
-
-→ Detail: [PLAN.md](PLAN.md) §6
-
----
-
-## 5. GPUs work in both modes, today
-
-jetty's two workers are in **opposite modalities right now**:
-
-| | `u15` | `u16` |
-|---|---|---|
-| Mode | container | **VM passthrough** |
-| Advertises | `nvidia.com/gpu: 4` | `GH100_H100_SXM5_80GB: 4` |
-| Host driver | loaded | **not loaded** |
-| Special | device plugin, DCGM, MIG manager | **`vfio-manager`**, sandbox plugin |
-
-The driver genuinely differs per mode, as expected. In container mode the
-host NVIDIA driver owns the GPU. In passthrough mode it must *not* —
-`vfio-manager` binds each card to `vfio-pci` and the guest runs its own driver.
-The GPU Operator handles the swap, driven entirely by one node label:
-
-```sh
-oc label node <node> nvidia.com/gpu.workload.config=vm-passthrough --overwrite
-```
-
-**So one never has to commit the cluster to VMs.** Modality is per-node and
-reversible.
-
-Better still: switching needs **no reboot on this hardware**. The usual reason
-it would is a kernel-argument change to enable the IOMMU — but AMD IOMMU is
-already active here (103 groups, no kernel argument needed). The `gpu-virt`
-MachineConfigPool that exists in the templates is unnecessary and should not be
-applied reflexively.
-
-**Turnaround is now measured**, on an idle `u15`:
-
-| Direction | Time |
-|---|---|
-| container → VM passthrough | **73 seconds** |
-| VM passthrough → container | **208 seconds** |
-
-No reboot either way. The asymmetry is expected — going to passthrough just
-unloads the driver and binds `vfio-pci`; coming back has to load the driver
-and start the toolkit, device plugin and validators. Treat these as a floor:
-an idle node with images cached is the best case.
-
-So a node can move between serving containers and serving VMs in **about one
-to three and a half minutes**. That is fast enough to treat modality as a
-scheduling decision rather than a maintenance event.
-
-**Exception: RDMA.** A node can host GPU VMs or run RDMA/NCCL, not both.
-GPU passthrough needs the IOMMU on, and RDMA needed it off when tested on an
-earlier cluster (not yet reproduced on jetty). Turning it off is a kernel
-argument, so RDMA nodes and GPU-VM nodes are separate pools, and moving a node
-between them costs a reboot. VMs without a GPU are unaffected, and no
-compliance profile checks the IOMMU.
-→ [vms/gpu/README.md](vms/gpu/README.md#gpu-vms-and-rdma-do-not-share-a-node)
-
-→ Detail: [FEASIBILITY.md](FEASIBILITY.md) §1, §5 · [tests/README.md](tests/README.md)
-
----
-
-## 6. The interesting part: where compliance breaks GPUs
-
-This is the reason the two efforts share a directory.
-
-**First, the reassuring bit.** The three remediations that would break GPU
-support are all **manual** — none has an auto-remediation. A bulk "apply
-everything" will not touch them. The risk is only a human applying one without
-thinking.
-
-✅ **All three done 2026-10-08, GPUs intact.** The detail below is kept
-because it is what made that safe.
-
-**`ocp-allowed-registries` is a one-shot foot-gun.** It restricts which
-registries the container runtime may pull from. Miss an entry and new pulls
-from it fail with `ImagePullBackOff` (cached images keep running). It does
-**not** reboot anything on 4.22 — it rewrites `policy.json`, which is a CRI-O
-reload; measured, boot IDs unchanged. **Eight** registries are actually in use cluster-wide:
-`nvcr.io` (all nine NVIDIA images), `quay.io`, `registry.redhat.io`,
-`registry.connect.redhat.com`, `docker.io`, `registry.k8s.io`, `ghcr.io`
-(the `tlshd` image), and `registry.access.redhat.com` (the `tlshd` build's
-base image). **All eight must be in any allowlist** — `docker.io` and
-`registry.k8s.io` are easy to miss if you only inspect the GPU and CNV
-namespaces. Leave out `nvcr.io` and the GPU stack dies in both modalities.
-Leave out `ghcr.io` and the next reboot takes encrypted storage with it: no
-`tlshd`, no TLS mounts, on any node. `verify.sh` T-10 re-measures this live,
-but only sees running containers — before changing the list, inventory
-CronJobs, scaled-to-zero workloads, CSV `relatedImages`, ImageStreams and
-BuildConfigs too (`manifests/14-image-registry-allowlist.yaml` header).
-
-**`reject-unsigned-images-by-default` turned out not to be about signatures.**
-The check only wants `policy.json` to default to `reject`, which the registry
-allowlist above produces — so one change closed both. Be precise in the SSP:
-pulls are restricted **by registry**; only the OpenShift release images are
-verified **by signature**. Real verification for `nvcr.io` was tried and
-reverted: NVIDIA signs every image (16/16 signatures verify against its NGC
-key), but only the multi-arch index, and CRI-O verifies the per-platform
-manifest it pulls. Detail: FEASIBILITY.md §3 #2.
-
-**`scc-limit-container-allowed-capabilities` was failing entirely because of
-your own stack.** Exactly 10 security contexts failed it: **nine NVIDIA ones**
-(all granting `allowedCapabilities: ['*']` — every Linux capability) and
-`kubevirt-controller`. Nothing else. ✅ **Recorded 2026-10-08** as a
-TailoredProfile exception (`manifests/13-scc-capabilities-tailoring.yaml`)
-that names those ten exactly, so any new SCC with capabilities still fails.
-Be straight about it in the SSP, though: nine SCCs with blanket `*` is something an
-assessor will ask about. The defensible argument is that they are
-vendor-shipped, namespace-scoped, needed for kernel module loading, and
-monitored at runtime by ACS.
-
-**The good news on node hardening — now VERIFIED, not predicted.** No
-remediation touches `vfio`, `kvm`, `iommu`, or PCI binding, and stage 2 proved
-it: all 5 nodes rebooted onto 373 compliance MachineConfigs on 2026-10-05 and
-**both GPU modalities still work** — `u15` still advertises `nvidia.com/gpu=4`
-with the driver loaded, `u16` still advertises `GH100_H100_SXM5_80GB=4` with
-`vfio-manager` running and the host driver correctly absent. This was the
-central open question of the whole feasibility assessment.
-
-What does break is **VM USB passthrough** — `usb-storage`, `bluetooth`, `sctp`
-and friends all get disabled. Design around that rather than discovering it
-later. `usbguard` points the same direction: it is now enforcing, with only
-HID devices and hubs allowed.
-
-One more, easy to miss: **flipping the GPU modality label is a node write**,
-which is effectively cluster-admin. Under 800-171's access control family an
-operation that consequential wants explicit delegation. **Solved** —
-`manifests/08-gpu-switch-rbac.yaml` scopes writes to the two GPU nodes, and a
-ValidatingAdmissionPolicy restricts holders to changing just that one label
-(RBAC alone cannot express that; plain `patch nodes` would also permit
-cordoning and editing taints). Ships in Warn+Audit until an IdP exists.
-
-→ Detail: [FEASIBILITY.md](FEASIBILITY.md) §3
-
----
-
-## 7. Two loose ends
-
-~~**CNV golden images are blocked.**~~ ✅ **Fixed 2026-10-07.** CDI's
-auto-detected storage profile advertised `Block` first — correct for a
-FlashArray, wrong for FlashBlade NFS — so all six DataVolumes were created as
-block devices and hung in `ImportScheduled` from cluster build. Six days, with
-no error that said so.
-
-Pinning `Filesystem` in the StorageProfile
-(`manifests/12-cdi-storageprofile.yaml`) and deleting the stuck DataVolumes
-released them: all six imported to `Succeeded`, DataSources Ready. They landed
-on `nfs-over-tls`, so they are encrypted in transit too.
-
-> `pure-fb-nfsv4` has the identical defect and is deliberately left unfixed —
-> everything is migrating off it. Apply the same override if anything is ever
-> provisioned there again.
-
-~~**Every node has a stray second default route** on `br-storage` via DHCP.~~
-✅ **Fixed 2026-10-08.** DHCP was also pushing the storage gateway into
-`resolv.conf` as a nameserver, so the NNCPs now set both `auto-gateway: false`
-and `auto-dns: false`. Applied one node at a time; NetworkManager reapplied in
-place, and the kernel saw only the route deletion — the NFS-over-TLS
-connections on `u16` never dropped. Detail in `manifests/10-nncp-br-storage.yaml`.
-
-Still open from the same look: **`8.8.8.8` (Google public DNS) is the second
-nameserver on every node**, from the primary network config — some cluster
-DNS lookups leave the site. Worth pointing at an internal resolver.
-
----
-
-## 8. What happens next
-
-Open decisions:
-
-1. ~~**Scope**~~ — **decided 2026-10-08: the whole cluster is in scope** for
-   800-171. With two workers there is no meaningful way to split it, and the
-   control plane is shared regardless. A tenant who cannot live with node
-   hardening needs a different cluster. See STANDARDS.md §4.
-2. ~~**Finish remediation**~~ — **done 2026-10-07.** It took two passes:
-   6 usbguard remediations were dependency-gated during the first and only
-   became eligible after the post-hardening rescan. `remediate.sh` now reports
-   `BLOCKED` and `HOLD` counts instead of silently appearing complete, so the
-   iteration is visible.
-3. **Get the FIPS 140-3 certificate numbers** — a paperwork task, not a
-   cluster one.
-4. **Audit log forwarding is the most urgent gap.** Measured: retention was
-   **94 minutes**, now **5.8 hours** after a 73.2% volume cut
-   (`manifests/09-audit-customrules.yaml`, PLAN.md §6b). Still nowhere near
-   the months 800-171 3.3.1 / HIPAA §164.312(b) expect, and logs on the
-   audited host fail AU-9 at any retention. **Decide the destination:**
-   forwarding to an existing SIEM needs no object storage; LokiStack needs a
-   FlashBlade S3 bucket the storage team has not provisioned.
-
-Recommended order of work:
-
-1. ~~Measure the GPU switch turnaround~~ — **done**: 73s / 208s, no reboot.
-2. ~~Build the test suite~~ — **done**: `tests/verify.sh`, 34 PASS / 0 FAIL,
-   baseline recorded. The regression net exists.
-3. ~~**Stage 1** — platform remediations~~ — **done 2026-10-02**: etcd
-   encryption `aesgcm`, audit `WriteRequestBodies`, OAuth timeouts. No reboots,
-   nothing degraded. `ocp4-cis` 10 → **8**, `ocp4-moderate` 25 → **21**.
-3b. ~~**Audit volume cut**~~ — **done 2026-10-03**: ten platform namespaces to
-   `Default` via `customRules`. 92.0 → **24.7 GB/day**, retention 1.6 → **5.8 h**,
-   90-day store 8.3 TB → **2.17 TB**. No compliance regression.
-4. ~~**Stage 2** — node hardening~~ — **done 2026-10-05**: 377 MachineConfigs,
-   full rolling reboot. **Node failures 377 → 10** (`rhcos4-moderate-*`
-   191 → 4 each). **Both GPU modalities survived** — the headline result.
-4b. ~~**Stage 2, round two**~~ — **done 2026-10-07**: the 6 dependency-gated
-   usbguard remediations, one more rolling reboot. **Node failures 10 → 4**,
-   `rhcos4-moderate-*` 4 → 1 each. 385/385 applied. Both GPU modalities and
-   the tlshd storage path survived.
-5. ~~**Stage 3**~~ — **done 2026-10-08**: SCC exception (TailoredProfile),
-   then the registry allowlist, which closed `ocp-allowed-registries`,
-   `-for-import` and `reject-unsigned-images-by-default` together. No
-   reboots. Node failures 4 → **2**; `jetty-ocp4-cis` **5**,
-   `jetty-ocp4-moderate` **18**. Both GPU modalities intact.
-6. **Re-run `tests/verify.sh` after each stage** and re-save the baseline once
-   the new numbers are the intended ones.
-
-The GPU-switch delegation is **done** (`manifests/08-gpu-switch-rbac.yaml`).
-Flipping modality no longer needs cluster-admin: a `gpu-modality-switcher`
-ClusterRole grants patch on the two GPU nodes only, and a
-ValidatingAdmissionPolicy restricts holders to changing *just* that one label —
-RBAC alone cannot express that, and `patch nodes` would otherwise also permit
-cordoning and editing taints. The policy ships in **Warn+Audit**, not Deny,
-because enforcing node admission before an identity provider exists is how you
-lock yourself out. Flip it to Deny once the IdP is in place.
-
-The ordering matters more than the speed. Remediation is a 377-MachineConfig
-rolling reboot of a cluster with GPUs in two different modes; you want an
-automated way to prove it still works on the other side.
-
----
+| Design and runbook | [HUB-SPOKE.md](HUB-SPOKE.md) (design), [BUILD.md](BUILD.md) (runbook; not yet run end to end) |
+| Upstream in oac-apps | NodePool config, API server audit and image config for hosted clusters (#153); NFS over TLS on Portworx (#148); FIPS agent discovery (#158); hub-wide hosted-cluster values (#157); nist-dev-workload0 (#159, #163) |
+| Compliance charts | On the fork's `nist-dev-infra-test` branch, applied to the test hub by hand. Not yet proposed upstream (BUILD.md, P1 to P3) |
+| Test hub `nist-dev-infra` | Compact, FIPS, 4.22.14. Stages A, S, B and C done. Masters capped at 40 CPUs since 2026-10-21 |
+| First workload cluster | HostedCluster paused while the hub was steadied. Next: recreate it with a single-replica control plane, then install the two workers |
+| GPUs for VMs | Passthrough proven on jetty, several VMs per node. Sharing one GPU between VMs needs an NVIDIA vGPU licence ([vms/gpu/OPTIONS.md](vms/gpu/OPTIONS.md)) |
+
+## What the hub taught that jetty did not
+
+- **Storage is TLS-only from its first volume.** A node with a cleartext
+  NFS mount to the FlashBlade reuses that session, and later TLS mounts
+  fail. The TLS StorageClass goes in with Portworx, before anything else
+  ([nist-dev-infra/STORAGE-BRINGUP.md](nist-dev-infra/STORAGE-BRINGUP.md)).
+- **Under FIPS, large control-plane nodes flapped.** The 176-CPU masters
+  went NotReady about once an hour, with etcd and kubelet thread pile-ups,
+  with or without a hosted control plane. Capped at 40 CPUs, like jetty's,
+  the hub had one short spell in the next 11 hours. Cap with `nr_cpus`; a
+  udev rule undoes `maxcpus` ([nist-dev-infra/MASTER-ROUND.md](nist-dev-infra/MASTER-ROUND.md)).
+- **Default-deny egress catches hub components.** external-dns could not
+  reach Route 53 until its namespace got an egress rule. Measure each
+  component's egress before the guardrails go on.
+- **FIPS reaches the edges.** sshd on a FIPS node refuses ed25519 keys, so
+  agent discovery uses ECDSA. USBGuard arrived in the same update that
+  enabled it and stayed disabled until a boot-time unit enabled it.
+- **Hosted control planes need their own DNS.** The hosted-cluster router
+  needs a static wildcard record, as the oac hubs have (moc-aws #57).
+
+## Still open
+
+- The compliance charts upstream, with branch protection on the repo the
+  hubs read (BUILD.md, P1 to P3).
+- The first workload cluster's install, then its FIPS, node hardening and
+  NetworkPolicy checks.
+- Audit log forwarding and an identity provider (moc-keycloak): open since
+  jetty.
+- Hosted etcd on FlashBlade NFS, accepted for the test only; a later hub
+  gives it local disks.
 
 ## Where the detail lives
 
 | File | What |
 |---|---|
-| [FEASIBILITY.md](FEASIBILITY.md) | Compliance × GPU × VMs — the collision analysis and proposed test suite |
-| [STANDARDS.md](STANDARDS.md) | 800-171 / HIPAA / FIPS mapping, full scan results, scope analysis |
-| [PLAN.md](PLAN.md) | FIPS verification, operator install, gap list, decisions log |
-| [STORAGE-ISSUE.md](STORAGE-ISSUE.md) | The FlashBlade outage — diagnosis and resolution |
-| [PLAYBOOK.md](PLAYBOOK.md) | **The method, generalised** — order of operations, cautions, scaling beyond jetty |
-| [NFS-TLS.md](NFS-TLS.md) | Storage encryption in transit (closed 2026-10-07) — the gap, the evidence, the fix |
-| [HUB-SPOKE.md](HUB-SPOKE.md) | **Design:** building OAC's hub and hosted workload clusters compliant, managed by GitOps — boundary, install-time decisions, where each jetty control goes, experiments still needed |
-| [oac-apps/README.md](oac-apps/README.md) | **Proof:** jetty's manifests as oac-apps charts (in the fork), checked against jetty with `oc diff`; what the check caught |
-| [nist-dev-infra/README.md](nist-dev-infra/README.md) | **Test:** the compliance charts on the nist-dev-infra hub, in stages, from the fork's `nist-dev-infra-test` branch |
-| [nist-dev-infra/STORAGE-BRINGUP.md](nist-dev-infra/STORAGE-BRINGUP.md) | **Notes:** the steps that give an OAC hub storage, and ways to streamline them |
-| [vms/gpu/OPTIONS.md](vms/gpu/OPTIONS.md) | **Options:** GPUs for VMs on OAC: passthrough, vGPU, and what each takes on compliant and non-compliant spokes |
-| [BUILD.md](BUILD.md) | **Runbook:** building a compliant hub, then a compliant workload cluster on it — prerequisites, steps, checks; not yet run |
-| [PATCHING.md](PATCHING.md) | Patch cadence — draft SSP text, current state, ACS policy proposal |
-| [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md) | Exception register for every privileged / host-access workload and wildcard-RBAC operator |
-| `manifests/` | Everything applied, in numeric order |
-| [tests/README.md](tests/README.md) | **Verification suite** — run before and after hardening |
-| `remediate.sh` | **Staged hardening runbook** — `status`, `stage1`, `stage2`, all with `--dry-run` |
+| [HUB-SPOKE.md](HUB-SPOKE.md) | **Design:** compliant hubs and hosted clusters under GitOps; where each jetty control goes |
+| [BUILD.md](BUILD.md) | **Runbook:** a compliant hub, then a compliant workload cluster on it |
+| [oac-apps/README.md](oac-apps/README.md) | **Proof:** jetty's manifests as oac-apps charts, checked against jetty |
+| [nist-dev-infra/README.md](nist-dev-infra/README.md) | **Test:** the charts on the nist-dev-infra hub, stage by stage, and the first workload cluster |
+| [nist-dev-infra/STORAGE-BRINGUP.md](nist-dev-infra/STORAGE-BRINGUP.md) | The steps that give an OAC hub storage |
+| [nist-dev-infra/MASTER-ROUND.md](nist-dev-infra/MASTER-ROUND.md) | One reboot round on the masters: 40 CPUs and USBGuard |
+| [vms/gpu/OPTIONS.md](vms/gpu/OPTIONS.md) | GPUs for VMs on OAC: passthrough and vGPU |
+| [PLAYBOOK.md](PLAYBOOK.md) | The method, from jetty: order of operations and cautions |
+| [JETTY.md](JETTY.md) | jetty's record: FIPS, scans, gaps, GPUs in both modes |
+| [STANDARDS.md](STANDARDS.md) | 800-171, HIPAA and FIPS mapping; scope |
+| [FEASIBILITY.md](FEASIBILITY.md) | Compliance against GPUs and VMs: where they collide |
+| [PLAN.md](PLAN.md) | jetty's decisions log |
+| [NFS-TLS.md](NFS-TLS.md) | Storage encryption in transit |
+| [STORAGE-ISSUE.md](STORAGE-ISSUE.md) | jetty's FlashBlade outage |
+| [PATCHING.md](PATCHING.md) | Patch cadence: draft SSP text |
+| [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md) | Exception register for privileged workloads |
+| [tests/README.md](tests/README.md) | Verification suite and hub preflight |
+| `manifests/`, `remediate.sh` | jetty's manifests and staged hardening script |
 | `vms/`, `vms/gpu/` | VM and GPU test suites |
 
-**Note on `vms/` — the overlap with `open-science-test-cases` is deliberate.**
-Five files here started as copies of ones tracked by that repo:
+## Before you run anything
 
-```
-migrate-rbac.yaml  net-test-vm.yaml
-test-vm.sh         test-vm-storage.sh  test-vm-migration.sh
-```
-
-They were byte-identical as of 2026-10-05. **This repo is intentionally
-separate** — that one is a public test-cases repo with a different purpose and
-audience; this one is the compliance engagement. The copies are expected to
-diverge over time, and that is fine: edit them here freely without worrying
-about keeping the other repo in step.
-
-`vms/gpu/` and `vms/README.md` exist **only here** — the GPU test suite has no
-counterpart upstream, so do not treat `vms/` as a mirror of anything.
+No kubeconfig is in this repo, and none should be. Point `KUBECONFIG` at a
+cluster-admin kubeconfig kept outside the working tree, and check with
+`oc whoami`.

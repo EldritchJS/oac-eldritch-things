@@ -7,18 +7,20 @@ turn out to be stranger than expected once you look closely.
 
 | Directory | What |
 |---|---|
-| [`compliance/`](compliance/) | Hardening the `jetty` cluster to NIST 800-171 / HIPAA / FIPS while keeping dual-modality GPU (containers ⇄ VMs) working. Start at [`compliance/README.md`](compliance/README.md). |
+| [`compliance/`](compliance/) | Building OAC hubs and workload clusters compliant with NIST 800-171, HIPAA and FIPS, through GitOps from `CCI-MOC/oac-apps`, with GPUs in containers and VMs. Start at [`compliance/README.md`](compliance/README.md). |
 
 ## Why it exists
 
-`jetty` is a sandbox, but it sits in a compute center that will host real
-clusters needing to pass a real assessment. So the point of this repo is not a
-compliant `jetty` — it is **transferable method**: measured numbers, reusable
-manifests and scripts, and a written record of the traps, so the clusters that
-matter don't have to rediscover them.
+The compute center will host clusters that have to pass a real assessment.
+The work started on `jetty`, a sandbox hardened by hand, to learn whether
+the stack could be made compliant at all. It moved on to the way OAC builds
+clusters: a hub that creates hosted workload clusters, configured from
+`oac-apps`, with `nist-dev-infra` as the first FIPS test hub.
 
-Experiments that are expensive on a production GPU cluster are cheaper here. We run
-them here and note what happened.
+The point is **transferable method**: measured numbers, reusable charts,
+manifests and scripts, and a written record of the traps, so the clusters
+that matter don't have to rediscover them. Experiments that would be
+expensive on a production cluster are run on the test clusters first.
 
 ## Conventions
 
@@ -42,9 +44,9 @@ to be safe to publish rather than hidden:
 When these notes are reused for a cluster that is actually under assessment,
 re-read them with this in mind: a careful public account of which controls are
 *not* yet in place is a different proposition for a production system than for
-a sandbox.
+a test cluster.
 
 ## Before you run anything
 
 No kubeconfig is in this repo, and none should be. See
-[`compliance/README.md`](compliance/README.md) § Prerequisites.
+[`compliance/README.md`](compliance/README.md) § Before you run anything.

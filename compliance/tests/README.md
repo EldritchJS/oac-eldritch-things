@@ -51,7 +51,7 @@ broke, rather than hoping.
 ## Usage
 
 ```sh
-export KUBECONFIG=/path/to/kubeadmin-jetty    # see ../README.md § Prerequisites
+export KUBECONFIG=/path/to/kubeadmin-jetty    # see ../JETTY.md § Prerequisites
 
 ./verify.sh                  # everything (read-only, ~2 min)
 ./verify.sh -t t06,t07       # just the GPU checks

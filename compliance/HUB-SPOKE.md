@@ -9,7 +9,7 @@ on 2026-10-15 (§3). Nothing has been tested on a hosted cluster yet.*
 > README § Conventions.
 
 jetty answered *can this hardware and software stack be made compliant?*
-(yes, with documented exceptions — [README.md](README.md)). The real OAC
+(yes, with documented exceptions — [JETTY.md](JETTY.md)). The real OAC
 clusters raise a different question: **how is a cluster built compliant from
 the start, and kept that way, when a hub creates and manages it?** This
 document maps jetty's work onto that model and lists what must be proven

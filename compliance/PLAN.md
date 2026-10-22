@@ -5,13 +5,13 @@
 > survived, and all NFS traffic is encrypted. Figures in §3b and §6 marked
 > "initial" are the **pre-remediation** baseline, kept as a historical record.
 > For current numbers see §7 "Done", `tests/baseline-fail-counts.txt`, or run
-> `./remediate.sh status`. Current state of record: [README.md](README.md).
+> `./remediate.sh status`. Current state of record: [JETTY.md](JETTY.md).
 
 Cluster: `jetty` / `https://<cluster-api-fqdn>:6443`
 OpenShift 4.22.16 (from 4.22.14, 2026-10-08), baremetal (Assisted
 Installer), 3 masters + 2 workers.
 Kubeconfig: **not in this repo** — set `KUBECONFIG` to a cluster-admin
-kubeconfig for `jetty`. See [README.md](README.md) § Prerequisites.
+kubeconfig for `jetty`. See [JETTY.md](JETTY.md) § Prerequisites.
 
 ---
 
@@ -119,7 +119,7 @@ are correct for Postgres (`hard,vers=4.1,proto=tcp,local_lock=none`).
 > auto-detected storage profile advertised `Block` first, which FlashBlade NFS
 > cannot serve. Pinning `Filesystem` (`manifests/12-cdi-storageprofile.yaml`)
 > and deleting the stuck DataVolumes fixed all six. See
-> [README.md](README.md) §7.
+> [JETTY.md](JETTY.md) §7.
 
 ---
 

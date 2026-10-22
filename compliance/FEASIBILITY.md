@@ -7,7 +7,7 @@
 > as a prediction and is now a measurement, confirmed across two separate
 > full-cluster rolling reboots. Failure counts quoted here
 > (25 platform / 191 per-node) are the **pre-remediation** baseline; current
-> figures are in [README.md](README.md) §3.
+> figures are in [JETTY.md](JETTY.md) §3.
 
 Scope of this assessment:
 1. Can this cluster be made compliant (NIST 800-171 / HIPAA / FIPS)?

@@ -16,7 +16,7 @@ How this relates to the other documents:
 | Document | Role |
 |---|---|
 | **PLAYBOOK.md** (this) | The method: order, procedures, cautions, scaling. Cluster-agnostic where possible. |
-| [README.md](README.md) | jetty's current state, for a reader with five minutes. |
+| [JETTY.md](JETTY.md) | jetty's final state, for a reader with five minutes. |
 | [PLAN.md](PLAN.md) | jetty's record: what was done, when, with what result. |
 | [STANDARDS.md](STANDARDS.md) | Framework mapping, FIPS position, scope, HIPAA results. |
 | [FEASIBILITY.md](FEASIBILITY.md) | GPU × compliance interaction; the GPU-dangerous checks. |
