@@ -3,7 +3,8 @@
 *Design, 2026-10-13. Every claim is marked as **read** (from source or
 docs), **measured** (on jetty, or on the `nist-dev-infra` hub where it says
 so) or **to verify**. Hub install state was measured on `nist-dev-infra`
-on 2026-10-15 (§3). Nothing has been tested on a hosted cluster yet.*
+on 2026-10-15 (§3). The first hosted cluster, `nist-dev-workload0`, was
+built and scanned on 2026-10-22 (E1, first part of E2; §7).*
 
 > Angle-bracket values are redacted internal addresses. See the top-level
 > README § Conventions.
@@ -146,7 +147,7 @@ with `oc debug`:
 | FIPS | **On**, on every node. `fips: true` in the install config and the rendered MachineConfig. Kernel `fips_enabled=1` and `fips=1`, crypto policy `FIPS`, `fips-mode-setup --check` enabled, OpenSSL FIPS provider active |
 | Disk encryption | **None.** The install asked for `tpmv2`, but FC830s have no TPM 2.0, so the root disk is plain xfs. Exception for this dev hub |
 | What the encryption setting covers | Only the install disk. The installer's `diskEncryption` setting (AgentClusterInstall) does not reach the separate etcd disk, which `98-master-var-lib-etcd` formats as plain xfs. It would not reach LVMS disks either. Even with a TPM, etcd, the most sensitive data on a hub, would be unencrypted. Fix: Tang (no TPM needed), or LUKS for the extra disks in the install MachineConfigs. Both **to verify (E6)** |
-| Disks per node | Two of 1.5 TB: OS and etcd. **No free disk for LVMS**, which OAC uses for hosted-cluster etcd (`lvms-vg0`). As built, the hub cannot host a workload cluster; E1 and E2 wait on a storage decision |
+| Disks per node | Two of 1.5 TB: OS and etcd. **No free disk for LVMS**, which OAC uses for hosted-cluster etcd (`lvms-vg0`). For the test, the hosted etcd went on FlashBlade NFS instead, accepted as a test-only gap (2026-10-20) |
 | Time and DNS | `us.pool.ntp.org` and a public DNS resolver (read, install vars). Acceptable for dev; a compliant hub wants MOC-run servers |
 | Installed | Nothing past the base install: no operators, no ArgoCD, no StorageClasses. All 34 cluster operators healthy |
 | First scans (stage A, scan only) | Failures: `ocp4-cis` 9, `ocp4-moderate` 25, `ocp4-moderate-node` 4, `rhcos4-moderate` 191. Within one of jetty's first scan on every profile. 196 remediations generated, **none applied**, so scan-only works. Details and what closes each failure: [nist-dev-infra/README.md](nist-dev-infra/README.md) |
@@ -171,9 +172,9 @@ Three places a control can live, and they are not interchangeable:
 | Identity provider | none (B3) | Keycloak (`keycloak-oauth`, read) | `oauth.mocsso` in chart values (read) |
 | Ingress certificate | none (B4) | cert-manager (`cluster-certificates`, read) | same, per cluster (read) |
 | Registry allowlist | `image.config` `allowedRegistries` | same | `spec.configuration.image` |
-| Node hardening (~380 MachineConfigs, sshd `AllowUsers`, kernel args) | Compliance Operator auto-remediation + `manifests/21-*` | MachineConfigs from git | **`NodePool.spec.config`**: ConfigMaps holding MachineConfig, KubeletConfig, ContainerRuntimeConfig, ClusterImagePolicy (read, API reference). Changing it rolls the pool; the chart uses `upgradeType: InPlace` (read) — reboot behaviour on bare-metal agents **to verify** |
-| Compliance scanning | Compliance Operator, tailored profiles | same as jetty | Installable on HyperShift hosted clusters since CO 1.1.0; on ROSA HCP it loads node profiles only (read, release notes). What platform checks mean when the control plane is invisible, and what happens to remediations with no MCO — **to verify** (§7 E1) |
-| File integrity (AIDE) | FIO, all nodes | same as jetty | In-cluster FIO on workers; re-init after NodePool rollouts **to verify** |
+| Node hardening (~380 MachineConfigs, sshd `AllowUsers`, kernel args) | Compliance Operator auto-remediation + `manifests/21-*` | MachineConfigs from git | **`NodePool.spec.config`**: ConfigMaps holding MachineConfig, KubeletConfig, ContainerRuntimeConfig, ClusterImagePolicy (read, API reference). **Measured 2026-10-22:** the hub's hardening reached `nist-dev-workload0`'s workers at first boot; `rhcos4-moderate` 1 failure, node scans 0. Changing it rolls the pool; the chart uses `upgradeType: InPlace` (read) — reboot behaviour on bare-metal agents **to verify** |
+| Compliance scanning | Compliance Operator, tailored profiles | same as jetty | Installable on HyperShift hosted clusters since CO 1.1.0; on ROSA HCP it loads node profiles only (read, release notes). **Measured 2026-10-22 (E1):** installs and scans on a hosted cluster with `PLATFORM=HyperShift`. Node scans work. Most platform failures (44 of 58 moderate) check control-plane settings the cluster cannot see; they need a tailored profile for hosted clusters. What happens to remediations with no MCO — **to verify** |
+| File integrity (AIDE) | FIO, all nodes | same as jetty In-cluster FIO on workers. **Measured 2026-10-22: fails** — the AIDE pods' init container exits because `/etc/kubernetes/static-pod-resources` does not exist on hosted workers |
 | NetworkPolicies | default-deny in/out (`17-*`, `18-*`) | same, plus the HCP namespaces (see §6) | In-cluster. OAC already has `restrict-tenant-networks` (a BaselineAdminNetworkPolicy denying cross-tenant traffic) and per-project NetworkPolicies in `user-projects` (read) |
 | Quotas | object counts only (`22-*`) | same | In-cluster; `user-projects` already sets ResourceQuota and LimitRange per project (read) |
 | ACS | Central + secured cluster on jetty | Central | Secured cluster per workload cluster, reporting to the hub's Central — placement **to decide** |
@@ -298,8 +299,8 @@ open.
 
 | # | Experiment | Needs | Settles |
 |---|---|---|---|
-| E1 | Compliance Operator in a hosted cluster: install, run `ocp4-moderate`, `ocp4-moderate-node`, `rhcos4-moderate`; record which checks are NOT-APPLICABLE, which fail because the control plane is invisible, and what the operator does with MachineConfig remediations | A dev hosted cluster (`oac-dev-workload0`/`1`) with admin | Whether scanning works at all on workload clusters |
-| E2 | Deliver a few node remediations through `NodePool.spec.config`, then the full set; measure rollout and reboots under `InPlace` | Same, plus a spare agent or a pool that can reboot | Whether jetty's node hardening transfers |
+| E1 | Compliance Operator in a hosted cluster: install, run `ocp4-moderate`, `ocp4-moderate-node`, `rhcos4-moderate`; record which checks are NOT-APPLICABLE, which fail because the control plane is invisible, and what the operator does with MachineConfig remediations | A dev hosted cluster (`oac-dev-workload0`/`1`) with admin | Whether scanning works at all on workload clusters **Done 2026-10-22 on `nist-dev-workload0`:** it works; results in nist-dev-infra/README.md |
+| E2 | Deliver a few node remediations through `NodePool.spec.config`, then the full set; measure rollout and reboots under `InPlace` | Same, plus a spare agent or a pool that can reboot | Whether jetty's node hardening transfers **First part done 2026-10-22:** the full set applies at first boot. Rollout under `InPlace` not yet measured |
 | E3 | FIPS hosted cluster with GPU nodes; try changing `spec.fips` on an existing one | A spare agent with a GPU (billable while claimed) | §3 immutability; the GPU stack under FIPS on hosted workers |
 | E4 | Workload-cluster API audit logs: where written on the hub, forwardable how | Hub admin | B1 for workload clusters |
 | E5 | Workload-cluster etcd backup and restore, including key escrow | Hub admin, a disposable hosted cluster | Recovery for tenants |

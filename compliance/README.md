@@ -16,7 +16,7 @@ because of the hub-wide settings, not its own files
 | 1. jetty | Can this stack be made compliant, with GPUs in containers and VMs? | **Yes.** Hardened by hand: node failures 377 → 0, `ocp4-moderate` 25 → 8, both GPU modalities intact | [JETTY.md](JETTY.md), [PLAYBOOK.md](PLAYBOOK.md) |
 | 2. Charts | Can that work ship as oac-apps charts? | **Yes.** Nine charts reproduce jetty: an empty `oc diff` against the live cluster | [oac-apps/README.md](oac-apps/README.md) |
 | 3. nist-dev-infra | Do the charts work on a FIPS hub built the OAC way? | **Yes, in stages.** RHCOS failures 191 → 1 on the masters, storage TLS-only, ACS, etcd backups, NetworkPolicies | [nist-dev-infra/README.md](nist-dev-infra/README.md) |
-| 4. nist-dev-workload0 | Can a compliant hub build a compliant workload cluster? | **In progress.** Control plane came up 2026-10-21; workers not yet installed | [nist-dev-infra/README.md](nist-dev-infra/README.md), stage D |
+| 4. nist-dev-workload0 | Can a compliant hub build a compliant workload cluster? | **Mostly yes.** Two FIPS workers, hardened from first boot (`rhcos4-moderate` 1 failure); the scanner works there. Platform scans need tailoring for the hidden control plane; AIDE does not run yet | [nist-dev-infra/README.md](nist-dev-infra/README.md), stage D |
 
 ## Where things stand (2026-10-22)
 
@@ -26,7 +26,7 @@ because of the hub-wide settings, not its own files
 | Upstream in oac-apps | NodePool config, API server audit and image config for hosted clusters (#153); NFS over TLS on Portworx (#148); FIPS agent discovery (#158); hub-wide hosted-cluster values (#157); nist-dev-workload0 (#159, #163) |
 | Compliance charts | On the fork's `nist-dev-infra-test` branch, applied to the test hub by hand. Not yet proposed upstream (BUILD.md, P1 to P3) |
 | Test hub `nist-dev-infra` | Compact, FIPS, 4.22.14. Stages A, S, B and C done. Masters capped at 40 CPUs since 2026-10-21 |
-| First workload cluster | HostedCluster paused while the hub was steadied. Next: recreate it with a single-replica control plane, then install the two workers |
+| First workload cluster | Installed 2026-10-22: 4.22.18, single-replica control plane, two workers. Compliance stage A (scanner, AIDE, notice) delivered by the hub's Argo |
 | GPUs for VMs | Passthrough proven on jetty, several VMs per node. Sharing one GPU between VMs needs an NVIDIA vGPU licence ([vms/gpu/OPTIONS.md](vms/gpu/OPTIONS.md)) |
 
 ## What the hub taught that jetty did not

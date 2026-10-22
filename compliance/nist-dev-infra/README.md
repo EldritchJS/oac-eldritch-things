@@ -616,14 +616,107 @@ through OpenSSL too, and more cores means more threads contending in it.
 
 **Next:**
 
-- Recreate nist-dev-workload0 as `SingleReplica` (about a third of the
-  processes and connections), unpause it and re-provision the agents.
 - Watch u13, the one master that still flapped, and kubelet thread
   counts; restart a kubelet that climbs into the thousands.
 - If the hub flaps again with the hosted control plane running, upgrade
   it to 4.22.18 in a round of its own.
 - BUILD.md: under FIPS, size control-plane nodes at about 40 cores, or cap
   them with `nr_cpus`.
+
+### The workers install (2026-10-22)
+
+Times are EDT. The agents were re-provisioned overnight, and the
+HostedCluster was unpaused at about 03:15, with three copies of its control
+plane. The hub held: no NotReady spells in the six hours that followed.
+
+- **Single replica anyway.** oac-apps #164 sets `SingleReplica`, to keep
+  the hub's headroom. The field is immutable, so the HostedCluster was
+  deleted at 09:15 and Argo recreated it at 09:25; Available at 09:28. One
+  master was NotReady for about a minute during the teardown.
+- **The agents' DNS check.** The agents look up `api` and `api-int` under
+  the cluster's base domain. HyperShift does not use those names; on the
+  oac hubs a zone-wide wildcard answers them. moc-aws #58 adds the same
+  wildcard here, `*.hcp.nist.int.massopen.cloud`, to the hosted-clusters
+  router. (Two per-cluster records were created by hand to unblock the
+  install, then removed.)
+- **Installed.** Both workers (u37-s1b, u37-s1d) started at 09:43 and
+  joined at 10:02 and 10:04. The cluster runs 4.22.18.
+
+Checked on both nodes from inside the cluster: FIPS (`fips=1`,
+`fips_enabled=1`, policy `FIPS`) and the hub's hardening kernel arguments
+(`audit=1`, `pti=on`, `vsyscall=none`, `page_poison=1`, `nousb`). The
+ingress router is on its pinned address. The FIPS and audit settings came
+from the hub-wide values; the cluster's own values set none of them.
+
+### Compliance on the workload cluster (2026-10-22)
+
+`workload-stage-a.yaml` (here) is an ApplicationSet,
+`nist-compliance-test-managed`, that deploys compliance charts to every
+cluster in the `all-managed-clusters` placement, from the fork's test
+branch, as `managed-compliance` would on a compliant hub. Its values are in
+`values/nist-dev-infra/<cluster>/` on that branch.
+
+| Stage | Adds |
+|---|---|
+| A | Compliance Operator (stock profiles, workers only, `PLATFORM=HyperShift`), FIO, the use notice |
+| later | ACS SecuredCluster, NetworkPolicies once the cluster's traffic is measured, `tlshd` with Portworx |
+
+Applied at 10:17; all three Applications synced by 10:20, and the first
+scans finished at 10:26. **This is experiment E1** (HUB-SPOKE.md §7): the
+scanner installs and runs on a hosted cluster.
+
+| Scan (workers) | Fail | Manual | Pass |
+|---|---|---|---|
+| `rhcos4-moderate` | **1** | 4 | 234 |
+| `ocp4-moderate-node` | **0** | 3 | 62 |
+| `ocp4-cis-node` | **0** | 0 | 57 |
+| `ocp4-moderate` (platform) | 58 | 22 | 45 |
+| `ocp4-cis` (platform) | 44 | 21 | 24 |
+
+**The nodes were hardened from their first boot.** The one node failure is
+`service-usbguard-enabled`, the same gap as the hub's masters
+(`usbguard-enable-machineconfig.yaml`); the workers need the same fix
+through their NodePool. This also answers the first part of E2: the hub's
+node hardening reaches hosted workers through `NodePool.spec.config`.
+
+**Most platform failures are about the control plane, which the cluster
+cannot see.** 44 of the 58 moderate failures (39 of 44 CIS) check
+kube-apiserver, etcd and controller-manager settings. Those run on the hub,
+so inside the cluster the checks fail rather than report not applicable.
+They need a tailored profile for hosted clusters, each rule with a reason
+and a pointer to the evidence on the hub. The other 14 in moderate:
+
+- Known gaps, as on jetty and the hub: audit log forwarding (3 rules), no
+  identity provider, kubeadmin not removed, NetworkPolicies, the registry
+  allowlist for import, resource requests and quotas (3).
+- `fips-mode-enabled-on-all-nodes`: a false positive. Both nodes run in
+  FIPS mode (checked above); the rule most likely reads MachineConfigs,
+  which a hosted cluster does not have. To verify.
+- To look at: `cluster-wide-proxy-set`, `default-ingress-ca-replaced`,
+  `compliance-notification-enabled`, `audit-error-alert-exists`.
+
+**FIO does not run on hosted workers.** The AIDE pods fail in their
+`check-folder` init container: `Directory
+/etc/kubernetes/static-pod-resources does not exist, exiting.` Hosted
+workers have no static pods, so the directory is absent.
+
+- **Red Hat does not support it:** "File Integrity Operator is not
+  supported on HCP clusters" (FIO overview, OpenShift docs). The request
+  to support it is RFE-8168; the same failure is reported as CMP-3544.
+- **RHCOS has no AIDE of its own** (`aide` is not installed on the
+  workers), so FIO is the only file integrity monitoring these nodes can
+  get.
+- **The scan does not notice.** `ocp4-moderate-file-integrity-exists`
+  passes, because it checks for a FileIntegrity object, not for AIDE
+  running. Read that pass with care on hosted clusters.
+
+The check is the only obstacle found so far. On the test branch, the
+hardening chart can now create the empty directory on hosted workers
+(`nodePool.fioStaticPodResourcesDir`, off by default, on for this hub as an
+unsupported test), and enables USBGuard there in the same change
+(`nodePool.usbguardEnable`, on by default). Syncing it rolls every NodePool
+on the hub, so it also measures the second part of E2: an `InPlace`
+rollout of node configuration on agent workers.
 
 ### What is written (2026-10-20)
 
