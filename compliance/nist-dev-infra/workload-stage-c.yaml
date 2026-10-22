@@ -1,0 +1,82 @@
+# nist-dev-infra test hub: compliance components for its hosted clusters,
+# stage C. Apply by hand on the hub:
+#   KUBECONFIG=$HOME/kubeadmin-nist-dev-infra oc apply -f workload-stage-c.yaml
+# Like stage-*.yaml, this points at the fork's test branch, because the
+# hub's ArgoCD reads CCI-MOC/oac-apps main, which does not have the
+# compliance charts.
+#
+# Every cluster in the all-managed-clusters placement gets these, as on a
+# compliant hub (oac-apps/examples/compliant-hub/apps-compliance.yaml).
+# Values on the branch: values/nist-dev-infra/hosted-clusters/<component>.yaml
+# for every hosted cluster on the hub (the compliance-operator tailoring is
+# there), then values/nist-dev-infra/<cluster>/<component>.yaml.
+# Node hardening is not here: hosted clusters get it through their
+# NodePools on the hub.
+#
+# Each stage file lists everything installed so far and updates the same
+# ApplicationSet.
+# Stage A: the scanner (workers only, platform profiles tailored for hosted
+# clusters), AIDE, and the use notice. No reboots.
+# Stage B: adds ACS, a SecuredCluster reporting to the hub's Central. Before
+# its sensor can connect, apply the cluster's init bundle (a credential,
+# generated in Central, never committed) to its stackrox namespace.
+# Stage C: adds NetworkPolicies and quotas (namespace-guardrails) for the
+# namespaces oac-apps and these charts add, from traffic ACS observed on
+# nist-dev-workload0. If a policy cuts the cluster off from the hub (ACM's
+# cluster-proxy is how Argo reaches it), delete the policies with the
+# cluster's admin kubeconfig; Argo cannot.
+# Later: tlshd with Portworx.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: nist-compliance-test-managed
+  namespace: openshift-gitops
+spec:
+  generators:
+    - matrix:
+        generators:
+          - clusterDecisionResource:
+              configMapRef: acm-placement
+              labelSelector:
+                matchLabels:
+                  cluster.open-cluster-management.io/placement: all-managed-clusters
+              requeueAfterSeconds: 180
+          - list:
+              elements:
+                - component: compliance-operator
+                - component: file-integrity
+                - component: platform-hardening
+                - component: rhacs
+                - component: namespace-guardrails
+  # A cluster that leaves the placement, even for a moment (on 2026-10-22,
+  # a hub master's NotReady spell), has its Applications deleted. Without
+  # this, Argo then deletes everything they installed, credentials applied
+  # by hand included.
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  template:
+    metadata:
+      name: "{{name}}-nist-test-{{component}}"
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/EldritchJS/oac-apps.git
+        targetRevision: nist-dev-infra-test
+        path: "charts/{{component}}"
+        helm:
+          ignoreMissingValueFiles: true
+          valueFiles:
+            - "/values/nist-dev-infra/hosted-clusters/{{component}}.yaml"
+            - "/values/nist-dev-infra/{{name}}/{{component}}.yaml"
+      destination:
+        server: "{{server}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        retry:
+          limit: 5
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 10m

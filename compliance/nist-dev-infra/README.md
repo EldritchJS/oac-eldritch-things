@@ -659,7 +659,8 @@ branch, as `managed-compliance` would on a compliant hub. Its values are in
 | Stage | Adds |
 |---|---|
 | A | Compliance Operator (stock profiles, workers only, `PLATFORM=HyperShift`), FIO, the use notice |
-| later | ACS SecuredCluster, NetworkPolicies once the cluster's traffic is measured, `tlshd` with Portworx |
+| B (`workload-stage-b.yaml`) | ACS SecuredCluster, reporting to the hub's Central |
+| later | NetworkPolicies once the cluster's traffic is measured, `tlshd` with Portworx |
 
 Applied at 10:17; all three Applications synced by 10:20, and the first
 scans finished at 10:26. **This is experiment E1** (HUB-SPOKE.md §7): the
@@ -784,7 +785,8 @@ install, and their storage route (DHCP, metric 425) never competes.
 holds the only default route. It depends on the hardware's NIC names, so it
 goes on the NodePool: the hosted-cluster chart gains per-pool
 `machineConfigs`, and workload0's compute pool sets the profile (oac-apps
-PR, 2026-10-22).
+#166, merged 13:59). Both workers rolled by 14:16 and came back on eno1,
+with eno2 `never-default`.
 
 **After the rollout (12:58), on both workers:** USBGuard active and
 enabled, the FIO directory present, and AIDE running; u37-s1d's first AIDE
@@ -792,6 +794,113 @@ check succeeded. FIO's one obstacle on hosted workers was the directory.
 A rescan at 13:05: `rhcos4-moderate` on the workers **COMPLIANT, 0
 failures** (was 1, `service-usbguard-enabled`). All three node scans now
 pass.
+
+### Alert rules and ACS (2026-10-22)
+
+Times are EDT. Two moderate rules want alerts, and on a hosted cluster
+neither alert existed.
+
+- **`compliance-notification-enabled`.** On HyperShift the Compliance
+  Operator creates no metrics Service, ServiceMonitor or `compliance`
+  PrometheusRule. The chart can now create the same three objects
+  (`monitoring.enabled`, on for hosted clusters on the test branch), so the
+  NonCompliant alert really fires. Synced at about 15:20.
+- **`audit-error-alert-exists`.** A rule inside the cluster would never
+  fire: the hosted API servers' metrics are scraped on the hub, in
+  `clusters-<cluster>`, with `job` and `pod` labels. The alert goes there,
+  in a new chart, `charts/compliance/hosted-cluster`, with its own hub
+  ApplicationSet; a hosted cluster opts in with a `compliance.yaml`
+  (oac-apps #167; the reviewer asked for compliance charts to live under
+  `charts/compliance/`). The hosted tailoring disables the in-cluster rule,
+  pointing to the hub's.
+
+**ACS (stage B).** The SecuredCluster reports to the hub's Central through
+its route; the local scanners are off until there is a StorageClass, so
+Central scans images. The init bundle was generated in Central and applied
+by hand at 15:25 (it expires 2027-10-22). The operator had given up on its
+last attempt, 30 seconds before the bundle arrived, and was nudged with an
+annotation; sensor, collectors and admission control were running by 15:28.
+
+The sensor connected to Central at 15:42 and re-synced at 15:58, after the
+spells below.
+
+**Rescan (16:15),** after restarting the operator so it loads its metrics
+certificate: `hosted-ocp4-moderate` 17 FAIL / 22 MANUAL / 46 PASS (was 19 /
+22 / 45); `compliance-notification-enabled` passes and
+`audit-error-alert-exists` is tailored out. CIS is unchanged (9 / 21 / 24).
+What fails in moderate:
+
+| Gap | Rules |
+|---|---|
+| Audit retention (one 10 MB file) and forwarding | 6 |
+| Identity provider, kubeadmin, OAuth token timeouts | 4 |
+| Resource requests, limits and quotas | 3 |
+| NetworkPolicies | 1 |
+| Registry allowlist for image import | 1 |
+| Cluster-wide proxy, ingress CA | 2 |
+
+**The registry allowlist has a cost:** workload0's standard
+`grafana-operator` (community catalog) cannot start, because its image is
+on `ghcr.io`, which the allowlist rejects.
+
+### Two more spells (2026-10-22)
+
+Times are EDT.
+
+| Master | NotReady | Answered ping |
+|---|---|---|
+| u17 | 15:30 to 15:37 | yes |
+| u13 | 15:40 to 15:56 | yes |
+
+- **u17 took Central with it.** After five minutes NotReady, its pods were
+  evicted to u13 and u15; Central came back on another node.
+- **workload0's API stopped answering for about a minute** at 15:30,
+  and its controller managers restarted. Then u13 went NotReady two
+  minutes after u17 returned. workload0's control plane is a single
+  replica, and it runs on u13, so the cluster's API was down for as
+  long as u13 was.
+- **A guess, unverified:** the pods evicted from u17 pushed u13 into its
+  own spell. The masters stall under load, and one node's outage loads the
+  others. That makes the planned 4.22.18 upgrade, which reboots each master
+  in turn, a job for when someone can power-cycle nodes.
+
+**The spell deleted half of workload0's components, 40 minutes later.**
+At 15:55, while u13 was down, workload0 left the `all-managed-clusters`
+placement for a moment. Every ApplicationSet generated from that placement
+deleted the cluster's Applications, and Argo deletes what an Application
+installed before the Application itself. It could not reach the cluster
+until the spell ended, then took until 16:35 to finish. The ApplicationSets
+recreated the Applications from git at 16:01 and 16:34 to 16:49.
+
+| Namespace | Effect |
+|---|---|
+| `openshift-compliance` | deleted; stuck on two ProfileBundle finalizers that only the deleted operator could clear; cleared by hand, reinstalled 16:49 |
+| `stackrox`, `rhacs-operator` | deleted with ACS's init bundle secrets (not in git); a new bundle was generated |
+| `openshift-file-integrity` | reinstalled 16:34; AIDE took a new baseline |
+| `metallb-system` | reinstalled 16:35; workload0's ingress address back by 16:37 |
+
+**Fix:** `preserveResourcesOnDeletion: true` on the test ApplicationSet
+(`workload-stage-c.yaml`), so a deleted Application leaves its resources in
+place. oac-apps' own ApplicationSets have the same exposure.
+
+### NetworkPolicies on workload0 (2026-10-22)
+
+Stage C adds `namespace-guardrails` for the namespaces oac-apps and the
+compliance charts put on a managed cluster: 38 NetworkPolicies and 10
+quotas, written from the connections ACS observed on workload0, the ACM
+add-ons' hub kubeconfigs, and the webhook configurations. On a hosted
+cluster the API server calls webhooks through the konnectivity agents,
+which are host-network pods, so the hub's webhook rule works unchanged.
+
+**Applying it locked Argo out for nine minutes (16:24 to 16:33).** Argo
+applies a sync's objects in no fixed order, and in the ACM add-on namespace
+it applied the default-deny egress before the rule allowing the API server.
+ACM's cluster-proxy agent checks each request's token with the cluster's
+API server, and Argo reaches the cluster through it, so every request
+failed ("the server has asked for the client to provide credentials") and
+Argo could not apply the allow rule. The rest of the policies were applied
+by hand with the cluster's admin kubeconfig, from the same commit. **Fix
+for the chart:** allow rules in an earlier sync wave than default-deny.
 
 ### What is written (2026-10-20)
 
