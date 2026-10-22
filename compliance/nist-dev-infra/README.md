@@ -570,21 +570,60 @@ these nodes concurrent handshakes contend (see stage C). A
 kube-apiserver and the rest on the same three masters, all TLS clients and
 servers.
 
+oac-apps #163 (merged 14:11) moves the cluster to 4.22.18, whose OpenSSL
+(3.5.8 or later) peaked lower in the handshake test.
+
+### 40 CPUs on the masters (2026-10-21 to 22)
+
+Times are EDT. jetty is FIPS too, but its masters have 40 CPUs, and it does
+not flap. One reboot round (MASTER-ROUND.md) booted the masters with 40
+CPUs to test whether core count is the difference, and enabled USBGuard in
+the same reboot.
+
+| Cluster | FIPS | Master CPUs | Behaviour |
+|---|---|---|---|
+| jetty | yes | 40 | steady; no kube-apiserver restarts in 5 days |
+| oac-dev-infra | no | 176 | steady, with hosted control planes |
+| nist-dev-infra, before | yes | 176 | NotReady spells about every 55 minutes, with or without the hosted control plane |
+| nist-dev-infra, after | yes | 40 | one spell in the next 11 hours |
+
+**`maxcpus` does not hold on RHCOS.** The first attempt (18:21) used
+`maxcpus=40`. The kernel booted 40 CPUs, then a udev rule
+(`/usr/lib/udev/rules.d/40-redhat.rules`) brought the rest online, so u13
+came back with 176. By the time the pool was paused (18:42), u17 had
+already started, and it rebooted to the same useless setting. `nr_cpus=40`
+caps the CPUs the kernel can use at all; the second attempt (19:51) used
+it, and all three masters came back with 40.
+
+**Kubelets piled up threads during the round.** Three kubelets stopped
+reporting while their nodes answered, as on u13 the day before, and were
+restarted: u15 at 19:34 (2,092 threads) and 20:05 (3,133, up from 1,293 in
+about 5 minutes), u13 at 19:35 (2,425, under an hour after its reboot). u17
+recovered without a restart.
+
+**Result.** The round finished at 20:44: all three masters at 40 CPUs,
+USBGuard enabled and active, the pool updated and not degraded. u13's etcd
+failed a liveness probe at 20:52, and u13 was NotReady 20:55 to 20:56. At
+21:15, etcd had 55, 214 and 61 threads and kube-apiserver 161, 69 and 204,
+against up to 756 and 1,017 on 176 CPUs. Overnight, u13 was NotReady once
+more, 22:36 to 22:53 (one etcd restart, nine kube-apiserver restarts); then
+nothing until at least 08:16, with every cluster operator healthy. u15 and
+u17 had no restarts.
+
+So under FIPS, these masters do better with fewer cores. Why is not proven.
+One guess, unverified: the kubelet's HTTPS probes and its own TLS server go
+through OpenSSL too, and more cores means more threads contending in it.
+
 **Next:**
 
-- oac-apps #163 (merged 14:11) moves the cluster to 4.22.18, whose OpenSSL
-  (3.5.8 or later) peaked lower in the handshake test.
-- Find what recurs about every 55 minutes, and why one probe failure
-  turns into a restart loop.
-- Upgrade the hub itself to 4.22.18, since it flaps without the hosted
-  control plane. The upgrade drains each master in turn, which caused the
-  storms in stage C.
-- Then run the control plane as `SingleReplica`, about a third of the
-  processes and connections. The field is immutable, so the HostedCluster
-  is recreated; no nodes have joined, so nothing is lost. Then unpause and
-  re-provision the agents.
-- Watch kubelet thread counts on the masters, and restart a kubelet that
-  climbs into the thousands.
+- Recreate nist-dev-workload0 as `SingleReplica` (about a third of the
+  processes and connections), unpause it and re-provision the agents.
+- Watch u13, the one master that still flapped, and kubelet thread
+  counts; restart a kubelet that climbs into the thousands.
+- If the hub flaps again with the hosted control plane running, upgrade
+  it to 4.22.18 in a round of its own.
+- BUILD.md: under FIPS, size control-plane nodes at about 40 cores, or cap
+  them with `nr_cpus`.
 
 ### What is written (2026-10-20)
 
