@@ -902,6 +902,13 @@ Argo could not apply the allow rule. The rest of the policies were applied
 by hand with the cluster's admin kubeconfig, from the same commit. **Fix
 for the chart:** allow rules in an earlier sync wave than default-deny.
 
+Quotas for the last three namespaces, and policies for ACM's observability
+add-on (which arrived after the first survey), synced at 17:52 with the
+sync waves in place: no lockout, every add-on Available. **Rescan:**
+`hosted-ocp4-moderate` 15 FAIL / 22 MANUAL / 48 PASS, `hosted-ocp4-cis` 8 /
+21 / 25. `configure-network-policies-namespaces` and
+`resource-requests-quota` pass.
+
 ### What is written (2026-10-20)
 
 | Where | What |
