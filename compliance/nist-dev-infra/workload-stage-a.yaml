@@ -14,9 +14,9 @@
 # NodePools on the hub.
 #
 # Stage A: the scanner (workers only, platform profiles tailored for hosted
-# clusters), AIDE, and the use
-# notice. No reboots. Later stages add ACS, NetworkPolicies once the
-# cluster's traffic is measured, and tlshd with Portworx.
+# clusters), AIDE, and the use notice. No reboots. Later stages add ACS,
+# NetworkPolicies once the cluster's traffic is measured, and tlshd with
+# Portworx.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
