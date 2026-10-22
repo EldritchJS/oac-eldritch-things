@@ -718,6 +718,42 @@ unsupported test), and enables USBGuard there in the same change
 on the hub, so it also measures the second part of E2: an `InPlace`
 rollout of node configuration on agent workers.
 
+### The rollout, and a NIC race on the workers (2026-10-22)
+
+Times are EDT. The hardening change (USBGuard on hosted workers, and the
+directory FIO's AIDE needs) rolled workload0's NodePool from 10:43. Each
+worker drained, rebooted, and **did not come back**: no ping, SSH or
+kubelet from the hub, and no console login.
+
+**Cause: `configure-ovs` chose the wrong NIC.** It builds `br-ex` on
+whichever interface holds the default route at boot. Both of the FC430s'
+NICs get a default route from DHCP: eno1 on the node network, eno2 on the
+storage network. Whichever lease arrives first wins. u37-s1d's boots that
+day:
+
+| Boot | `br-ex` on | Result |
+|---|---|---|
+| 10:47 (the update) | eno2 | unreachable for 80 minutes |
+| 12:07 (power cycle) | eno1 | — |
+| 12:19 (power cycle) | eno2 | unreachable |
+| 12:29 (power cycle) | eno1 | Ready |
+
+u37-s1b lost the same race on its own update reboot at 12:35. The change
+being rolled out was not the cause: any reboot can lose it. The hub's
+masters are not exposed: their `br-ex` default route is static from the
+install, and their storage route (DHCP, metric 425) never competes.
+
+**Fix:** a NetworkManager profile for eno2 with `never-default` and
+`ignore-auto-dns`, as jetty's storage bridge got (`manifests/10-*`), so eno1
+holds the only default route. It depends on the hardware's NIC names, so it
+goes on the NodePool: the hosted-cluster chart gains per-pool
+`machineConfigs`, and workload0's compute pool sets the profile (oac-apps
+PR, 2026-10-22).
+
+**After the reboot, on u37-s1d:** USBGuard active and enabled, the FIO
+directory present, and the AIDE pod running. FIO's one obstacle on hosted
+workers was the directory.
+
 ### What is written (2026-10-20)
 
 | Where | What |
