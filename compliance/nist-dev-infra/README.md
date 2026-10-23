@@ -935,8 +935,26 @@ wave -1).
 
 **Still blocked by DNS.** Thanos now fails only on `lookup
 s3.nist-dev-infra.nist.int.massopen.cloud: no such host`. The record (to
-the proxy's cluster IP) is moc-aws #59. The audit-logging chart
-waits on the same record.
+the proxy's cluster IP) is moc-aws #59.
+
+### Stage E: audit logging on the hub (2026-10-23)
+
+`stage-e.yaml` adds `audit-logging` from the fork: the Logging and Loki
+operators, a LokiStack on a COSI bucket (the acm-observability pattern),
+and a forwarder for the hub's own audit logs and the hosted API servers'
+`audit-logs` sidecars in `clusters-*`. Two fixes on the way, both in the
+chart now: the catalog on 4.22 has `stable-6.5` and `stable-6.6`, not
+`stable-6.4`; and LokiStack 6.6 requires `storageClassName` (no default).
+Argo retries a failed sync at the revision it started with, so each fix
+waited for the five retries to run out.
+
+Synced and healthy at 02:56. The collectors run on all three nodes and the
+ingesters receive both kinds of audit log, but they cannot flush to S3 and
+the compactor crash-loops, on the same `no such host` as Thanos. Both
+should recover when moc-aws #59 merges; then rescan for the six audit
+retention and forwarding failures. The LokiStack (1x.extra-small) claimed
+about 620 GiB of PVCs on the FlashBlade, 450 GiB of it the three ingester
+WALs; the chart does not size these yet.
 
 ### What is written (2026-10-20)
 
