@@ -55,7 +55,10 @@ owner, and most take days. Ask a named reviewer on each.
 | 1.8 | Storage VLAN, untagged, on each node's second port | switches | network admins | | DHCP lease on `br-storage` |
 | 1.9 | Nodes on the management network, VPN only, inventory entries | `open-accelerator-infra` | infra admins | | Nodes PXE or ISO boot |
 
-**TODO:** the hub's record PR number if it was separate from [#54](https://github.com/CCI-MOC/moc-aws/pull/54).
+On NDI, the hub's records were first made by hand in `int.massopen.cloud`;
+[#54](https://github.com/CCI-MOC/moc-aws/pull/54) copied them into the new
+zone and created the delegation only after them, so the names never stopped
+resolving. A new hub can put its records in the zone's PR from the start.
 
 ---
 
