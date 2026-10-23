@@ -216,6 +216,15 @@ Also set:
   `loki.storageClassName` (LokiStack has no default) and an operator
   channel the hub's catalog has (`stable-6.6` on 4.22). 1x.extra-small
   claims about 620 GiB of PVCs, 450 GiB of it ingester WAL.
+  The hosted audit lands in the `application` tenant. Raise that tenant's
+  `maxLineSize` and burst (`loki.tenantLimits`): at `WriteRequestBodies`
+  a single ConfigMap create is one line of up to 1 MB. The defaults
+  refuse those lines, and on nist-dev-infra they refused about half of the
+  tenant's traffic.
+  Each hosted cluster also runs the chart with `loki.enabled: false`, so
+  its workers' auditd and OVN logs reach the hub too. List it in the
+  hub's `auditWriters.clusters` for a token. The hub app finishes only
+  once the cluster's own app has created its logging namespace.
 
 ### 5. First sync: node hardening reboots every node
 

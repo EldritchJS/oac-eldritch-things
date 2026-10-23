@@ -974,6 +974,70 @@ rules still check every other namespace. **Rescan (03:21):**
 | Identity provider, kubeadmin | 2 | A Keycloak client |
 | Cluster-wide proxy, ingress CA | 2 | Gaps to record |
 
+### Logs reach Loki, and workload0 forwards its own (2026-10-23)
+
+**DNS.** moc-aws #59 merged and applied at 09:10. The `s3.` record
+resolves to the object storage proxy's ClusterIP. For about ten minutes
+the hub's pods still got "no such host", a cached negative answer. By
+09:20 the Thanos store shards and the Loki compactor had restarted on
+their own and synced, and the ingesters were flushing. Nothing needed a
+manual restart. oac-apps #169 (the proxy Certificate before its
+DaemonSet) merged the same morning.
+
+**Workload0's own audit logs.** Only the hub forwarded audit: the hosted
+API servers run there. The workers' auditd and OVN audit logs stayed on
+the workers, so `audit-log-forwarding-enabled` and `-uses-tls` were real
+findings, not visibility problems. The audit-logging chart now has a
+forwarding mode (`loki.enabled: false`):
+
+- **On workload0** (`workload-stage-d.yaml`): the Cluster Logging
+  operator, and a forwarder that sends the `audit` input to the hub's
+  LokiStack gateway over https.
+- **On the hub** (`auditWriters.clusters`): a service account per cluster
+  that may write only the audit tenant. An ACM policy copies its token
+  and the hub's ingress CA into the cluster. The token is never in git,
+  and ACM encrypts it in the copy it sends to the cluster.
+
+Applied 09:42. The first scrape showed 8,510 host audit events sent and
+all accepted. One ordering catch: the hub app waits for the policy in
+wave 2 before it changes the hub's forwarder in wave 3. The policy stays
+NonCompliant until the cluster's namespace exists, so the hub app
+finishes only after `workload-stage-d.yaml` is applied.
+
+**Retention tailoring.** HyperShift runs both hosted API servers with
+`audit-log-maxbackup` 1 and `audit-log-maxsize` 10. The four rotation
+rules are now disabled in both hosted profiles (rationale
+`auditRetention`), with the hub's Loki as the record: AtLeastOnce
+delivery (buffered on disk while Loki is unreachable) and 90 days kept.
+Residual risk, stated in the rationale: until the collector reads a line,
+the 20 MB on disk is its only copy.
+
+**Loki refused about half of the hosted audit.** The hosted API servers'
+audit goes to Loki's `application` tenant, which had the 1x.extra-small
+defaults: 4 MB/s, a 6 MB burst, and 256 kB lines. Workload0 audits at
+`WriteRequestBodies`, so each ConfigMap a compliance scan creates is
+logged whole, at 350–784 kB. Loki refuses those lines outright, and they
+are lost. Over the morning the tenant also refused about half of what the
+collector offered, about 1.2 MB/s, retries included, though the API
+servers write about 50 kB/s. Some hosted API audit records between 02:53
+and the fix are missing from Loki, and the logs cannot say how many. The
+chart now takes per-tenant limits (`loki.tenantLimits`). The hub raises
+`application` to 16 MB/s, a 32 MB burst, and 2 MB lines. Loki rolled at
+09:56. In the ten minutes after, it discarded nothing.
+
+**Rescan (09:51):** `hosted-ocp4-moderate` 7 FAIL / 22 MANUAL / 52 PASS.
+Both forwarding rules now pass with no tailoring. The four rotation rules
+are tailored out. `hosted-ocp4-cis` 3 FAIL / 21 MANUAL / 26 PASS.
+
+| Remaining (moderate) | Count | Next |
+|---|---|---|
+| OAuth token timeouts, import allowlist | 3 | oac-apps branch `nist-dev-infra-oauth-grafana`; merging rolls both workers |
+| Identity provider, kubeadmin | 2 | A Keycloak client |
+| Cluster-wide proxy, ingress CA | 2 | Gaps to record |
+
+CIS's three are a subset: the identity provider, kubeadmin, and the import
+allowlist.
+
 ### What is written (2026-10-20)
 
 | Where | What |
