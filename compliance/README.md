@@ -1,6 +1,6 @@
 # Compliant OAC clusters: FIPS, HIPAA and NIST 800-171
 
-*Start here. Last updated 2026-10-22.*
+*Start here. Last updated 2026-10-23.*
 
 The goal is OAC hubs and workload clusters that are compliant from first
 boot, and kept that way by GitOps from
@@ -16,17 +16,17 @@ because of the hub-wide settings, not its own files
 | 1. jetty | Can this stack be made compliant, with GPUs in containers and VMs? | **Yes.** Hardened by hand: node failures 377 → 0, `ocp4-moderate` 25 → 8, both GPU modalities intact | [JETTY.md](JETTY.md), [PLAYBOOK.md](PLAYBOOK.md) |
 | 2. Charts | Can that work ship as oac-apps charts? | **Yes.** Nine charts reproduce jetty: an empty `oc diff` against the live cluster | [oac-apps/README.md](oac-apps/README.md) |
 | 3. nist-dev-infra | Do the charts work on a FIPS hub built the OAC way? | **Yes, in stages.** RHCOS failures 191 → 1 on the masters, storage TLS-only, ACS, etcd backups, NetworkPolicies | [nist-dev-infra/README.md](nist-dev-infra/README.md) |
-| 4. nist-dev-workload0 | Can a compliant hub build a compliant workload cluster? | **Mostly yes.** Two FIPS workers, hardened from first boot (`rhcos4-moderate` 1 failure); the scanner works there. Platform scans need tailoring for the hidden control plane; AIDE does not run yet | [nist-dev-infra/README.md](nist-dev-infra/README.md), stage D |
+| 4. nist-dev-workload0 | Can a compliant hub build a compliant workload cluster? | **Mostly yes.** Two FIPS workers, hardened from first boot (`rhcos4-moderate` 1 failure). With tailoring for the hidden control plane, `hosted-ocp4-moderate` is at 5 failures and CIS at 1, each with an owner. MOC SSO, audit to the hub's Loki. AIDE does not run on hosted workers (RFE-8168) | [nist-dev-infra/README.md](nist-dev-infra/README.md), stage D |
 
-## Where things stand (2026-10-22)
+## Where things stand (2026-10-23)
 
 | | Status |
 |---|---|
-| Design and runbook | [HUB-SPOKE.md](HUB-SPOKE.md) (design), [BUILD.md](BUILD.md) (runbook; not yet run end to end) |
-| Upstream in oac-apps | NodePool config, API server audit and image config for hosted clusters (#153); NFS over TLS on Portworx (#148); FIPS agent discovery (#158); hub-wide hosted-cluster values (#157); nist-dev-workload0 (#159, #163) |
-| Compliance charts | On the fork's `nist-dev-infra-test` branch, applied to the test hub by hand. Not yet proposed upstream (BUILD.md, P1 to P3) |
-| Test hub `nist-dev-infra` | Compact, FIPS, 4.22.14. Stages A, S, B and C done. Masters capped at 40 CPUs since 2026-10-21 |
-| First workload cluster | Installed 2026-10-22: 4.22.18, single-replica control plane, two workers. Compliance stage A (scanner, AIDE, notice) delivered by the hub's Argo |
+| Design and runbooks | [HUB-SPOKE.md](HUB-SPOKE.md) (design), [BUILD.md](BUILD.md) (method), [NEW-HUB-RUNBOOK.md](NEW-HUB-RUNBOOK.md) and [nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) (drafts, not yet run end to end) |
+| Upstream in oac-apps | NodePool config, API server audit and image config for hosted clusters ([#153](https://github.com/CCI-MOC/oac-apps/pull/153)); NFS over TLS on Portworx ([#148](https://github.com/CCI-MOC/oac-apps/pull/148), [#179](https://github.com/CCI-MOC/oac-apps/pull/179)); FIPS agent discovery ([#158](https://github.com/CCI-MOC/oac-apps/pull/158)); hub-wide hosted-cluster values ([#157](https://github.com/CCI-MOC/oac-apps/pull/157)); nist-dev-workload0 ([#159](https://github.com/CCI-MOC/oac-apps/pull/159) to [#166](https://github.com/CCI-MOC/oac-apps/pull/166), SSO [#171](https://github.com/CCI-MOC/oac-apps/pull/171)); object storage proxy ([#168](https://github.com/CCI-MOC/oac-apps/pull/168) to [#174](https://github.com/CCI-MOC/oac-apps/pull/174)); hub-side audit alert for hosted clusters ([#167](https://github.com/CCI-MOC/oac-apps/pull/167)); COO on workload0 ([#170](https://github.com/CCI-MOC/oac-apps/pull/170)). Open: [#172](https://github.com/CCI-MOC/oac-apps/pull/172), [#175](https://github.com/CCI-MOC/oac-apps/pull/175), the ACS chart [#181](https://github.com/CCI-MOC/oac-apps/pull/181) |
+| Compliance charts | On the fork's `nist-dev-infra-test` branch, applied to the test hub by hand. ACS is proposed upstream (#181); the rest follow (BUILD.md, P1 to P3) |
+| Test hub `nist-dev-infra` | Compact, FIPS, 4.22.14. Stages A, S, B, C, D and E done (E: audit logging to Loki on FlashBlade object storage). Masters capped at 40 CPUs since 2026-10-21 |
+| First workload cluster | Installed 2026-10-22: 4.22.18, single-replica control plane, two workers. Compliance stages A to D delivered by the hub's Argo; MOC SSO; its own audit forwarded to the hub |
 | GPUs for VMs | Passthrough proven on jetty, several VMs per node. Sharing one GPU between VMs needs an NVIDIA vGPU licence ([vms/gpu/OPTIONS.md](vms/gpu/OPTIONS.md)) |
 
 ## What the hub taught that jetty did not
@@ -53,10 +53,8 @@ because of the hub-wide settings, not its own files
 
 - The compliance charts upstream, with branch protection on the repo the
   hubs read (BUILD.md, P1 to P3).
-- The first workload cluster's install, then its FIPS, node hardening and
-  NetworkPolicy checks.
-- Audit log forwarding and an identity provider (moc-keycloak): open since
-  jetty.
+- The last workload-cluster failures: #172 and #175, then OAuth timeout
+  tailoring if needed. The cluster-wide proxy is a recorded POA&M gap.
 - Hosted etcd on FlashBlade NFS, accepted for the test only; a later hub
   gives it local disks.
 
@@ -65,7 +63,9 @@ because of the hub-wide settings, not its own files
 | File | What |
 |---|---|
 | [HUB-SPOKE.md](HUB-SPOKE.md) | **Design:** compliant hubs and hosted clusters under GitOps; where each jetty control goes |
-| [BUILD.md](BUILD.md) | **Runbook:** a compliant hub, then a compliant workload cluster on it |
+| [BUILD.md](BUILD.md) | **Method:** a compliant hub, then a compliant workload cluster on it |
+| [NEW-HUB-RUNBOOK.md](NEW-HUB-RUNBOOK.md) | **Runbook:** a new hub and workload cluster from nothing, with example PRs |
+| [nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) | **Runbook:** rebuild nist-dev-infra and workload0 |
 | [oac-apps/README.md](oac-apps/README.md) | **Proof:** jetty's manifests as oac-apps charts, checked against jetty |
 | [nist-dev-infra/README.md](nist-dev-infra/README.md) | **Test:** the charts on the nist-dev-infra hub, stage by stage, and the first workload cluster |
 | [nist-dev-infra/STORAGE-BRINGUP.md](nist-dev-infra/STORAGE-BRINGUP.md) | The steps that give an OAC hub storage |

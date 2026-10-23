@@ -8,7 +8,11 @@ are added by hand, from the fork:
 | Where | What |
 |---|---|
 | [EldritchJS/oac-apps](https://github.com/EldritchJS/oac-apps), branch `nist-dev-infra-test` | `compliance-charts` plus `values/nist-dev-infra/local-cluster/`: the hub's values |
-| `stage-a.yaml`, `stage-b.yaml`, `stage-c.yaml` (here) | One ApplicationSet, `nist-compliance-test`, that points ArgoCD at that branch. Each stage adds to the last |
+| `stage-a.yaml`, `stage-b.yaml`, `stage-c.yaml`, `stage-e.yaml` (here) | One ApplicationSet, `nist-compliance-test`, that points ArgoCD at that branch. Each stage adds to the last |
+| `workload-stage-a.yaml` to `workload-stage-d.yaml` (here) | The same for nist-dev-workload0: the hub's Argo delivers each stage to the workload cluster |
+
+To rebuild this hub and workload0 from these records, see
+[RUNBOOK.md](RUNBOOK.md); for a new hub, [../NEW-HUB-RUNBOOK.md](../NEW-HUB-RUNBOOK.md).
 
 This is a test setup. A compliant hub would get its compliance charts as an
 `apps/<hub>/` drop-in from the repo it already reads (BUILD.md Part 1 step 4).
@@ -22,6 +26,7 @@ This is a test setup. A compliant hub would get its compliance charts as an
 | B | Admission policy, FIO, system use notice, etcd backup, ACS (Central and the hub's SecuredCluster), NetworkPolicies and quotas for those namespaces | none |
 | C | Node hardening: about 380 MachineConfigs | **every node**. On this compact hub that is the whole cluster, one node at a time |
 | D | The first hosted cluster, `nist-dev-workload0`: its hub-side pieces (agent discovery, the hosted-cluster router, DNS, certificates) and the cluster itself | none on the hub; the workers' first boot |
+| E | Audit logging on the hub: Logging and Loki operators, a LokiStack on a COSI bucket, forwarding of the hub's and the hosted API servers' audit | none |
 
 On nist-dev-infra, NFS over TLS went in with stage B, after Portworx had
 already made `pure-fb-nfsv4` the default. Five volumes landed on it, and
@@ -970,7 +975,7 @@ rules still check every other namespace. **Rescan (03:21):**
 |---|---|---|
 | API server audit retention (`maxbackup`, `maxsize`, both API servers) | 4 | Tailor, with the hub's Loki as evidence, once it stores logs |
 | Audit forwarding (`enabled`, `uses-tls`) | 2 | Same: these look for a forwarder inside the cluster |
-| OAuth token timeouts, import allowlist | 3 | oac-apps branch `nist-dev-infra-oauth-grafana` (also allows `ghcr.io/grafana`); merging rolls both workers |
+| OAuth token timeouts, import allowlist | 3 | oac-apps branch `nist-dev-infra-oauth-grafana`, now [#172](https://github.com/CCI-MOC/oac-apps/pull/172) (also allows `ghcr.io/grafana`); merging rolls both workers |
 | Identity provider, kubeadmin | 2 | A Keycloak client |
 | Cluster-wide proxy, ingress CA | 2 | Gaps to record |
 
@@ -1080,50 +1085,113 @@ moved.
   they passed and the backend never showed as down. A test HAProxy in the
   proxy pod reached the FlashBlade, with verification on, once its server
   line had `sni str(10.9.7.10)`. The chart fix adds that whenever
-  `verify` is on and `backend.host` is unset (branch
-  `object-storage-proxy-verify-sni`). Holding a hand edit would have meant
-  pausing self-heal at three levels (`bootstrap`, the `hub-components`
+  `verify` is on and `backend.host` is unset. Holding a hand edit would have
+  meant pausing self-heal at three levels (`bootstrap`, the `hub-components`
   ApplicationSet, the Application), so the hub waited for the fix. Loki's
-  WAL and the Thanos receivers buffer in the meantime.
+  WAL and the Thanos receivers buffered in the meantime.
+- **Fixed:** oac-apps [#174](https://github.com/CCI-MOC/oac-apps/pull/174),
+  merged 16:08. The proxy pods restarted at 16:10, the last 503 was at
+  16:10, and Thanos uploads and Loki flushes have succeeded since. The
+  certificate has no DNS name because the FlashBlade has none; the `s3.`
+  name belongs to the proxy. A private CA for FlashBlade certificates is
+  proposed in MOC-issues#634.
+- **The NFS export policy** is now picked by `portworx.tls` alone (oac-apps
+  [#179](https://github.com/CCI-MOC/oac-apps/pull/179), merged 14:52), so
+  the hub no longer overrides it. Nothing on the cluster changed.
 
-### What is written (2026-10-20)
+### SSO on workload0, and its AWS roles (2026-10-23)
+
+Times are EDT.
+
+- **AWS roles first, OIDC documents before them.** moc-aws
+  [#60](https://github.com/CCI-MOC/moc-aws/pull/60) (workload0's OIDC
+  provider, ESO and cert-manager roles) merged at 12:01. Its apply fails
+  with "Please check .well-known/openid-configuration" unless the cluster's
+  OIDC documents are already uploaded (`setup-oidc.sh -n`), so the order is
+  fixed: open the PR, upload, then merge and apply. Both runbooks say so.
+- **SSO:** oac-apps [#171](https://github.com/CCI-MOC/oac-apps/pull/171),
+  merged 12:23, after the Keycloak client (moc-keycloak
+  [#54](https://github.com/CCI-MOC/moc-keycloak/pull/54)). HyperShift then
+  removed kubeadmin, and `kubeadmin-removed` passes.
+- **`idp-is-configured` still failed.** The rule reads the cluster's
+  `oauth/cluster`. On a hosted cluster the OAuth server runs on the hub
+  and takes its identity providers from the HostedCluster, which
+  HyperShift does not copy into `oauth/cluster`. Both hosted profiles now
+  disable the rule (rationale `oauthIdp`, fork commit `5938e9e`), recording
+  what was checked: the HostedCluster has the `mocsso` provider, and
+  kubeadmin is gone.
+
+### workload0's etcd stopped writing (2026-10-23)
+
+Times are EDT. From 13:05 to 14:30 workload0's API returned 500, "failing
+health checks: etcd". etcd was running but committed nothing. Its WAL file
+pipeline was blocked in `fcntl`, waiting for a lock on
+`member/wal/1.tmp`, a file left behind by an earlier etcd crash on the
+FlashBlade NFS volume (`data-etcd-0`, `pure-fb-nfsv4`). No thread was in
+D state, and every mount answered `stat`, so nothing looked wrong at the
+storage layer.
+
+**Fix:** delete the stale `.tmp` file, then the etcd-0 pod. etcd
+committed again at once, and the HostedCluster was Available by 14:39.
+This is the cost of hosted etcd on NFS, which Red Hat does not support: a
+POA&M item until hosted etcd has local disks. The RUNBOOK's known-failures
+table has the steps.
+
+### Merged and verified, afternoon (2026-10-23)
+
+Times are EDT.
+
+| PR | Merged | Verified |
+|---|---|---|
+| oac-apps [#167](https://github.com/CCI-MOC/oac-apps/pull/167): hub-side audit error alert for hosted API servers | 16:13 | ApplicationSet `hosted-cluster-compliance` and app `cluster-nist-dev-workload0-compliance` Synced and Healthy. PrometheusRule `audit-errors` in `clusters-nist-dev-workload0`; the thanos-ruler shows AuditLogError healthy and inactive |
+| oac-apps [#170](https://github.com/CCI-MOC/oac-apps/pull/170): COO without the capacity dashboard on workload0 | 16:16 | Argo kept retrying its older operation until 16:32, then synced at 16:35. COO 1.5.3 Succeeded on workload0; the monitoring UIPlugin is Available |
+
+`grafana-operator` v5.25.0 is Failed on workload0: its images come from
+`ghcr.io/grafana`, which the cluster's allowlist does not include yet.
+oac-apps [#172](https://github.com/CCI-MOC/oac-apps/pull/172) adds it.
+
+**Rescan (15:11, after the IdP tailoring):** `hosted-ocp4-moderate`
+**5 FAIL**, `hosted-ocp4-cis` **1 FAIL**.
+
+| Remaining (moderate) | Next |
+|---|---|
+| `ocp-allowed-registries-for-import` (also the one CIS failure) | oac-apps [#172](https://github.com/CCI-MOC/oac-apps/pull/172), open; merging rolls both workers |
+| `oauth-or-oauthclient-inactivity-timeout`, `-token-maxage` | [#172](https://github.com/CCI-MOC/oac-apps/pull/172). Likely to fail still, for the same reason as `idp-is-configured`; then tailor them the same way |
+| `default-ingress-ca-replaced` | oac-apps [#175](https://github.com/CCI-MOC/oac-apps/pull/175), open: a Let's Encrypt ingress certificate |
+| `cluster-wide-proxy-set` | A recorded gap (POA&M), above |
+
+### What is upstream (2026-10-23)
 
 | Where | What |
 |---|---|
-| oac-apps `hosted-cluster-nodepool-config` | The chart: NodePool config from the hub, API server audit, image config. A pool's own `config` entries may be names or `{name: ...}` |
-| oac-apps, `values/nist-dev-infra/local-cluster/` | `acm.yaml` (agent discovery; the hub's ECDSA key, since sshd on a FIPS node refuses ed25519), `hcp-config.yaml`, `metallb.yaml`, `cert-manager.yaml`, `external-dns-operator.yaml` |
-| oac-apps, `hosted-clusters/nist-dev-infra/` | Hub-wide defaults (FIPS, node hardening, audit profile, registry allowlist) and `nist-dev-workload0/values.yaml` |
-| moc-aws `nist-dev-infra-hcp` | The zones `hcp.nist.int.massopen.cloud` and `hcp-int.nist.int.massopen.cloud`, delegated from `nist.int`; an external-dns user for them, whose key the hub reads where the iam-user module stores it; the hub may write `cluster/nist-dev-infra/hostedcluster/` (kubeconfig, etcd encryption key) |
+| oac-apps `hosted-cluster-nodepool-config` ([#153](https://github.com/CCI-MOC/oac-apps/pull/153)) | NodePool config from the hub, API server audit, image config. A pool's own `config` entries may be names or `{name: ...}` |
+| oac-apps, `values/nist-dev-infra/local-cluster/` ([#142](https://github.com/CCI-MOC/oac-apps/pull/142), [#148](https://github.com/CCI-MOC/oac-apps/pull/148), [#156](https://github.com/CCI-MOC/oac-apps/pull/156), [#158](https://github.com/CCI-MOC/oac-apps/pull/158), [#162](https://github.com/CCI-MOC/oac-apps/pull/162), [#168](https://github.com/CCI-MOC/oac-apps/pull/168), [#173](https://github.com/CCI-MOC/oac-apps/pull/173)) | External Secrets, Portworx with NFS over TLS, agent discovery (FIPS image; the hub's ECDSA key, since sshd on a FIPS node refuses ed25519), the hosted-clusters router, the Argo controller's size, pure-cosi and the object storage proxy |
+| oac-apps, `hosted-clusters/nist-dev-infra/` ([#157](https://github.com/CCI-MOC/oac-apps/pull/157), [#159](https://github.com/CCI-MOC/oac-apps/pull/159), [#163](https://github.com/CCI-MOC/oac-apps/pull/163), [#164](https://github.com/CCI-MOC/oac-apps/pull/164), [#166](https://github.com/CCI-MOC/oac-apps/pull/166), [#171](https://github.com/CCI-MOC/oac-apps/pull/171)) | Hub-wide defaults (FIPS, node hardening, audit profile, registry allowlist) and nist-dev-workload0: two workers, 4.22.18, single-replica control plane, the storage NIC without a default route, MOC SSO |
+| oac-apps charts ([#167](https://github.com/CCI-MOC/oac-apps/pull/167), [#169](https://github.com/CCI-MOC/oac-apps/pull/169), [#170](https://github.com/CCI-MOC/oac-apps/pull/170), [#174](https://github.com/CCI-MOC/oac-apps/pull/174), [#179](https://github.com/CCI-MOC/oac-apps/pull/179)) | The hub-side audit error alert for hosted clusters, proxy and COO ordering fixes, proxy certificate checks, the TLS export policy |
+| moc-aws ([#53](https://github.com/CCI-MOC/moc-aws/pull/53) to [#60](https://github.com/CCI-MOC/moc-aws/pull/60)) | The `nist.int` zone, the hosted-cluster zones and their wildcards, the external-dns user, cert-manager in the hosted zones, the `s3.` record, the hub's and workload0's OIDC providers and ESO and cert-manager roles |
+| moc-dns, everpure-moc, moc-keycloak | Delegation of `nist.int` ([#33](https://github.com/CCI-MOC/moc-dns/pull/33)); FlashBlade realms for the hub ([#26](https://github.com/CCI-MOC/everpure-moc/pull/26)) and workload0 ([#29](https://github.com/CCI-MOC/everpure-moc/pull/29)); workload0's Keycloak client ([#54](https://github.com/CCI-MOC/moc-keycloak/pull/54)) |
 
-Every values file renders. The cluster's HostedCluster and NodePool, with
-test addresses in place of the placeholders, pass a server-side dry run
-on the hub.
+**Open in oac-apps:** [#172](https://github.com/CCI-MOC/oac-apps/pull/172)
+(token timeouts, import allowlist, `ghcr.io/grafana`),
+[#175](https://github.com/CCI-MOC/oac-apps/pull/175) (workload0's ESO and
+cert-manager roles, a Let's Encrypt ingress certificate),
+[#181](https://github.com/CCI-MOC/oac-apps/pull/181) (the ACS chart). The
+other compliance charts are still on the fork's `nist-dev-infra-test`
+branch.
 
-### Still needed (as of 2026-10-20)
+### Still open (2026-10-23)
 
-- **Hardware:** at least two bare-metal workers, new or wiped, that can
-  reach the hub. Their resource class goes in the NodePool's selector.
-- **Addresses from ops:** a MetalLB range for hosted API servers, one
-  address for the hosted-cluster router, one for the cluster's ingress.
-  Then a wildcard record `*.hcp-int.nist.int.massopen.cloud` for the
-  router, in moc-aws.
-- **A second moc-aws change, after the zones exist:** add both zones to
-  the hub's cert-manager policy (`additional_zone_names`). The module looks
-  zones up by name, so it cannot plan in the same change that creates them.
-- **A default StorageClass** (oac-apps #148): the agent service's volumes
-  name no class.
-- **Hosted etcd storage, accepted as a test-only gap (2026-10-20):** the
-  hub has no free local disk (each node's second disk holds its own etcd),
-  so the test spoke's etcd uses `pure-fb-nfsv4`, which Red Hat does not
-  support for etcd. A later iteration gives each node that runs hosted
-  control planes a dedicated local disk for LVM Storage.
-- **On the test branch,** once the `clusters` namespace exists:
-  `compliance-node-hardening` `nodePool.enabled: true`, so the NodePool's
-  ConfigMap exists. Then an ApplicationSet for the cluster's own
-  compliance components (BUILD.md Part 2, step 3).
-- **The etcd crashes understood first:** a hosted control plane adds about
-  75 pods, many of them TLS clients, to the nodes whose etcd crashed
-  during stage C. Its own etcd is separate, but it runs on the same nodes.
-- **Not yet:** an identity provider for the cluster (`oauth.mocsso` needs
-  a Keycloak client); external-dns with a web-identity role in place of a
-  stored key.
+Everything listed as needed on 2026-10-20 is done (workers, addresses and
+wildcards, the cert-manager zones, a default StorageClass, the workload
+stages, an identity provider), except:
+
+- **Hosted etcd on FlashBlade NFS,** accepted as a test-only gap on
+  2026-10-20. It has since stopped writing once (above). A later hub gives
+  each node that runs hosted control planes a local disk for LVM Storage.
+- **The master spells:** capped at 40 CPUs
+  ([MASTER-ROUND.md](MASTER-ROUND.md)), the masters stall less often, but
+  still do.
+- **external-dns** still uses a stored key, not a web-identity role.
+- **The compliance charts upstream,** after #172, #175 and #181.
+- **`preserveResourcesOnDeletion`** on oac-apps' own ApplicationSets
+  (2026-10-22, above).
