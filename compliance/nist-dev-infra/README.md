@@ -1049,6 +1049,25 @@ never installed: the capacity dashboard needs a CRD the operator brings
 (oac-apps #170). `openshift-logging` on workload0 now has guardrails, and
 the collectors still deliver.
 
+### A new FlashBlade certificate (2026-10-23)
+
+The proxy ran with `verify: false` because the FlashBlade's self-signed
+certificate says `CA:FALSE`, and HAProxy will not use it as a trust anchor.
+Following Naved's suggestion, `nist-dev-infra::realm-cert` was replaced
+with a self-signed certificate marked as a CA. It is RSA 3072 and SHA-256,
+with IP SAN 10.9.7.10, `pathlen:0`, and a name constraint to that one
+address. It was generated on the laptop that imported it, so the key never
+moved.
+
+- **NFS over TLS:** `cluster/nist-dev-infra/nfs-tls-ca` updated right after
+  the import; the hub's secret synced at 11:22. tlshd kept rejecting the
+  FlashBlade ("Certificate signer not found", about 40 times per node)
+  because it reads the CA only at startup. After a rolling restart at
+  11:27, every node's handshake succeeded. Existing mounts were never
+  affected.
+- **Object storage proxy:** `verify: true` with the new certificate, in
+  oac-apps #173.
+
 ### What is written (2026-10-20)
 
 | Where | What |

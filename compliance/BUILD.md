@@ -97,6 +97,29 @@ class at all:
   nist-dev-infra on 2026-10-19 (Part 1 step 7).
 - Re-running the realm playbook makes a new certificate. Update
   `cluster/<hub>/nfs-tls-ca` when that happens, or every mount fails.
+- **The realm certificate must be marked as a CA.** The FlashBlade's own
+  self-signed certificate says `CA:FALSE`. tlshd (GnuTLS) accepts it
+  anyway as an exact match, but HAProxy (OpenSSL) refuses it as a trust
+  anchor, so the object storage proxy (I8) cannot verify the FlashBlade.
+  Generate one on the machine that will import it, so the key never moves:
+  ```
+  openssl req -x509 -newkey rsa:3072 -nodes -sha256 -days 730 \
+    -keyout fb.key -out fb.crt -subj "/CN=<data VIP>" \
+    -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
+    -addext "keyUsage=critical,digitalSignature,keyEncipherment,keyCertSign" \
+    -addext "extendedKeyUsage=serverAuth" \
+    -addext "subjectAltName=IP:<data VIP>" \
+    -addext "nameConstraints=critical,permitted;IP:<data VIP>/255.255.255.255"
+  ```
+  Import it into the realm's certificate (`<realm>::realm-cert`). Then
+  put the `.crt` in `cluster/<hub>/nfs-tls-ca` and in the proxy values
+  (`backend.cacert`, `verify: true`).
+- **Restart tlshd after any CA change** (`oc -n nfs-tls rollout restart
+  daemonset/tlshd`). It reads the CA only at startup. The updated secret
+  reaches its pods within a minute, but tlshd keeps rejecting the
+  FlashBlade ("Certificate signer not found") until it restarts. Existing
+  mounts keep working, so nothing looks wrong until a new volume is
+  mounted.
 
 **Object storage (I8) fails quietly.** On nist-dev-infra the realm and
 endpoint fields of `pure-cosi` held the wrong values, and the FlashBlade
