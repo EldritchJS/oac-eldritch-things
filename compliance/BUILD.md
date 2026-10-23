@@ -84,11 +84,12 @@ class at all:
   so the class is TLS from the moment Portworx creates it.
 - Merge I6 and I7 together, or I7 first. A TLS mount needs `tlshd` on the
   node, and `tlshd` needs the certificate.
-- The FlashBlade realm should refuse cleartext as well: on a compliant
-  realm, the cleartext `export-policy` also requires TLS. Keep the policy
-  rather than deleting it: the CSI driver creates any policy a StorageClass
-  names that does not exist, with its own defaults. **To agree with the
-  FlashBlade admins** (CCI-MOC/everpure-moc#28: `tls_only` realms).
+- With `portworx.tls: true` the StorageClass uses the realm's TLS export
+  policy (`nfs_tls_policy`, default `export-policy-tls`) whatever
+  `nfs_policy` says (CCI-MOC/oac-apps#179). The realm itself still accepts
+  cleartext. Making it refuse cleartext would not close the gap, because the
+  CSI driver creates any policy a StorageClass names that does not exist,
+  using its own defaults (CCI-MOC/everpure-moc#28, closed).
 - The `flashblade-nfs-tls` admission policy in `compliance-hub-policy`
   (`storage.requireNfsTls`, on by default) refuses a FlashBlade StorageClass
   without `xprtsec=tls`, and a FlashBlade volume created without it. Turn
