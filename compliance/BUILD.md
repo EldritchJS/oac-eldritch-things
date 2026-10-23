@@ -113,7 +113,10 @@ class at all:
   ```
   Import it into the realm's certificate (`<realm>::realm-cert`). Then
   put the `.crt` in `cluster/<hub>/nfs-tls-ca` and in the proxy values
-  (`backend.cacert`, `verify: true`).
+  (`backend.cacert`, `verify: true`). The proxy chart must send the data
+  address as the TLS server name when it verifies (`sni str(<address>)`).
+  Otherwise HAProxy 3.4 checks the certificate against each request's
+  Host header and every request fails, while the health checks pass.
 - **Restart tlshd after any CA change** (`oc -n nfs-tls rollout restart
   daemonset/tlshd`). It reads the CA only at startup. The updated secret
   reaches its pods within a minute, but tlshd keeps rejecting the

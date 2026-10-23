@@ -1066,7 +1066,19 @@ moved.
   11:27, every node's handshake succeeded. Existing mounts were never
   affected.
 - **Object storage proxy:** `verify: true` with the new certificate, in
-  oac-apps #173.
+  oac-apps #173, merged 11:41. Every request through the proxy then
+  failed with a 503, and Loki and Thanos could no longer write. HAProxy
+  3.4 takes the TLS server name from each request's Host header
+  (`s3.nist-dev-infra…`) and checks the certificate against it, and the
+  certificate names only 10.9.7.10. Health checks send no Host header, so
+  they passed and the backend never showed as down. A test HAProxy in the
+  proxy pod reached the FlashBlade, with verification on, once its server
+  line had `sni str(10.9.7.10)`. The chart fix adds that whenever
+  `verify` is on and `backend.host` is unset (branch
+  `object-storage-proxy-verify-sni`). Holding a hand edit would have meant
+  pausing self-heal at three levels (`bootstrap`, the `hub-components`
+  ApplicationSet, the Application), so the hub waited for the fix. Loki's
+  WAL and the Thanos receivers buffer in the meantime.
 
 ### What is written (2026-10-20)
 
