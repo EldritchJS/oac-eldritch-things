@@ -1033,7 +1033,13 @@ are tailored out. `hosted-ocp4-cis` 3 FAIL / 21 MANUAL / 26 PASS.
 |---|---|---|
 | OAuth token timeouts, import allowlist | 3 | oac-apps #172; merging rolls both workers |
 | Identity provider, kubeadmin | 2 | oac-apps #171, after the Keycloak client (moc-keycloak #54, merged and applied 10:40) |
-| Cluster-wide proxy, ingress CA | 2 | Gaps to record |
+| Cluster-wide proxy, ingress CA | 2 | Proxy: a recorded gap (below). Ingress CA: the workload0 AWS roles (moc-aws #60), then a Let's Encrypt ingress certificate |
+
+**Decided (2026-10-23):** `cluster-wide-proxy-set` stays failing and goes
+in the SSP as a known gap with a plan (POA&M). No proxy is planned for the
+test environment. Tailoring it out would need someone to confirm what the
+MOC edge firewall restricts and logs for tenant egress, which nobody has
+done.
 
 CIS's three are a subset: the identity provider, kubeadmin, and the import
 allowlist.
