@@ -25,7 +25,7 @@ Times in this document are UTC unless they say EDT.
 - The FlashBlade realm `nist-dev-infra`, its certificate
   (`nist-dev-infra::realm-cert`) and its export policies.
 - Route 53 zones (`nist.int.massopen.cloud`, `hcp.nist.int.massopen.cloud`)
-  and their records, including `s3.nist-dev-infra...` (moc-aws #59).
+  and their records, including `s3.nist-dev-infra...` (moc-aws [#59](https://github.com/CCI-MOC/moc-aws/pull/59)).
 - moc-aws: the OIDC providers and roles for both clusters (`eso-*`,
   `cert-manager-*`), and the `moc-aws-cluster-operators` memberships.
 - moc-keycloak: the `nist-dev-workload0` client and its secret.
@@ -134,7 +134,7 @@ Argo does not retry a failed commit.
 ### 2.6 Object storage
 
 `pure-cosi` and `object-storage-proxy` sync from main. The proxy verifies
-the FlashBlade's certificate against its IP (oac-apps #173, #174). Check
+the FlashBlade's certificate against its IP (oac-apps [#173](https://github.com/CCI-MOC/oac-apps/pull/173), [#174](https://github.com/CCI-MOC/oac-apps/pull/174)). Check
 that a BucketClaim is Ready and that the hub resolves
 `s3.nist-dev-infra.nist.int.massopen.cloud`. Then read the COSI driver's
 log once: wrong realm or endpoint values fail quietly (BUILD.md I8).
@@ -174,7 +174,7 @@ Upstream: oac-apps `docs/workload-cluster-deployment.md`. Details:
 ### 4.1 Workers
 
 Two FC430s, booted from **this hub's** discovery ISO. Their storage NIC
-needs `never-default` (oac-apps #166, already in the cluster's NodePool
+needs `never-default` (oac-apps [#166](https://github.com/CCI-MOC/oac-apps/pull/166), already in the cluster's NodePool
 values): otherwise a reboot can put `br-ex` on the wrong NIC.
 
 ### 4.2 The cluster
@@ -193,10 +193,10 @@ ApplicationSet syncs. Then, in order:
    oauth-openshift is up. HyperShift then removes kubeadmin. The OAuth
    route is internal: log in over the VPN.
 3. **Certificates and secrets.** external-secrets, cert-manager and
-   cluster-certificates sync with the values from oac-apps #175: a Let's
+   cluster-certificates sync with the values from oac-apps [#175](https://github.com/CCI-MOC/oac-apps/pull/175): a Let's
    Encrypt ingress certificate by DNS-01 in `hcp.nist.int.massopen.cloud`.
-   **TODO:** confirm after #175 merges.
-4. **COO.** Installs without its capacity dashboards (oac-apps #170).
+   **TODO:** confirm after [#175](https://github.com/CCI-MOC/oac-apps/pull/175) merges.
+4. **COO.** Installs without its capacity dashboards (oac-apps [#170](https://github.com/CCI-MOC/oac-apps/pull/170)).
 
 ### 4.3 The compliance stages, from the fork
 
@@ -212,13 +212,13 @@ Apply on the hub, in order. Each lists everything so far:
 ### 4.4 Scan and verify
 
 BUILD.md Part 2 step 4. Expected on the moderate profile (2026-10-23,
-before #172 and #175): 5 FAIL. Each has an owner:
+before [#172](https://github.com/CCI-MOC/oac-apps/pull/172) and [#175](https://github.com/CCI-MOC/oac-apps/pull/175)): 5 FAIL. Each has an owner:
 
 | FAIL | Closed by |
 |---|---|
-| `default-ingress-ca-replaced` | #175 |
-| `ocp-allowed-registries-for-import` (also CIS) | #172 |
-| `oauth-or-oauthclient-inactivity-timeout`, `-token-maxage` | #172, then probably tailoring like `idp-is-configured`. **TODO** |
+| `default-ingress-ca-replaced` | [#175](https://github.com/CCI-MOC/oac-apps/pull/175) |
+| `ocp-allowed-registries-for-import` (also CIS) | [#172](https://github.com/CCI-MOC/oac-apps/pull/172) |
+| `oauth-or-oauthclient-inactivity-timeout`, `-token-maxage` | [#172](https://github.com/CCI-MOC/oac-apps/pull/172), then probably tailoring like `idp-is-configured`. **TODO** |
 | `cluster-wide-proxy-set` | POA&M gap, recorded in the SSP |
 
 Archive the first results as the cluster's baseline.
@@ -232,9 +232,9 @@ Archive the first results as the cluster's baseline.
 | moc-aws apply fails: "Please check .well-known/openid-configuration" | The OIDC documents were not uploaded yet | Upload (2.3 or 4.2), re-run the apply |
 | An Argo app keeps failing with an error your fix already removed | Argo retries a failed sync at the commit it started with (five times, about 15 minutes) | Wait for the retries to end, or terminate the operation |
 | New volumes fail; tlshd logs "Certificate signer not found" | tlshd reads its CA only at startup | `oc -n nfs-tls rollout restart daemonset/tlshd` |
-| Every S3 request returns 503, proxy health checks pass | HAProxy verified the FlashBlade's certificate against the client's Host header | Fixed in oac-apps #174. The realm certificate must also be a CA (BUILD.md, storage notes) |
+| Every S3 request returns 503, proxy health checks pass | HAProxy verified the FlashBlade's certificate against the client's Host header | Fixed in oac-apps [#174](https://github.com/CCI-MOC/oac-apps/pull/174). The realm certificate must also be a CA (BUILD.md, storage notes) |
 | Loki discards hosted audit lines | The application tenant's line size and rate limits | `loki.tenantLimits` in the hub's audit-logging values (already set) |
-| COO never installs: Perses CRD missing | The dashboard needed a CRD the operator installs | Fixed in oac-apps #170 |
+| COO never installs: Perses CRD missing | The dashboard needed a CRD the operator installs | Fixed in oac-apps [#170](https://github.com/CCI-MOC/oac-apps/pull/170) |
 | A hosted cluster's API returns 500, "failing health checks: etcd"; etcd logs "took too long" | etcd's WAL file creation blocked on a stale NFS lock on the FlashBlade (2026-10-23, 17:05 to 18:30) | Delete the stale `member/wal/*.tmp` file in etcd-0, then delete the etcd-0 pod. Hosted etcd on NFS is not supported: a POA&M item. **TODO:** a better home for hosted etcd |
 | Masters go NotReady in turn, etcd restarts | FIPS TLS handshakes on large-core nodes | `nr_cpus=40` (2.1) |
 | A hosted cluster loses its compliance namespaces | An ApplicationSet deleted its Applications when the cluster left the placement | `preserveResourcesOnDeletion: true` (already set; BUILD.md Part 2 step 3) |
@@ -255,7 +255,7 @@ Every fix goes through a PR, as during the build:
 
 ## 7. Still open
 
-- **TODO:** #172, #175 and #181 (the upstream ACS chart) are not merged
+- **TODO:** [#172](https://github.com/CCI-MOC/oac-apps/pull/172), [#175](https://github.com/CCI-MOC/oac-apps/pull/175) and [#181](https://github.com/CCI-MOC/oac-apps/pull/181) (the upstream ACS chart) are not merged
   yet. Update 4.2, 4.4 and the stage tables when they are.
 - **TODO:** the stages come from the fork's `nist-dev-infra-test` branch.
   Moving the compliance charts to CCI-MOC/oac-apps main is a separate

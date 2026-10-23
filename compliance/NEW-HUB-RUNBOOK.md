@@ -45,17 +45,17 @@ owner, and most take days. Ask a named reviewer on each.
 
 | # | What | Repo | Owner | NDI example | Done when |
 |---|---|---|---|---|---|
-| 1.1 | The hub's DNS zone in Route 53 | `moc-aws` | moc-aws maintainers | #54 | The zone exists |
-| 1.2 | Delegate `<zone>` to it from internal DNS | `moc-dns` | DNS admins | #33 (after #30, #31) | `dig NS <zone>` answers with Route 53 |
-| 1.3 | Hub records: `api`, `api-int`, `*.apps` | `moc-aws` (in the zone) | moc-aws maintainers | #54 | They resolve on the VPN |
-| 1.4 | A FlashBlade realm for the hub | `everpure-moc` `realms.yaml` | FlashBlade admins | #26 | Merged |
+| 1.1 | The hub's DNS zone in Route 53 | `moc-aws` | moc-aws maintainers | [#54](https://github.com/CCI-MOC/moc-aws/pull/54) | The zone exists |
+| 1.2 | Delegate `<zone>` to it from internal DNS | `moc-dns` | DNS admins | [#33](https://github.com/CCI-MOC/moc-dns/pull/33) (after [#30](https://github.com/CCI-MOC/moc-dns/pull/30), [#31](https://github.com/CCI-MOC/moc-dns/pull/31)) | `dig NS <zone>` answers with Route 53 |
+| 1.3 | Hub records: `api`, `api-int`, `*.apps` | `moc-aws` (in the zone) | moc-aws maintainers | [#54](https://github.com/CCI-MOC/moc-aws/pull/54) | They resolve on the VPN |
+| 1.4 | A FlashBlade realm for the hub | `everpure-moc` `realms.yaml` | FlashBlade admins | [#26](https://github.com/CCI-MOC/everpure-moc/pull/26) | Merged |
 | 1.5 | Run the realm playbook | `everpure-moc` | FlashBlade admins | (by hand) | `cluster/<hub>/portworx` in Secrets Manager |
 | 1.6 | A realm certificate marked as a CA (BUILD.md storage notes) | on the FlashBlade | FlashBlade admins and hub owner | (by hand) | `<realm>::realm-cert` imported; `.crt` in `cluster/<hub>/nfs-tls-ca` |
-| 1.7 | Membership in `moc-aws-cluster-operators` for the hub owner | `moc-aws` `sso-users.tf` | moc-aws maintainers | in #60 | `ClusterOperatorAccess` profile logs in |
+| 1.7 | Membership in `moc-aws-cluster-operators` for the hub owner | `moc-aws` `sso-users.tf` | moc-aws maintainers | in [#60](https://github.com/CCI-MOC/moc-aws/pull/60) | `ClusterOperatorAccess` profile logs in |
 | 1.8 | Storage VLAN, untagged, on each node's second port | switches | network admins | | DHCP lease on `br-storage` |
 | 1.9 | Nodes on the management network, VPN only, inventory entries | `open-accelerator-infra` | infra admins | | Nodes PXE or ISO boot |
 
-**TODO:** the hub's record PR number if it was separate from #54.
+**TODO:** the hub's record PR number if it was separate from [#54](https://github.com/CCI-MOC/moc-aws/pull/54).
 
 ---
 
@@ -67,10 +67,10 @@ provider is created, so the order is fixed:
 
 1. Open the moc-aws PR now: an `openshift_oidc_clusters` entry and
    `eso-<hub>`, `cert-manager-<hub>` roles, with cert-manager allowed in
-   `<zone>` (NDI: #53). **Do not merge yet.**
+   `<zone>` (NDI: [#53](https://github.com/CCI-MOC/moc-aws/pull/53)). **Do not merge yet.**
 2. After install (3.3), upload the hub's OIDC documents.
 3. Then merge and apply. Merging first fails with "Please check
-   .well-known/openid-configuration" (moc-aws #60), and the apply has to
+   .well-known/openid-configuration" (moc-aws [#60](https://github.com/CCI-MOC/moc-aws/pull/60)), and the apply has to
    be re-run.
 
 ---
@@ -110,17 +110,17 @@ roles exist and `cluster/<hub>/aws-oidc` is written.
 
 ### 3.4 The hub in oac-apps
 
-One PR for the hub's own values, as upstream (NDI: #142), in
+One PR for the hub's own values, as upstream (NDI: [#142](https://github.com/CCI-MOC/oac-apps/pull/142)), in
 `values/<hub>/local-cluster/`:
 
 | File | What | NDI example |
 |---|---|---|
-| `external-secrets.yaml` | The `eso-<hub>` role | #142 |
-| `portworx.yaml` | Nodes, storage ports and subnet, `tls: true` | #142, #148, #179 |
+| `external-secrets.yaml` | The `eso-<hub>` role | [#142](https://github.com/CCI-MOC/oac-apps/pull/142) |
+| `portworx.yaml` | Nodes, storage ports and subnet, `tls: true` | [#142](https://github.com/CCI-MOC/oac-apps/pull/142), [#148](https://github.com/CCI-MOC/oac-apps/pull/148), [#179](https://github.com/CCI-MOC/oac-apps/pull/179) |
 | `nfs-tls.yaml` | `tlshd` on every node, CA from `cluster/<hub>/nfs-tls-ca`, `storageClass.enabled: false` | test branch |
 | `cert-manager.yaml`, `external-dns-operator.yaml` | The `cert-manager-<hub>` role, the zone | on main |
-| `openshift-gitops.yaml` | Argo controller at 8Gi, or it OOMs once clusters arrive | #162 |
-| `acm.yaml`, `acm-placements.yaml`, `hcp-config.yaml`, `metallb.yaml` | ACM, agent install service, hosted-clusters router | #156 |
+| `openshift-gitops.yaml` | Argo controller at 8Gi, or it OOMs once clusters arrive | [#162](https://github.com/CCI-MOC/oac-apps/pull/162) |
+| `acm.yaml`, `acm-placements.yaml`, `hcp-config.yaml`, `metallb.yaml` | ACM, agent install service, hosted-clusters router | [#156](https://github.com/CCI-MOC/oac-apps/pull/156) |
 
 **Storage is TLS only from the first volume:** `portworx.yaml` and
 `nfs-tls.yaml` go in together, or `nfs-tls` first (BUILD.md, "Storage is
@@ -141,8 +141,8 @@ does not retry a failed commit.
 | What | Where | NDI example |
 |---|---|---|
 | `cluster/<hub>/pure-cosi` with `PUREFB_REALM` and `S3_ENDPOINT=s3.<hub domain>` | Secrets Manager (from the realm playbook) | |
-| pure-cosi overlay, `object-storage-proxy.yaml` with `verify: true` and the realm CA | `oac-apps` | #168, #169, #173, #174 |
-| `s3.<hub domain>` → the proxy's ClusterIP | `moc-aws` | #59 |
+| pure-cosi overlay, `object-storage-proxy.yaml` with `verify: true` and the realm CA | `oac-apps` | [#168](https://github.com/CCI-MOC/oac-apps/pull/168), [#169](https://github.com/CCI-MOC/oac-apps/pull/169), [#173](https://github.com/CCI-MOC/oac-apps/pull/173), [#174](https://github.com/CCI-MOC/oac-apps/pull/174) |
+| `s3.<hub domain>` → the proxy's ClusterIP | `moc-aws` | [#59](https://github.com/CCI-MOC/moc-aws/pull/59) |
 
 Done when a BucketClaim is Ready and the COSI driver's log is clean
 (wrong realm values fail quietly, BUILD.md I8).
@@ -162,7 +162,7 @@ Apply in order, as in [nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md)
 apply the hub's ACS init bundle by hand), C (node hardening: reboots every
 node; pause pools first), E (audit logging).
 
-**TODO:** once the compliance charts are upstream (ACS: oac-apps #181),
+**TODO:** once the compliance charts are upstream (ACS: oac-apps [#181](https://github.com/CCI-MOC/oac-apps/pull/181)),
 replace this step with values on main and the hub's ApplicationSets.
 
 ### 3.8 Scan, tailor, verify
@@ -175,11 +175,11 @@ BUILD.md Part 1 steps 6 and 7. Archive the first clean results.
 
 | # | What | Repo | NDI example |
 |---|---|---|---|
-| 4.1 | Agent install service and FIPS discovery image | `oac-apps` | #156, #158 |
-| 4.2 | Hub-wide values for every hosted cluster: FIPS, node hardening, audit profile, registry allowlist, import allowlist, token timeouts | `oac-apps` `hosted-clusters/<hub>/values.yaml` | #157, #172 (open) |
-| 4.3 | Zones for hosted clusters (`hcp.<zone>`, `hcp-int.<zone>`), an external-dns user, ESO prefixes | `moc-aws` | #55 |
-| 4.4 | cert-manager may answer DNS-01 in those zones | `moc-aws` | #56 |
-| 4.5 | Wildcards to the hosted-clusters router, for Ignition, Konnectivity, OAuth, and the agents' `api` checks | `moc-aws` | #57, #58 |
+| 4.1 | Agent install service and FIPS discovery image | `oac-apps` | [#156](https://github.com/CCI-MOC/oac-apps/pull/156), [#158](https://github.com/CCI-MOC/oac-apps/pull/158) |
+| 4.2 | Hub-wide values for every hosted cluster: FIPS, node hardening, audit profile, registry allowlist, import allowlist, token timeouts | `oac-apps` `hosted-clusters/<hub>/values.yaml` | [#157](https://github.com/CCI-MOC/oac-apps/pull/157), [#172](https://github.com/CCI-MOC/oac-apps/pull/172) (open) |
+| 4.3 | Zones for hosted clusters (`hcp.<zone>`, `hcp-int.<zone>`), an external-dns user, ESO prefixes | `moc-aws` | [#55](https://github.com/CCI-MOC/moc-aws/pull/55) |
+| 4.4 | cert-manager may answer DNS-01 in those zones | `moc-aws` | [#56](https://github.com/CCI-MOC/moc-aws/pull/56) |
+| 4.5 | Wildcards to the hosted-clusters router, for Ignition, Konnectivity, OAuth, and the agents' `api` checks | `moc-aws` | [#57](https://github.com/CCI-MOC/moc-aws/pull/57), [#58](https://github.com/CCI-MOC/moc-aws/pull/58) |
 | 4.6 | Hosted compliance values, all hosted clusters: tailoring, guardrails, ACS, audit forwarding | fork test branch, `values/<hub>/hosted-clusters/` | test branch |
 
 ---
@@ -190,30 +190,30 @@ BUILD.md Part 1 steps 6 and 7. Archive the first clean results.
 
 | # | What | Repo | NDI example | Done when |
 |---|---|---|---|---|
-| 5.1.1 | The cluster's values: name, NodePools, agent selectors, network, release | `oac-apps` `hosted-clusters/<hub>/<cluster>/` | #159, #163 | HostedCluster created |
-| 5.1.2 | One storage NIC with `never-default`, or reboots can lose the node | same | #166 | |
-| 5.1.3 | On a compact FIPS hub: `SingleReplica` control plane | same | #164 | |
-| 5.1.4 | A Keycloak client, redirect URI from the HostedCluster's `oauthCallbackURLTemplate` with `mocsso` | `moc-keycloak` | #54 | Secret in `cluster/<hub>/hostedcluster/<cluster>/keycloak-oidc` |
-| 5.1.5 | A FlashBlade realm, if the cluster gets storage | `everpure-moc` | #29 | |
+| 5.1.1 | The cluster's values: name, NodePools, agent selectors, network, release | `oac-apps` `hosted-clusters/<hub>/<cluster>/` | [#159](https://github.com/CCI-MOC/oac-apps/pull/159), [#163](https://github.com/CCI-MOC/oac-apps/pull/163) | HostedCluster created |
+| 5.1.2 | One storage NIC with `never-default`, or reboots can lose the node | same | [#166](https://github.com/CCI-MOC/oac-apps/pull/166) | |
+| 5.1.3 | On a compact FIPS hub: `SingleReplica` control plane | same | [#164](https://github.com/CCI-MOC/oac-apps/pull/164) | |
+| 5.1.4 | A Keycloak client, redirect URI from the HostedCluster's `oauthCallbackURLTemplate` with `mocsso` | `moc-keycloak` | [#54](https://github.com/CCI-MOC/moc-keycloak/pull/54) | Secret in `cluster/<hub>/hostedcluster/<cluster>/keycloak-oidc` |
+| 5.1.5 | A FlashBlade realm, if the cluster gets storage | `everpure-moc` | [#29](https://github.com/CCI-MOC/everpure-moc/pull/29) | |
 
 ### 5.2 After the cluster exists
 
 1. **Workers:** boot from the hub's discovery ISO, label as upstream.
-2. **SSO:** `oauth.mocsso.enabled: true` (NDI: #171). HyperShift removes
+2. **SSO:** `oauth.mocsso.enabled: true` (NDI: [#171](https://github.com/CCI-MOC/oac-apps/pull/171)). HyperShift removes
    kubeadmin. The OAuth route is internal: log in over the VPN.
 3. **AWS identity, same order as the hub:** open the moc-aws PR
    (`openshift_oidc_clusters` entry, `eso-<cluster>`,
    `cert-manager-<cluster>`), upload the cluster's OIDC documents with
    its admin kubeconfig (`setup-oidc.sh -n`), then merge and apply (NDI:
-   moc-aws #60).
+   moc-aws [#60](https://github.com/CCI-MOC/moc-aws/pull/60)).
 4. **Its component values:** external-secrets, cert-manager,
    cluster-certificates (a Let's Encrypt ingress certificate), and COO
-   without capacity dashboards (NDI: #175, #170).
+   without capacity dashboards (NDI: [#175](https://github.com/CCI-MOC/oac-apps/pull/175), [#170](https://github.com/CCI-MOC/oac-apps/pull/170)).
 5. **Compliance:** the workload stage files, A to D
    ([nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) 4.3), with the
    cluster's ACS init bundle by hand and the cluster in the hub's
    `auditWriters.clusters`. The hub-side audit alert comes from a
-   `compliance.yaml` in the cluster's directory (NDI: #167).
+   `compliance.yaml` in the cluster's directory (NDI: [#167](https://github.com/CCI-MOC/oac-apps/pull/167)).
 6. **Scan, tailor, verify:** BUILD.md Part 2 step 4. Expected leftovers
    are in [nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) 4.4.
 
