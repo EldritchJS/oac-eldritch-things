@@ -909,6 +909,35 @@ sync waves in place: no lockout, every add-on Available. **Rescan:**
 21 / 25. `configure-network-policies-namespaces` and
 `resource-requests-quota` pass.
 
+### Object storage on the hub (2026-10-22)
+
+Before the hub's audit logs can go to a LokiStack, it needs S3 storage
+that works. ACM observability's BucketClaim had been waiting for five hours,
+since oac-apps #168 synced, and two faults were behind it.
+
+**Wrong values in the COSI driver's secret.** `cluster/nist-dev-infra/pure-cosi`
+had `PUREFB_REALM=s3.nist-dev-infra.nist.int.massopen.cloud` and
+`S3_ENDPOINT=storage.massopen.cloud`. Every other cluster has `<realm>` and
+`s3.<cluster domain>`: here the realm field held the endpoint's name. The FlashBlade
+answered every bucket request with "Realm does not exist". At 22:09 the
+secret got `PUREFB_REALM=nist-dev-infra` and
+`S3_ENDPOINT=s3.nist-dev-infra.nist.int.massopen.cloud` (other fields kept),
+the ExternalSecret was force-synced, and the driver restarted. Within a
+minute the bucket was created and access granted.
+
+**The proxy deadlocked on its own certificate.** The object storage proxy's
+pods mount the secret of a Certificate in sync wave 3, but Argo waits for
+the DaemonSet in wave 0 to be healthy first, so the Certificate was never
+created. The Certificate, rendered from main, was applied by hand at 22:10
+and issued at 22:11 (Let's Encrypt, DNS-01). The pods started and the sync
+finished at 22:13. **Fix for the chart:** oac-apps #169 (Certificate in
+wave -1).
+
+**Still blocked by DNS.** Thanos now fails only on `lookup
+s3.nist-dev-infra.nist.int.massopen.cloud: no such host`. The record (to
+the proxy's cluster IP) is moc-aws #59. The audit-logging chart
+waits on the same record.
+
 ### What is written (2026-10-20)
 
 | Where | What |
