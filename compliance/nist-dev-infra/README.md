@@ -1031,12 +1031,23 @@ are tailored out. `hosted-ocp4-cis` 3 FAIL / 21 MANUAL / 26 PASS.
 
 | Remaining (moderate) | Count | Next |
 |---|---|---|
-| OAuth token timeouts, import allowlist | 3 | oac-apps branch `nist-dev-infra-oauth-grafana`; merging rolls both workers |
-| Identity provider, kubeadmin | 2 | A Keycloak client |
+| OAuth token timeouts, import allowlist | 3 | oac-apps #172; merging rolls both workers |
+| Identity provider, kubeadmin | 2 | oac-apps #171, after the Keycloak client (moc-keycloak #54, merged and applied 10:40) |
 | Cluster-wide proxy, ingress CA | 2 | Gaps to record |
 
 CIS's three are a subset: the identity provider, kubeadmin, and the import
 allowlist.
+
+The workload0 OAuth route, `oauth-nist-dev-workload0.hcp-int.nist.int.massopen.cloud`,
+resolves to the hub's internal ingress address. Only people on the cluster
+network can finish an SSO login. oac-dev-workload0's route is public.
+
+Also on 2026-10-23: the old ACS init bundle `nist-dev-workload0` is safe to
+revoke. No certificate on workload0 comes from it, and Central lists the
+cluster only because that bundle registered it first. COO on workload0 had
+never installed: the capacity dashboard needs a CRD the operator brings
+(oac-apps #170). `openshift-logging` on workload0 now has guardrails, and
+the collectors still deliver.
 
 ### What is written (2026-10-20)
 

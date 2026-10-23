@@ -497,12 +497,26 @@ nist-dev-workload0, 2026-10-22 and 23):
   Its AIDE pods need `/etc/kubernetes/static-pod-resources`, which hosted
   workers do not have; the hardening chart can create it
   (`nodePool.fioStaticPodResourcesDir`, an unsupported test).
-- **What is left** (13 moderate failures on workload0): API server audit
-  retention and forwarding (6; hosted API servers keep one 10 MB file, so
-  the hub's Loki is the evidence), OAuth token timeouts and the import
-  allowlist (3, in review), the identity provider and kubeadmin (2, need
-  a Keycloak client), and two gaps to record (cluster-wide proxy, ingress
-  CA).
+- **Audit forwarding is real, not a visibility problem.** The hub
+  forwards the hosted API servers' audit, but the workers' auditd and OVN
+  logs stay on the workers. Run audit-logging on the cluster in
+  forwarding mode (step 4, Log forwarding). Then `audit-log-forwarding-
+  enabled` and `-uses-tls` pass with no tailoring.
+- **Audit retention:** HyperShift keeps one 10 MB file per API server, and
+  no setting changes it. The tailoring disables the four rotation rules,
+  with the hub's Loki as the record and the residual risk stated.
+- **Identity provider:** request a Keycloak client in moc-keycloak's
+  `main.tf` (oac-apps `docs/idp-configuration.md`). Use the
+  HostedCluster's `status.oauthCallbackURLTemplate` with `mocsso` as the
+  redirect URI. Merge to main applies it and writes the client secret to
+  `cluster/<hub>/hostedcluster/<cluster>/keycloak-oidc`. Then set
+  `oauth.mocsso.enabled: true` in the cluster's values. HyperShift
+  removes kubeadmin once an identity provider is set. If the OAuth route
+  is on an internal zone, only people on that network can finish a login.
+- **What is left** (7 moderate failures on workload0, 2026-10-23): OAuth
+  token timeouts and the import allowlist (3, oac-apps #172), the
+  identity provider and kubeadmin (2, #171), and two gaps to record
+  (cluster-wide proxy, ingress CA).
 
 Then archive this cluster's first scan results as its baseline evidence.
 
