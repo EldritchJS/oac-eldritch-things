@@ -956,6 +956,24 @@ retention and forwarding failures. The LokiStack (1x.extra-small) claimed
 about 620 GiB of PVCs on the FlashBlade, 450 GiB of it the three ingester
 WALs; the chart does not size these yet.
 
+### Requests and limits, and the next fixes (2026-10-23)
+
+Every Deployment and DaemonSet on workload0 without requests or limits
+belongs to an operator that owns its spec: cert-manager, MetalLB, and the
+ACM add-ons the hub deploys. The hosted tailoring now exempts those five
+namespaces through the rules' own variables
+(`ocp4-var-{deployment,daemonset}-limit-namespaces-exempt-regex`), so the
+rules still check every other namespace. **Rescan (03:21):**
+`hosted-ocp4-moderate` 13 FAIL / 22 MANUAL / 50 PASS.
+
+| Remaining | Count | Next |
+|---|---|---|
+| API server audit retention (`maxbackup`, `maxsize`, both API servers) | 4 | Tailor, with the hub's Loki as evidence, once it stores logs |
+| Audit forwarding (`enabled`, `uses-tls`) | 2 | Same: these look for a forwarder inside the cluster |
+| OAuth token timeouts, import allowlist | 3 | oac-apps branch `nist-dev-infra-oauth-grafana` (also allows `ghcr.io/grafana`); merging rolls both workers |
+| Identity provider, kubeadmin | 2 | A Keycloak client |
+| Cluster-wide proxy, ingress CA | 2 | Gaps to record |
+
 ### What is written (2026-10-20)
 
 | Where | What |

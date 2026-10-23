@@ -63,6 +63,7 @@ tracking issue that links each PR. Request a named reviewer on each PR. The stor
 | I5 | Storage VLAN untagged on each node's second port, reaching DHCP, the gateway and the FlashBlade | Switch configuration | Network admins | Each node's `br-storage` has a DHCP lease (after I6) |
 | I6 | The hub's values: `external-secrets.yaml`, and `portworx.yaml` with `portworx.tls: true` and `nfs_policy: export-policy-tls` (CCI-MOC/oac-apps#148) | `oac-apps` `values/<hub>/local-cluster/` (#142) | Hub owner | `hub-external-secrets` and `hub-portworx` Synced; `pure-fb-nfsv4` mounts with `xprtsec=tls` |
 | I7 | `tlshd` on every node, before the first volume: the realm certificate in `cluster/<hub>/nfs-tls-ca`, and the `nfs-tls` values with `storageClass.enabled: false` | AWS Secrets Manager; `oac-apps` `values/<hub>/local-cluster/nfs-tls.yaml` | Hub owner (the certificate comes from the FlashBlade admins) | `tlshd` Ready on every node, one default StorageClass that mounts with `xprtsec=tls`, and no FlashBlade volume without it |
+| I8 | Object storage: `cluster/<hub>/pure-cosi` with `PUREFB_REALM=<realm>` (the realm's bare name) and `S3_ENDPOINT=s3.<hub domain>`; the pure-cosi and object-storage-proxy values; a DNS record for `s3.<hub domain>` to the proxy's cluster IP | AWS Secrets Manager; `oac-apps` (#168); `moc-aws` (#59) | Hub owner, moc-aws maintainers | A BucketClaim is Ready, and the hub resolves `s3.<hub domain>`. ACM observability and audit logging both need it |
 
 `tests/hub-preflight.sh <hub>` checks I2 to I7, read-only. Run it before
 calling any of them done.
@@ -97,6 +98,15 @@ class at all:
 - Re-running the realm playbook makes a new certificate. Update
   `cluster/<hub>/nfs-tls-ca` when that happens, or every mount fails.
 
+**Object storage (I8) fails quietly.** On nist-dev-infra the realm and
+endpoint fields of `pure-cosi` held the wrong values, and the FlashBlade
+answered every bucket request with "Realm does not exist" for five hours,
+and the only visible symptom was ACM observability's pods waiting. Check the driver's log after the first BucketClaim. The proxy's
+pods also need their Certificate before they can start; until oac-apps
+#169 merges, its sync deadlocks on a new hub, and the Certificate has to
+be applied by hand ([nist-dev-infra/README.md](nist-dev-infra/README.md),
+"Object storage on the hub").
+
 I6 can merge before the others, and is a useful test of I5: the storage
 bridges come up as soon as it applies. But until I2 to I4 are done, the
 `hub-portworx` sync fails, and ArgoCD does not retry the same commit. When
@@ -126,7 +136,12 @@ Upstream: `infra-cluster-deployment.md`. Hub name below: `<hub>`.
    Broadwell nodes, reconnection bursts after drains pushed etcd past its
    4,096-thread limit and crashed it. Extra cores add no handshake
    throughput, only contention ([nist-dev-infra/README.md](nist-dev-infra/README.md),
-   "Why etcd had thousands of handshakes in flight" and after).
+   "Why etcd had thousands of handshakes in flight" and after). If only
+   larger nodes are available, boot them with `nr_cpus=40`
+   ([nist-dev-infra/nr-cpus-machineconfig.yaml](nist-dev-infra/nr-cpus-machineconfig.yaml)).
+   `maxcpus` does not hold on RHCOS: a udev rule brings the other CPUs
+   back online. On nist-dev-infra the NotReady spells went from about one
+   an hour to a few a day.
 
 ### 2. Install: the decisions that cannot change later
 
@@ -168,6 +183,10 @@ Use the full name, `applications.argoproj.io`, when checking ArgoCD.
 ACM installs a second `Application` type (`app.k8s.io`), and plain
 `oc get applications` then lists that one instead, which is empty.
 
+When a sync fails, ArgoCD retries it at the commit it started with. A fix
+pushed during the retries waits until they run out (five, about 15 minutes
+here); to skip that, terminate the operation.
+
 ### 4. The hub's oac-apps PR
 
 This is one PR to the repo, with the hub's usual files plus the compliance
@@ -190,7 +209,13 @@ Also set:
   hub's Portworx class is the TLS class (I6, I7).
 - **`namespace-guardrails`:** the hub's own namespaces. Start from what
   HyperShift creates in its control-plane namespaces (HUB-SPOKE.md §6).
-- **Log forwarding:** when B1 exists (P9).
+- **Log forwarding:** to B1 when it exists (P9). Until then, the
+  `audit-logging` chart keeps audit logs on the hub for 90 days: a
+  LokiStack on a COSI bucket (I8), and a forwarder for the hub's own audit
+  logs and the hosted API servers' `audit-logs` sidecars. Set
+  `loki.storageClassName` (LokiStack has no default) and an operator
+  channel the hub's catalog has (`stable-6.6` on 4.22). 1x.extra-small
+  claims about 620 GiB of PVCs, 450 GiB of it ingester WAL.
 
 ### 5. First sync: node hardening reboots every node
 
@@ -351,6 +376,13 @@ oc get infraenv -n hardware-inventory hardware-inventory -o jsonpath='{.status.i
 The agents appear with `oc get agents -n hardware-inventory`. Label them as
 upstream.
 
+**A worker with two DHCP NICs needs one of them `never-default`.**
+`configure-ovs` builds `br-ex` on whichever NIC holds the default route at
+boot, and if both get one from DHCP, any reboot can pick the storage NIC
+and leave the node unreachable. Set a NetworkManager profile with
+`never-default` on the storage NIC in the NodePool's `machineConfigs`
+(the NIC names depend on the hardware; oac-apps #166).
+
 4. If the cluster's API or ingress will be public, decide that now, and
    record it in the boundary description.
 
@@ -403,6 +435,21 @@ As upstream, with these rules:
    - `tlshd`
    - an ACS SecuredCluster
 
+Two settings in those ApplicationSets matter more than they look:
+
+- **`syncPolicy.preserveResourcesOnDeletion: true`.** When a cluster drops
+  out of the placement, even for a few minutes while a hub node is
+  NotReady, the ApplicationSet deletes its Applications, and without this
+  setting they delete what they made. On nist-dev-infra that removed
+  `openshift-compliance`, `stackrox` (with ACS's init bundle),
+  `openshift-file-integrity` and `metallb-system` from workload0. oac-apps'
+  own ApplicationSets have the same exposure.
+- **Allow rules in an earlier sync wave than default-deny.** ArgoCD reaches
+  a managed cluster through ACM's cluster-proxy, which checks every token
+  with the cluster's API server. A default-deny egress applied first in
+  the add-on namespace cut that off, and ArgoCD could not apply the allow
+  rule that would have fixed it (nine minutes, fixed by hand).
+
 ### 4. Verify and record
 
 From the hub:
@@ -425,10 +472,28 @@ oc get fileintegritynodestatus -n openshift-file-integrity
 
 The ACS SecuredCluster should show as healthy in Central.
 
-What the scan reports inside a hosted cluster is **to verify (E1)**: its
-control plane is on the hub, so some platform checks will report "not
-applicable" or fail. Until E1 is answered, read failures against the
-results expected from E1, not against jetty's.
+What the scan reports inside a hosted cluster (E1, measured on
+nist-dev-workload0, 2026-10-22 and 23):
+
+- **Most platform failures are not real.** 44 of 58 moderate failures
+  check control-plane settings the cluster cannot see. The hub-wide
+  tailoring (`values/<hub>/hosted-clusters/compliance-operator.yaml`)
+  disables only those, each with what was checked on the hub instead.
+- **Requests and limits:** every workload that fails them belongs to an
+  operator that would revert an edit (cert-manager, MetalLB, ACM add-ons).
+  The same tailoring exempts those namespaces through the rules' own
+  variables, so the rules still check everything else.
+- **FIO is not supported on hosted clusters** (RFE-8168), and the scan
+  does not notice: `file-integrity-exists` passes on the object alone.
+  Its AIDE pods need `/etc/kubernetes/static-pod-resources`, which hosted
+  workers do not have; the hardening chart can create it
+  (`nodePool.fioStaticPodResourcesDir`, an unsupported test).
+- **What is left** (13 moderate failures on workload0): API server audit
+  retention and forwarding (6; hosted API servers keep one 10 MB file, so
+  the hub's Loki is the evidence), OAuth token timeouts and the import
+  allowlist (3, in review), the identity provider and kubeadmin (2, need
+  a Keycloak client), and two gaps to record (cluster-wide proxy, ingress
+  CA).
 
 Then archive this cluster's first scan results as its baseline evidence.
 
