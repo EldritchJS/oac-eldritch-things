@@ -165,8 +165,8 @@ Apply in order, as in [nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md)
 apply the hub's ACS init bundle by hand), C (node hardening: reboots every
 node; pause pools first), E (audit logging).
 
-**TODO:** once the compliance charts are upstream (ACS: oac-apps [#181](https://github.com/CCI-MOC/oac-apps/pull/181)),
-replace this step with values on main and the hub's ApplicationSets.
+**TODO:** once the compliance charts are upstream, replace this step with values on main and the hub's ApplicationSets. ACS is the first:
+its chart is on main ([#181](https://github.com/CCI-MOC/oac-apps/pull/181)), not yet used by any ApplicationSet.
 
 ### 3.8 Scan, tailor, verify
 
@@ -179,7 +179,7 @@ BUILD.md Part 1 steps 6 and 7. Archive the first clean results.
 | # | What | Repo | NDI example |
 |---|---|---|---|
 | 4.1 | Agent install service and FIPS discovery image | `oac-apps` | [#156](https://github.com/CCI-MOC/oac-apps/pull/156), [#158](https://github.com/CCI-MOC/oac-apps/pull/158) |
-| 4.2 | Hub-wide values for every hosted cluster: FIPS, node hardening, audit profile, registry allowlist, import allowlist, token timeouts | `oac-apps` `hosted-clusters/<hub>/values.yaml` | [#157](https://github.com/CCI-MOC/oac-apps/pull/157), [#172](https://github.com/CCI-MOC/oac-apps/pull/172) (open) |
+| 4.2 | Hub-wide values for every hosted cluster: FIPS, node hardening, audit profile, registry allowlist, import allowlist, token timeouts | `oac-apps` `hosted-clusters/<hub>/values.yaml` | [#157](https://github.com/CCI-MOC/oac-apps/pull/157), [#172](https://github.com/CCI-MOC/oac-apps/pull/172) |
 | 4.3 | Zones for hosted clusters (`hcp.<zone>`, `hcp-int.<zone>`), an external-dns user, ESO prefixes | `moc-aws` | [#55](https://github.com/CCI-MOC/moc-aws/pull/55) |
 | 4.4 | cert-manager may answer DNS-01 in those zones | `moc-aws` | [#56](https://github.com/CCI-MOC/moc-aws/pull/56) |
 | 4.5 | Wildcards to the hosted-clusters router, for Ignition, Konnectivity, OAuth, and the agents' `api` checks | `moc-aws` | [#57](https://github.com/CCI-MOC/moc-aws/pull/57), [#58](https://github.com/CCI-MOC/moc-aws/pull/58) |

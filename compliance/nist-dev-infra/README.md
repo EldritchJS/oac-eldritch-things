@@ -1155,10 +1155,22 @@ oac-apps [#172](https://github.com/CCI-MOC/oac-apps/pull/172) adds it.
 
 | Remaining (moderate) | Next |
 |---|---|
-| `ocp-allowed-registries-for-import` (also the one CIS failure) | oac-apps [#172](https://github.com/CCI-MOC/oac-apps/pull/172), open; merging rolls both workers |
+| `ocp-allowed-registries-for-import` (also the one CIS failure) | oac-apps [#172](https://github.com/CCI-MOC/oac-apps/pull/172) (merged that evening, below) |
 | `oauth-or-oauthclient-inactivity-timeout`, `-token-maxage` | [#172](https://github.com/CCI-MOC/oac-apps/pull/172). Likely to fail still, for the same reason as `idp-is-configured`; then tailor them the same way |
-| `default-ingress-ca-replaced` | oac-apps [#175](https://github.com/CCI-MOC/oac-apps/pull/175), open: a Let's Encrypt ingress certificate |
+| `default-ingress-ca-replaced` | oac-apps [#175](https://github.com/CCI-MOC/oac-apps/pull/175): a Let's Encrypt ingress certificate (merged that evening, below) |
 | `cluster-wide-proxy-set` | A recorded gap (POA&M), above |
+
+### Merged, evening (2026-10-23)
+
+Times are EDT. Each PR reached its second approval and merged.
+
+| PR | Merged | On the cluster |
+|---|---|---|
+| [#181](https://github.com/CCI-MOC/oac-apps/pull/181): the ACS chart | 20:11 | Nothing yet: no ApplicationSet uses it |
+| [#175](https://github.com/CCI-MOC/oac-apps/pull/175): workload0's ESO and cert-manager roles, a Let's Encrypt ingress certificate | 20:15 | ESO's `aws-secrets-manager` ClusterSecretStore Valid at 20:28. The ingress Certificate was created and waits for the `letsencrypt-prod-dns01` ClusterIssuer, whose sync Argo retries through flaky Konnectivity after the evening's node outage |
+| [#172](https://github.com/CCI-MOC/oac-apps/pull/172): token timeouts, import allowlist, `ghcr.io/grafana` | 20:20 | On the HostedCluster at once (inactivity 10m, max age 24h, `allowedRegistriesForImport`). The guest's image config has `ghcr.io/grafana`, and grafana-operator went from Failed to Succeeded. The workers had not rolled by 20:27 |
+
+**Next:** the certificate issued and served, then a rescan.
 
 ### What is upstream (2026-10-23)
 
@@ -1171,13 +1183,12 @@ oac-apps [#172](https://github.com/CCI-MOC/oac-apps/pull/172) adds it.
 | moc-aws ([#53](https://github.com/CCI-MOC/moc-aws/pull/53) to [#60](https://github.com/CCI-MOC/moc-aws/pull/60)) | The `nist.int` zone, the hosted-cluster zones and their wildcards, the external-dns user, cert-manager in the hosted zones, the `s3.` record, the hub's and workload0's OIDC providers and ESO and cert-manager roles |
 | moc-dns, everpure-moc, moc-keycloak | Delegation of `nist.int` ([#33](https://github.com/CCI-MOC/moc-dns/pull/33)); FlashBlade realms for the hub ([#26](https://github.com/CCI-MOC/everpure-moc/pull/26)) and workload0 ([#29](https://github.com/CCI-MOC/everpure-moc/pull/29)); workload0's Keycloak client ([#54](https://github.com/CCI-MOC/moc-keycloak/pull/54)) |
 
-**Open in oac-apps:** [#172](https://github.com/CCI-MOC/oac-apps/pull/172)
-(token timeouts, import allowlist, `ghcr.io/grafana`),
-[#175](https://github.com/CCI-MOC/oac-apps/pull/175) (workload0's ESO and
-cert-manager roles, a Let's Encrypt ingress certificate),
-[#181](https://github.com/CCI-MOC/oac-apps/pull/181) (the ACS chart). The
-other compliance charts are still on the fork's `nist-dev-infra-test`
-branch.
+**Merged the evening of 2026-10-23:** [#172](https://github.com/CCI-MOC/oac-apps/pull/172) (token timeouts,
+import allowlist, `ghcr.io/grafana`), [#175](https://github.com/CCI-MOC/oac-apps/pull/175) (workload0's ESO and
+cert-manager roles, a Let's Encrypt ingress certificate), and the ACS chart
+([#181](https://github.com/CCI-MOC/oac-apps/pull/181)), which no ApplicationSet uses yet. Nothing for these
+clusters is open in oac-apps. The other compliance charts are still on
+the fork's `nist-dev-infra-test` branch.
 
 ### Still open (2026-10-23)
 
@@ -1192,6 +1203,6 @@ stages, an identity provider), except:
   ([MASTER-ROUND.md](MASTER-ROUND.md)), the masters stall less often, but
   still do.
 - **external-dns** still uses a stored key, not a web-identity role.
-- **The compliance charts upstream,** after #172, #175 and #181.
+- **The compliance charts upstream.** ACS's chart is on main ([#181](https://github.com/CCI-MOC/oac-apps/pull/181)); the rest follow.
 - **`preserveResourcesOnDeletion`** on oac-apps' own ApplicationSets
   (2026-10-22, above).

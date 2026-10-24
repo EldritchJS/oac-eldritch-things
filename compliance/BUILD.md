@@ -547,10 +547,10 @@ nist-dev-workload0, 2026-10-22 and 23):
   `oauth.mocsso.enabled: true` in the cluster's values. HyperShift
   removes kubeadmin once an identity provider is set. If the OAuth route
   is on an internal zone, only people on that network can finish a login.
-- **What is left** (7 moderate failures on workload0, 2026-10-23): OAuth
-  token timeouts and the import allowlist (3, oac-apps #172), the
-  identity provider and kubeadmin (2, #171), and two gaps to record
-  (cluster-wide proxy, ingress CA).
+- **What was left** (5 moderate failures on workload0, 2026-10-23, after
+  SSO in #171 and tailoring `idp-is-configured`): OAuth token timeouts and
+  the import allowlist (3, oac-apps #172), the ingress CA (#175), and the
+  cluster-wide proxy, a recorded gap. #172 and #175 merged that evening.
 
 Then archive this cluster's first scan results as its baseline evidence.
 

@@ -195,7 +195,8 @@ ApplicationSet syncs. Then, in order:
 3. **Certificates and secrets.** external-secrets, cert-manager and
    cluster-certificates sync with the values from oac-apps [#175](https://github.com/CCI-MOC/oac-apps/pull/175): a Let's
    Encrypt ingress certificate by DNS-01 in `hcp.nist.int.massopen.cloud`.
-   **TODO:** confirm after [#175](https://github.com/CCI-MOC/oac-apps/pull/175) merges.
+   [#175](https://github.com/CCI-MOC/oac-apps/pull/175) merged 2026-10-23; ESO's ClusterSecretStore is Valid.
+   **TODO:** confirm the certificate is issued and the router serves it.
 4. **COO.** Installs without its capacity dashboards (oac-apps [#170](https://github.com/CCI-MOC/oac-apps/pull/170)).
 
 ### 4.3 The compliance stages, from the fork
@@ -212,7 +213,8 @@ Apply on the hub, in order. Each lists everything so far:
 ### 4.4 Scan and verify
 
 BUILD.md Part 2 step 4. Expected on the moderate profile (2026-10-23,
-before [#172](https://github.com/CCI-MOC/oac-apps/pull/172) and [#175](https://github.com/CCI-MOC/oac-apps/pull/175)): 5 FAIL. Each has an owner:
+before [#172](https://github.com/CCI-MOC/oac-apps/pull/172) and [#175](https://github.com/CCI-MOC/oac-apps/pull/175), both since merged): 5 FAIL. Each has an
+owner. **TODO:** the rescan after both:
 
 | FAIL | Closed by |
 |---|---|
@@ -255,8 +257,9 @@ Every fix goes through a PR, as during the build:
 
 ## 7. Still open
 
-- **TODO:** [#172](https://github.com/CCI-MOC/oac-apps/pull/172), [#175](https://github.com/CCI-MOC/oac-apps/pull/175) and [#181](https://github.com/CCI-MOC/oac-apps/pull/181) (the upstream ACS chart) are not merged
-  yet. Update 4.2, 4.4 and the stage tables when they are.
+- **TODO:** [#172](https://github.com/CCI-MOC/oac-apps/pull/172) and [#175](https://github.com/CCI-MOC/oac-apps/pull/175) merged on 2026-10-23;
+  update 4.4 with the rescan. The ACS chart is on main ([#181](https://github.com/CCI-MOC/oac-apps/pull/181)), but
+  no ApplicationSet uses it yet; stage B still installs ACS from the fork.
 - **TODO:** the stages come from the fork's `nist-dev-infra-test` branch.
   Moving the compliance charts to CCI-MOC/oac-apps main is a separate
   piece of work; until then the fork is part of the build.
