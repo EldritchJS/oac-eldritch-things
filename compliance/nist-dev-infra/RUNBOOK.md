@@ -4,6 +4,13 @@
 **TODO**. Nothing here is torn down without the hub owner's explicit
 go-ahead at the time.*
 
+**What it produces today (2026-10-23):** a workload cluster at 1 moderate
+failure (the cluster-wide proxy, a recorded gap) and 0 CIS, and a hub
+that is **not yet compliant**: 19 moderate and 7 CIS failures, listed with
+their fixes in 2.9. The hub's own controls (SSO, API server audit and
+encryption, image allowlists, guardrails on its own namespaces) were
+deferred while the work went into the workload cluster.
+
 This is the order to rebuild the test hub and its first hosted cluster
 from nothing, as they were actually built, so that someone other than the
 original builder can do it. It sequences the steps and points to where
@@ -153,13 +160,33 @@ Apply on the hub, one at a time, in order (README, "Stages"):
 ### 2.8 Scan, tailor, verify
 
 BUILD.md Part 1 steps 6 and 7: scan, fix in git, and the admission policy
-dry runs. Archive the first clean results as the hub's baseline.
+dry runs. Archive the first results as the hub's baseline.
+
+### 2.9 What the hub does not pass yet
+
+nist-dev-infra's scan of 2026-10-24 01:01 UTC: `ocp4-moderate` 19 FAIL,
+`ocp4-cis` 7 FAIL, `ocp4-moderate-node-master` 1 FAIL. A rebuild following
+this runbook reaches the same. Remove rows as fixes land.
+
+| Failing (moderate; * also CIS) | Fix | Status |
+|---|---|---|
+| `ingress-controller-certificate`, `default-ingress-ca-replaced` | `cluster-certificates` values for the hub (`clusterDomain`, the prod issuer): Let's Encrypt API and apps certificates, as on workload0. The CA rule then gets workload0's `ingressCert` tailoring | Planned: small oac-apps PR. The hub's `hub-cluster-certificates` app exists and fails only for want of values |
+| `idp-is-configured`*, `kubeadmin-removed`*, `oauth-or-oauthclient-inactivity-timeout`, `-token-maxage` | Hub SSO: a Keycloak client for the hub (moc-keycloak), `keycloak-oauth` values, and a `tokenConfig` option in that chart. Then remove the kubeadmin password by hand | Planned: needs the Keycloak client (computate) and a small chart change |
+| `audit-profile-set`*, `api-server-encryption-provider-cipher`* | `cluster-certificates` hard-codes `audit.profile: Default` on the APIServer, and nothing enables etcd encryption; `compliance/oac-apps/patches/0001` does both. **etcd encryption is off on this hub.** Enabling it re-encrypts every Secret and ConfigMap: schedule it with someone who can power-cycle the masters | Needs agreement on the chart change (oac-apps maintainers) |
+| `routes-rate-limit`, `route-ip-whitelist` | Annotate the routes made since stage D (16: workload0's hosted routes, ACM observability, ACS). IP allowlists need the allowed client ranges. Operator-owned routes that reset become recorded exceptions | Planned: fork values and `route-rate-limits.sh` |
+| `resource-requests-quota`, `-limits-in-deployment`, `-daemonset`, `-statefulset` | Quotas for the namespaces without one (7), exemptions for operator-owned workloads, as on workload0 | Planned: fork values |
+| `configure-network-policies-namespaces`* | Policies for 20 namespaces, many of them ACM, HyperShift and storage. Each needs its traffic measured first; a wrong policy cuts off a hub component | Partly planned; the rest go in the exception register |
+| `ocp-allowed-registries`*, `-for-import`* | Inventory the hub's images (ACS lists them), then `platform-hardening` `imageConfig.enabled: true` | Planned: fork values, after the inventory |
+| `audit-log-forwarding-uses-tls` | The forwarder sends to the in-cluster LokiStack over service-CA TLS; check the rule's logic, then tailor or fix | To check |
+| `cluster-wide-proxy-set` | None planned | POA&M gap, as on workload0 |
+| `reject-unsigned-images-by-default` (node scan) | A signature policy for every allowed registry | POA&M |
 
 ---
 
 ## 3. What has to be true before workload0
 
-- Hub stages A to E done, scans clean apart from recorded exceptions.
+- Hub stages A to E done. The hub's scans are not clean yet (2.9); the
+  workload cluster does not depend on them.
 - The hub's Central is up, so the cluster's SecuredCluster can join.
 - `auditWriters.clusters` in the hub's audit-logging values lists
   `nist-dev-workload0` (it does on the test branch).

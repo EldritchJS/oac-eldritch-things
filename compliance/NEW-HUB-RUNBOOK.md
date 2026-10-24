@@ -3,6 +3,13 @@
 *Draft, 2026-10-23. For review: not yet run end to end. Open items are
 marked **TODO**.*
 
+**What it produces today (2026-10-23):** a workload cluster at 1 moderate
+failure (the cluster-wide proxy, a recorded gap) and 0 CIS, and a hub that
+is **not yet compliant**: 19 moderate and 7 CIS failures. Each, with its
+fix and status, is in
+[nist-dev-infra/RUNBOOK.md 2.9](nist-dev-infra/RUNBOOK.md#29-what-the-hub-does-not-pass-yet).
+A hub built from this runbook has the same gaps until those fixes land.
+
 This is every step to stand up a compliant (FIPS, NIST 800-171, HIPAA)
 OAC hub and its first hosted workload cluster, including the long-lived
 pieces that a rebuild of an existing pair keeps: DNS zones, the
@@ -170,7 +177,9 @@ its chart is on main ([#181](https://github.com/CCI-MOC/oac-apps/pull/181)), not
 
 ### 3.8 Scan, tailor, verify
 
-BUILD.md Part 1 steps 6 and 7. Archive the first clean results.
+BUILD.md Part 1 steps 6 and 7. Archive the first results. Expect the
+failures in [nist-dev-infra/RUNBOOK.md 2.9](nist-dev-infra/RUNBOOK.md#29-what-the-hub-does-not-pass-yet)
+until their fixes are on main.
 
 ---
 
@@ -249,5 +258,7 @@ applies to any new pair.
 - **TODO:** hosted etcd on FlashBlade NFS is test-only, and it failed on
   2026-10-23 (a stale NFS lock); a supported home for it.
 - **TODO:** a central audit and alert destination (P9).
-- **TODO:** SSO for the hub itself, not only its hosted clusters.
+- **TODO:** the hub's own failures (19 moderate, 7 CIS), including SSO
+  for the hub, API server audit and etcd encryption, image allowlists and
+  guardrails: [nist-dev-infra/RUNBOOK.md 2.9](nist-dev-infra/RUNBOOK.md#29-what-the-hub-does-not-pass-yet).
 - **TODO:** a walk-through by someone who has not built a hub before.
