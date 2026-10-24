@@ -222,12 +222,12 @@ until their fixes are on main.
    cluster-certificates (a Let's Encrypt ingress certificate), and COO
    without capacity dashboards (NDI: [#175](https://github.com/CCI-MOC/oac-apps/pull/175), [#170](https://github.com/CCI-MOC/oac-apps/pull/170)).
 5. **Compliance:** the workload stage files, A to D
-   ([nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) 4.3), with the
+   ([nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) 4.4), with the
    cluster's ACS init bundle by hand and the cluster in the hub's
    `auditWriters.clusters`. The hub-side audit alert comes from a
    `compliance.yaml` in the cluster's directory (NDI: [#167](https://github.com/CCI-MOC/oac-apps/pull/167)).
 6. **Scan, tailor, verify:** BUILD.md Part 2 step 4. Expected leftovers
-   are in [nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) 4.4.
+   are in [nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) 4.5.
 
 ---
 

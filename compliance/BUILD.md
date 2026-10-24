@@ -552,7 +552,7 @@ nist-dev-workload0, 2026-10-22 and 23):
   the import allowlist (3, oac-apps #172), the ingress CA (#175), and the
   cluster-wide proxy, a recorded gap. After #172, #175 and tailoring for
   what HyperShift does not copy to the guest, only the proxy fails
-  (moderate 1, CIS 0; nist-dev-infra/RUNBOOK.md 4.4).
+  (moderate 1, CIS 0; nist-dev-infra/RUNBOOK.md 4.5).
 
 Then archive this cluster's first scan results as its baseline evidence.
 
