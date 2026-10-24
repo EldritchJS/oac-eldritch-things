@@ -1,8 +1,14 @@
 # Building a compliant hub and its workload clusters
 
-*Runbook, 2026-10-14. Not yet run end to end: no compliant hub exists. Steps
-that depend on an unfinished experiment are marked **to verify** with the
-experiment number from [HUB-SPOKE.md](HUB-SPOKE.md) §7.*
+*Method, 2026-10-14, updated with lessons from nist-dev-infra and
+nist-dev-workload0 through 2026-10-23. Steps that depend on an unfinished
+experiment are marked **to verify** with the experiment number from
+[HUB-SPOKE.md](HUB-SPOKE.md) §7.*
+
+This is the why behind each step. For the steps in order, with who acts and
+an example PR for each, see [NEW-HUB-RUNBOOK.md](NEW-HUB-RUNBOOK.md) (a new
+hub) or [nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) (a rebuild of
+nist-dev-infra).
 
 This runbook adds steps to OAC's own procedures. It does not replace them.
 Each part names the upstream document it builds on:
@@ -129,9 +135,10 @@ class at all:
 endpoint fields of `pure-cosi` held the wrong values, and the FlashBlade
 answered every bucket request with "Realm does not exist" for five hours,
 and the only visible symptom was ACM observability's pods waiting. Check the driver's log after the first BucketClaim. The proxy's
-pods also need their Certificate before they can start; until oac-apps
-#169 merges, its sync deadlocks on a new hub, and the Certificate has to
-be applied by hand ([nist-dev-infra/README.md](nist-dev-infra/README.md),
+pods also need their Certificate before they can start. On nist-dev-infra
+the sync deadlocked on that; oac-apps
+[#169](https://github.com/CCI-MOC/oac-apps/pull/169) now issues the
+Certificate first ([nist-dev-infra/README.md](nist-dev-infra/README.md),
 "Object storage on the hub").
 
 I6 can merge before the others, and is a useful test of I5: the storage
