@@ -550,7 +550,9 @@ nist-dev-workload0, 2026-10-22 and 23):
 - **What was left** (5 moderate failures on workload0, 2026-10-23, after
   SSO in #171 and tailoring `idp-is-configured`): OAuth token timeouts and
   the import allowlist (3, oac-apps #172), the ingress CA (#175), and the
-  cluster-wide proxy, a recorded gap. #172 and #175 merged that evening.
+  cluster-wide proxy, a recorded gap. After #172, #175 and tailoring for
+  what HyperShift does not copy to the guest, only the proxy fails
+  (moderate 1, CIS 0; nist-dev-infra/RUNBOOK.md 4.4).
 
 Then archive this cluster's first scan results as its baseline evidence.
 

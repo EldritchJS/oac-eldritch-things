@@ -16,7 +16,7 @@ because of the hub-wide settings, not its own files
 | 1. jetty | Can this stack be made compliant, with GPUs in containers and VMs? | **Yes.** Hardened by hand: node failures 377 → 0, `ocp4-moderate` 25 → 8, both GPU modalities intact | [JETTY.md](JETTY.md), [PLAYBOOK.md](PLAYBOOK.md) |
 | 2. Charts | Can that work ship as oac-apps charts? | **Yes.** Nine charts reproduce jetty: an empty `oc diff` against the live cluster | [oac-apps/README.md](oac-apps/README.md) |
 | 3. nist-dev-infra | Do the charts work on a FIPS hub built the OAC way? | **Yes, in stages.** RHCOS failures 191 → 1 on the masters, storage TLS-only, ACS, etcd backups, NetworkPolicies | [nist-dev-infra/README.md](nist-dev-infra/README.md) |
-| 4. nist-dev-workload0 | Can a compliant hub build a compliant workload cluster? | **Mostly yes.** Two FIPS workers, hardened from first boot (`rhcos4-moderate` 1 failure). With tailoring for the hidden control plane, `hosted-ocp4-moderate` is at 5 failures and CIS at 1, each with an owner. MOC SSO, audit to the hub's Loki. AIDE does not run on hosted workers (RFE-8168) | [nist-dev-infra/README.md](nist-dev-infra/README.md), stage D |
+| 4. nist-dev-workload0 | Can a compliant hub build a compliant workload cluster? | **Mostly yes.** Two FIPS workers, hardened from first boot (`rhcos4-moderate` 1 failure). With tailoring for the hidden control plane, `hosted-ocp4-moderate` is at 1 failure (the cluster-wide proxy, a recorded gap) and CIS at 0. MOC SSO, audit to the hub's Loki. AIDE does not run on hosted workers (RFE-8168) | [nist-dev-infra/README.md](nist-dev-infra/README.md), stage D |
 
 ## Where things stand (2026-10-23)
 
@@ -53,8 +53,8 @@ because of the hub-wide settings, not its own files
 
 - The compliance charts upstream, with branch protection on the repo the
   hubs read (BUILD.md, P1 to P3).
-- The last workload-cluster failures: a rescan after #172 and #175 (both
-  merged 2026-10-23), then OAuth timeout tailoring if needed. The cluster-wide proxy is a recorded POA&M gap.
+- Storage for the first workload cluster: Portworx and NFS over TLS, as
+  on the hub. The cluster-wide proxy is a recorded POA&M gap.
 - Hosted etcd on FlashBlade NFS, accepted for the test only; a later hub
   gives it local disks.
 

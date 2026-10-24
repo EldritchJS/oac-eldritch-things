@@ -196,7 +196,9 @@ ApplicationSet syncs. Then, in order:
    cluster-certificates sync with the values from oac-apps [#175](https://github.com/CCI-MOC/oac-apps/pull/175): a Let's
    Encrypt ingress certificate by DNS-01 in `hcp.nist.int.massopen.cloud`.
    [#175](https://github.com/CCI-MOC/oac-apps/pull/175) merged 2026-10-23; ESO's ClusterSecretStore is Valid.
-   **TODO:** confirm the certificate is issued and the router serves it.
+   Checked: the certificate was issued in about two minutes once the
+   ClusterIssuers synced, and the router serves it. A router pod created
+   before the secret exists waits in ContainerCreating, then starts.
 4. **COO.** Installs without its capacity dashboards (oac-apps [#170](https://github.com/CCI-MOC/oac-apps/pull/170)).
 
 ### 4.3 The compliance stages, from the fork
@@ -212,16 +214,20 @@ Apply on the hub, in order. Each lists everything so far:
 
 ### 4.4 Scan and verify
 
-BUILD.md Part 2 step 4. Expected on the moderate profile (2026-10-23,
-before [#172](https://github.com/CCI-MOC/oac-apps/pull/172) and [#175](https://github.com/CCI-MOC/oac-apps/pull/175), both since merged): 5 FAIL. Each has an
-owner. **TODO:** the rescan after both:
+BUILD.md Part 2 step 4. Expected (workload0, 2026-10-23):
+`hosted-ocp4-moderate` **1 FAIL**, `hosted-ocp4-cis` **0 FAIL**, and the
+worker node profiles compliant. The last failures and what closed them:
 
-| FAIL | Closed by |
+| Was failing | Closed by |
 |---|---|
-| `default-ingress-ca-replaced` | [#175](https://github.com/CCI-MOC/oac-apps/pull/175) |
 | `ocp-allowed-registries-for-import` (also CIS) | [#172](https://github.com/CCI-MOC/oac-apps/pull/172) |
-| `oauth-or-oauthclient-inactivity-timeout`, `-token-maxage` | [#172](https://github.com/CCI-MOC/oac-apps/pull/172), then probably tailoring like `idp-is-configured`. **TODO** |
-| `cluster-wide-proxy-set` | POA&M gap, recorded in the SSP |
+| `oauth-or-oauthclient-inactivity-timeout`, `-token-maxage` | [#172](https://github.com/CCI-MOC/oac-apps/pull/172) sets them on the HostedCluster; tailored (`oauthTokens`), because HyperShift does not copy them to the guest |
+| `default-ingress-ca-replaced` | [#175](https://github.com/CCI-MOC/oac-apps/pull/175)'s Let's Encrypt certificate; tailored (`ingressCert`), because the rule only reads `proxy/cluster` `trustedCA` |
+| `resource-requests-limits-in-deployment`, `resource-requests-quota` | Appeared with External Secrets (#175): `external-secrets` added to the exempt regex, and given a quota |
+| `cluster-wide-proxy-set` | Still fails: a POA&M gap, recorded in the SSP |
+
+A new operator namespace on a hosted cluster brings these two quota and
+limits failures with it, until its guardrails are added.
 
 Archive the first results as the cluster's baseline.
 
@@ -257,9 +263,8 @@ Every fix goes through a PR, as during the build:
 
 ## 7. Still open
 
-- **TODO:** [#172](https://github.com/CCI-MOC/oac-apps/pull/172) and [#175](https://github.com/CCI-MOC/oac-apps/pull/175) merged on 2026-10-23;
-  update 4.4 with the rescan. The ACS chart is on main ([#181](https://github.com/CCI-MOC/oac-apps/pull/181)), but
-  no ApplicationSet uses it yet; stage B still installs ACS from the fork.
+- The ACS chart is on main ([#181](https://github.com/CCI-MOC/oac-apps/pull/181)), but no ApplicationSet uses it
+  yet; stage B still installs ACS from the fork.
 - **TODO:** the stages come from the fork's `nist-dev-infra-test` branch.
   Moving the compliance charts to CCI-MOC/oac-apps main is a separate
   piece of work; until then the fork is part of the build.

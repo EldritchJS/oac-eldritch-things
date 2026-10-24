@@ -1170,7 +1170,29 @@ Times are EDT. Each PR reached its second approval and merged.
 | [#175](https://github.com/CCI-MOC/oac-apps/pull/175): workload0's ESO and cert-manager roles, a Let's Encrypt ingress certificate | 20:15 | ESO's `aws-secrets-manager` ClusterSecretStore Valid at 20:28. The ingress Certificate was created and waits for the `letsencrypt-prod-dns01` ClusterIssuer, whose sync Argo retries through flaky Konnectivity after the evening's node outage |
 | [#172](https://github.com/CCI-MOC/oac-apps/pull/172): token timeouts, import allowlist, `ghcr.io/grafana` | 20:20 | On the HostedCluster at once (inactivity 10m, max age 24h, `allowedRegistriesForImport`). The guest's image config has `ghcr.io/grafana`, and grafana-operator went from Failed to Succeeded. The workers had not rolled by 20:27 |
 
-**Next:** the certificate issued and served, then a rescan.
+The certificate was issued at 20:35, two minutes after Argo got the
+ClusterIssuers through, and the router served it from 20:37 (issuer Let's
+Encrypt YR1, valid to 2027-01-21).
+
+**Rescan (20:39):** `hosted-ocp4-moderate` 6 FAIL, `hosted-ocp4-cis`
+**0 FAIL**. The import allowlist passed. Still failing: the two OAuth
+timeout rules (set on the HostedCluster, which HyperShift does not copy
+to the guest, as with the identity provider), `default-ingress-ca-replaced`
+(it reads only `proxy/cluster` `trustedCA`), the cluster-wide proxy, and
+two new ones from External Secrets: its Deployments have no limits, and
+its namespace had no quota.
+
+The fork's hosted tailoring (`db7a34a`) disabled the OAuth and ingress CA
+rules, with the hub's running OAuth config and the served certificate as
+evidence; exempted `external-secrets` from the limits rule, as for
+cert-manager; and gave the namespace a quota (ESO ships its own
+NetworkPolicies).
+
+**Rescan (20:49):** `hosted-ocp4-moderate` **1 FAIL** / 22 MANUAL / 54
+PASS, `hosted-ocp4-cis` **0 FAIL** / 21 MANUAL / 28 PASS. The one failure
+is `cluster-wide-proxy-set`, the recorded gap. The worker node profiles
+were already compliant. On 2026-10-22 the cluster's first moderate scan
+had 58 failures.
 
 ### What is upstream (2026-10-23)
 
@@ -1202,6 +1224,10 @@ stages, an identity provider), except:
 - **The master spells:** capped at 40 CPUs
   ([MASTER-ROUND.md](MASTER-ROUND.md)), the masters stall less often, but
   still do.
+- **Storage on workload0:** none yet, so its user-workload Prometheus and
+  COO's Perses volumes stay Pending. The realm and its Portworx secret
+  exist; a CA-marked realm certificate, the Portworx values and tlshd on
+  the workers are left.
 - **external-dns** still uses a stored key, not a web-identity role.
 - **The compliance charts upstream.** ACS's chart is on main ([#181](https://github.com/CCI-MOC/oac-apps/pull/181)); the rest follow.
 - **`preserveResourcesOnDeletion`** on oac-apps' own ApplicationSets
