@@ -6,7 +6,7 @@ go-ahead at the time.*
 
 **What it produces today (2026-10-23):** a workload cluster at 1 moderate
 failure (the cluster-wide proxy, a recorded gap) and 0 CIS, and a hub
-that is **not yet compliant**: 17 moderate and 7 CIS failures, listed with
+that is **not yet compliant**: 15 moderate and 7 CIS failures, listed with
 their fixes in 2.9. The hub's own controls (SSO, API server audit and
 encryption, image allowlists, guardrails on its own namespaces) were
 deferred while the work went into the workload cluster.
@@ -164,11 +164,13 @@ dry runs. Archive the first results as the hub's baseline.
 
 ### 2.9 What the hub does not pass yet
 
-nist-dev-infra's scan of 2026-10-24 02:18 UTC: `ocp4-moderate` 17 FAIL,
-`ocp4-cis` 7 FAIL, `ocp4-moderate-node-master` 1 FAIL. Fixed since the
-first count (19): `resource-requests-quota` (quotas for seven namespaces)
-and `audit-log-forwarding-uses-tls` (a scanner false positive, tailored),
-both in fork commit `325ad26`. A rebuild following
+nist-dev-infra's scans of 2026-10-24 (UTC): `ocp4-moderate` 15 FAIL
+(02:42), `ocp4-cis` 7 FAIL (02:18), `ocp4-moderate-node-master` 1 FAIL.
+Fixed since the first count (19), on the fork: `resource-requests-quota`
+(quotas for seven namespaces) and `audit-log-forwarding-uses-tls` (a
+scanner false positive, tailored), in `325ad26`; the DaemonSet and
+StatefulSet limits rules (operator namespaces exempted, `vendorLimits`),
+in `8490e2c`. A rebuild following
 this runbook reaches the same. Remove rows as fixes land.
 
 | Failing (moderate; * also CIS) | Fix | Status |
@@ -177,7 +179,7 @@ this runbook reaches the same. Remove rows as fixes land.
 | `idp-is-configured`*, `kubeadmin-removed`*, `oauth-or-oauthclient-inactivity-timeout`, `-token-maxage` | Hub SSO: a Keycloak client for the hub (moc-keycloak), `keycloak-oauth` values, and a `tokenConfig` option in that chart. Then remove the kubeadmin password by hand | Planned: needs the Keycloak client (computate) and a small chart change |
 | `audit-profile-set`*, `api-server-encryption-provider-cipher`* | `cluster-certificates` hard-codes `audit.profile: Default` on the APIServer, and nothing enables etcd encryption; `compliance/oac-apps/patches/0001` does both. **etcd encryption is off on this hub.** Enabling it re-encrypts every Secret and ConfigMap: schedule it with someone who can power-cycle the masters | Needs agreement on the chart change (oac-apps maintainers) |
 | `routes-rate-limit`, `route-ip-whitelist` | Annotate the routes made since stage D (16: workload0's hosted routes, ACM observability, ACS). IP allowlists need the allowed client ranges. Operator-owned routes that reset become recorded exceptions | Planned: fork values and `route-rate-limits.sh` |
-| `resource-requests-limits-in-deployment`, `-daemonset`, `-statefulset` | Exemptions for operator-owned workloads, as on workload0 | Planned: fork values |
+| `resource-requests-limits-in-deployment` | Operator namespaces are exempted (`8490e2c`); the last two Deployments are oac-apps' own COSI controller and driver, which get requests and limits | oac-apps [#185](https://github.com/CCI-MOC/oac-apps/pull/185), open |
 | `configure-network-policies-namespaces`* | Policies for 20 namespaces, many of them ACM, HyperShift and storage. Each needs its traffic measured first; a wrong policy cuts off a hub component | Partly planned; the rest go in the exception register |
 | `ocp-allowed-registries`*, `-for-import`* | Inventory the hub's images (ACS lists them), then `platform-hardening` `imageConfig.enabled: true` | Planned: fork values, after the inventory |
 | `cluster-wide-proxy-set` | None planned | POA&M gap, as on workload0 |
