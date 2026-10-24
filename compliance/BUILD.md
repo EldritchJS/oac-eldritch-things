@@ -1,4 +1,4 @@
-# Building a compliant hub and its workload clusters
+# How a compliant hub and its workload clusters are built
 
 *Method, 2026-10-14, updated with lessons from nist-dev-infra and
 nist-dev-workload0 through 2026-10-23. Steps that depend on an unfinished
@@ -10,7 +10,7 @@ an example PR for each, see [NEW-HUB-RUNBOOK.md](NEW-HUB-RUNBOOK.md) (a new
 hub) or [nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) (a rebuild of
 nist-dev-infra).
 
-This runbook adds steps to OAC's own procedures. It does not replace them.
+The method adds steps to OAC's own procedures. It does not replace them.
 Each part names the upstream document it builds on:
 
 - `oac-apps/docs/infra-cluster-deployment.md` (hub)

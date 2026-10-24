@@ -453,7 +453,7 @@ automated way to prove it still works on the other side.
 | [nist-dev-infra/README.md](nist-dev-infra/README.md) | **Test:** the compliance charts on the nist-dev-infra hub, in stages, from the fork's `nist-dev-infra-test` branch |
 | [nist-dev-infra/STORAGE-BRINGUP.md](nist-dev-infra/STORAGE-BRINGUP.md) | **Notes:** the steps that give an OAC hub storage, and ways to streamline them |
 | [vms/gpu/OPTIONS.md](vms/gpu/OPTIONS.md) | **Options:** GPUs for VMs on OAC: passthrough, vGPU, and what each takes on compliant and non-compliant spokes |
-| [BUILD.md](BUILD.md) | **Runbook:** building a compliant hub, then a compliant workload cluster on it — prerequisites, steps, checks; not yet run |
+| [BUILD.md](BUILD.md) | **Method:** why each step of building a compliant hub and its workload clusters is there. The steps themselves are in [NEW-HUB-RUNBOOK.md](NEW-HUB-RUNBOOK.md) |
 | [PATCHING.md](PATCHING.md) | Patch cadence — draft SSP text, current state, ACS policy proposal |
 | [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md) | Exception register for every privileged / host-access workload and wildcard-RBAC operator |
 | `manifests/` | Everything applied, in numeric order |
