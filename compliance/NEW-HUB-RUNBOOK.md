@@ -5,7 +5,7 @@ marked **TODO**.*
 
 **What it produces today (2026-10-23):** a workload cluster at 1 moderate
 failure (the cluster-wide proxy, a recorded gap) and 0 CIS, and a hub that
-is **not yet compliant**: 19 moderate and 7 CIS failures. Each, with its
+is **not yet compliant**: 17 moderate and 7 CIS failures. Each, with its
 fix and status, is in
 [nist-dev-infra/RUNBOOK.md 2.9](nist-dev-infra/RUNBOOK.md#29-what-the-hub-does-not-pass-yet).
 A hub built from this runbook has the same gaps until those fixes land.
@@ -258,7 +258,7 @@ applies to any new pair.
 - **TODO:** hosted etcd on FlashBlade NFS is test-only, and it failed on
   2026-10-23 (a stale NFS lock); a supported home for it.
 - **TODO:** a central audit and alert destination (P9).
-- **TODO:** the hub's own failures (19 moderate, 7 CIS), including SSO
+- **TODO:** the hub's own failures (17 moderate, 7 CIS), including SSO
   for the hub, API server audit and etcd encryption, image allowlists and
   guardrails: [nist-dev-infra/RUNBOOK.md 2.9](nist-dev-infra/RUNBOOK.md#29-what-the-hub-does-not-pass-yet).
 - **TODO:** a walk-through by someone who has not built a hub before.
