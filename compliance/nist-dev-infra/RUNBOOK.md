@@ -6,7 +6,8 @@ go-ahead at the time.*
 
 **What it produces today (2026-10-23):** a workload cluster at 1 moderate
 failure (the cluster-wide proxy, a recorded gap) and 0 CIS, and a hub
-that is **not yet compliant**: 15 moderate and 7 CIS failures, listed with
+that is **not yet compliant**: 12 failing rules (5 of them also in
+CIS), two of them POA&M items, listed with
 their fixes in 2.9. The hub's own controls (SSO, API server audit and
 encryption, image allowlists, guardrails on its own namespaces) were
 deferred while the work went into the workload cluster.
@@ -164,17 +165,36 @@ dry runs. Archive the first results as the hub's baseline.
 
 ### 2.9 What the hub does not pass yet
 
-nist-dev-infra's scans of 2026-10-24 (UTC): `ocp4-moderate` 15 FAIL
-(02:42), `ocp4-cis` 7 FAIL (02:18), `ocp4-moderate-node-master` 1 FAIL.
-Fixed since the first count (19), on the fork: `resource-requests-quota`
-(quotas for seven namespaces) and `audit-log-forwarding-uses-tls` (a
-scanner false positive, tailored), in `325ad26`; the DaemonSet and
-StatefulSet limits rules (operator namespaces exempted, `vendorLimits`),
-in `8490e2c`. A rebuild following
-this runbook reaches the same. Remove rows as fixes land.
+**12 distinct rules** (2026-10-24). The last complete `ocp4-moderate`
+scan (03:13 UTC) had 13; `routes-rate-limit` was fixed after it. Five of
+the 12 are also in `ocp4-cis`, so CIS should show 5 and the master node
+scan 0 once rescanned (the hub's nightly scan confirms them). A rebuild
+following this runbook reaches the same. Remove rows as fixes land.
 
-| Failing (moderate; * also CIS) | Fix | Status |
+Fixed so far, from 19 (moderate) and 7 (CIS):
+
+| Rule | Fix |
+|---|---|
+| `resource-requests-quota` | Quotas for seven namespaces (fork `325ad26`) |
+| `audit-log-forwarding-uses-tls` | A scanner false positive: a `lokiStack` output has no url. Tailored (`325ad26`) |
+| `resource-requests-limits-in-daemonset`, `-statefulset` | Operator-owned namespaces exempted, rationale `vendorLimits` (`8490e2c`) |
+| `ocp-allowed-registries`*, `-for-import`*, and the node scan's `reject-unsigned-images-by-default` | A registry allowlist from an inventory of every image reference on the hub (`1c277e3`). All 248 running images matched it; the change reloaded CRI-O on each master, without reboots. The COSI controller comes from a staging registry at a release-candidate tag: a supply-chain gap to record |
+| `routes-rate-limit` | `route-rate-limits.sh` on the eight routes made since stage D, applied 2026-10-24 03:28 UTC. The operators kept the earlier annotations; check the nightly scan for any they reset |
+
+Still failing (* also CIS):
+
+| Rule | Fix | Status |
 |---|---|---|
+| `ingress-controller-certificate`, `default-ingress-ca-replaced` | `cluster-certificates` values for the hub: a Let's Encrypt apps certificate, as on workload0, then workload0's `ingressCert` tailoring for the CA rule. The API certificate stays off for now (agents and kubeconfigs trust the current CA) | oac-apps [#184](https://github.com/CCI-MOC/oac-apps/pull/184), open. After merging, check that workload0's audit forwarding still reaches the hub's Loki |
+| `resource-requests-limits-in-deployment` | Requests and limits for oac-apps' own COSI controller and driver, the last two without them | oac-apps [#185](https://github.com/CCI-MOC/oac-apps/pull/185), open |
+| `audit-profile-set`* | `platform-hardening` `apiServerAudit`: WriteRequestBodies, server-side applied. Nothing else renders the APIServer on this hub once [#184](https://github.com/CCI-MOC/oac-apps/pull/184) keeps `certificates.api` off | Written, on branch `nist-dev-infra-audit-profile` (fork). Rolls the kube-apiservers: push when the masters are steady |
+| `idp-is-configured`*, `kubeadmin-removed`*, `oauth-or-oauthclient-inactivity-timeout`, `-token-maxage` | Hub SSO: a Keycloak client, then `keycloak-oauth` values and a `tokenConfig` option in that chart. Grant cluster-admin to an SSO group before removing the kubeadmin password; the admin kubeconfig stays as break-glass | moc-keycloak [#55](https://github.com/CCI-MOC/moc-keycloak/pull/55), open; the oac-apps change follows |
+| `route-ip-whitelist` | Allowed client ranges on every route | Needs the ranges agreed (week of 2026-10-26) |
+| `configure-network-policies-namespaces`* | Policies for 20 namespaces, many of them ACM, HyperShift and storage. Each needs its traffic measured first; a wrong policy cuts off a hub component | Week of 2026-10-26; what cannot be measured goes in the exception register |
+| `api-server-encryption-provider-cipher`* | etcd encryption (`aesgcm`). On this hub it re-encrypts every Secret and ConfigMap on masters that stall under load | **POA&M** (decided 2026-10-24): enabled at install on the replacement hub, where etcd starts empty |
+| `cluster-wide-proxy-set` | None planned | **POA&M**, as on workload0 |
+
+---|---|---|
 | `ingress-controller-certificate`, `default-ingress-ca-replaced` | `cluster-certificates` values for the hub (`clusterDomain`, the prod issuer): Let's Encrypt API and apps certificates, as on workload0. The CA rule then gets workload0's `ingressCert` tailoring | oac-apps [#184](https://github.com/CCI-MOC/oac-apps/pull/184), open (ingress only). Then verify workload0's audit forwarding still reaches the hub's Loki |
 | `idp-is-configured`*, `kubeadmin-removed`*, `oauth-or-oauthclient-inactivity-timeout`, `-token-maxage` | Hub SSO: a Keycloak client for the hub (moc-keycloak), `keycloak-oauth` values, and a `tokenConfig` option in that chart. Then remove the kubeadmin password by hand | Planned: needs the Keycloak client (computate) and a small chart change |
 | `audit-profile-set`*, `api-server-encryption-provider-cipher`* | `cluster-certificates` hard-codes `audit.profile: Default` on the APIServer, and nothing enables etcd encryption; `compliance/oac-apps/patches/0001` does both. **etcd encryption is off on this hub.** Enabling it re-encrypts every Secret and ConfigMap: schedule it with someone who can power-cycle the masters | Needs agreement on the chart change (oac-apps maintainers) |

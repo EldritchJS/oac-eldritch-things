@@ -1224,6 +1224,13 @@ stages, an identity provider), except:
 - **The master spells:** capped at 40 CPUs
   ([MASTER-ROUND.md](MASTER-ROUND.md)), the masters stall less often, but
   still do.
+- **The hub's own compliance:** 12 failing rules on 2026-10-24, down
+  from 19 that night (quotas, a tailored false positive, operator
+  exemptions, a registry allowlist, route rate limits). Four more are in
+  review and four wait on hub SSO; etcd encryption and the proxy are
+  POA&M items. Each, with its fix, is in [RUNBOOK.md](RUNBOOK.md) 2.9.
+  The masters had four spells that night (02:49 to about 03:45 UTC), so
+  changes that restart the control plane wait for a quiet hub.
 - **Storage on workload0:** none yet, so its user-workload Prometheus and
   COO's Perses volumes stay Pending. The realm and its Portworx secret
   exist; a CA-marked realm certificate, the Portworx values and tlshd on
