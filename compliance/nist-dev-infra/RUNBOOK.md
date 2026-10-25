@@ -380,7 +380,7 @@ export KUBECONFIG=$HUB
 for s in $(oc -n openshift-compliance get compliancescans -o name); do
   oc -n openshift-compliance annotate $s compliance.openshift.io/rescan= --overwrite
 done
-oc -n openshift-compliance get compliancescans                # all DONE, about 30 minutes
+oc -n openshift-compliance get compliancescans                # all DONE, about 15 minutes
 oc -n openshift-compliance get compliancecheckresults -l compliance.openshift.io/check-status=FAIL
 ```
 
@@ -397,7 +397,9 @@ APPLY=1 $RB/route-rate-limits.sh    # annotates them
 Re-run it after any operator upgrade: an operator can drop the
 annotations.
 
-**12 distinct rules still fail** (2026-10-24). Remove rows as fixes land.
+**12 distinct rules still fail** (nightly scan, 2026-10-25): 12 in
+moderate, 5 of them also in CIS, none in the three node scans. Remove
+rows as fixes land.
 With everything in the Status column done, only the two POA&M items
 remain.
 
@@ -408,8 +410,8 @@ Fixed so far, from 19 (moderate) and 7 (CIS):
 | `resource-requests-quota` | Quotas for seven namespaces (fork `325ad26`) |
 | `audit-log-forwarding-uses-tls` | A scanner false positive: a `lokiStack` output has no url. Tailored (`325ad26`) |
 | `resource-requests-limits-in-daemonset`, `-statefulset` | Operator-owned namespaces exempted, rationale `vendorLimits` (`8490e2c`) |
-| `ocp-allowed-registries`*, `-for-import`*, and the node scan's `reject-unsigned-images-by-default` | A registry allowlist from an inventory of every image reference on the hub (`1c277e3`). All 248 running images matched it; the change reloaded CRI-O on each master, without reboots. The COSI controller comes from a staging registry at a release-candidate tag: a supply-chain gap to record. To confirm on the nightly scan of 2026-10-25 |
-| `routes-rate-limit` | `route-rate-limits.sh`, above |
+| `ocp-allowed-registries`*, `-for-import`*, and the node scan's `reject-unsigned-images-by-default` | A registry allowlist from an inventory of every image reference on the hub (`1c277e3`). All 248 running images matched it; the change reloaded CRI-O on each master, without reboots. The COSI controller comes from a staging registry at a release-candidate tag: a supply-chain gap to record. Confirmed passing 2026-10-25. Side effect: `openshift-samples` is Degraded, as the allowlist blocks its imagestreams; fix not yet chosen (`samplesRegistry`, or samples `Removed`) |
+| `routes-rate-limit` | `route-rate-limits.sh`, above. Confirmed passing 2026-10-25 |
 
 Still failing (* also CIS):
 
