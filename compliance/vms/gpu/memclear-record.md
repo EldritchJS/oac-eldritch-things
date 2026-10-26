@@ -23,7 +23,11 @@ loaded. Every sampled word on every GPU read zero, both times:
 - 2026-10-20, `HANDOFF=restart`: the same VM, stopped and started.
 - 2026-10-26, `HANDOFF=new-vm`: the VM and its disk deleted, and a new VM
   in a second project took the same four GPUs. The control saw the
-  pattern in 98.7% of sampled words; afterwards none.
+  pattern in 98.7% of sampled words; afterwards none. Run again the same
+  day with a positive control after the scan: a value written through the
+  same window to 4 KiB of every GiB read back on all four GPUs (80,896 of
+  80,896 words each), so the scan was reading memory, and its zeros are
+  zeros.
 
 README.md, "Is GPU memory cleared between tenants?", has the detail.
 
@@ -49,11 +53,6 @@ One node, one firmware. Sampled 256 KiB per GiB, not every byte. Which
 component clears the memory is not known, only that it is clear before
 the next guest can read it.
 
-No positive control after the handback: the pattern was seen through
-PRAMIN while held, but nothing was written and read back through PRAMIN
-in the new guest. Reads that cannot reach memory at all would also show
-nothing. Every word read exactly zero; on these GPUs a register that is
-not there reads 0xbadf5040, not zero (pramin.py), which suggests, but does
-not show, that memory out of reach would not read as zero either. A write
-and read-back through PRAMIN in the new guest would settle it.
-`test-gpu-memclear.sh` does that now (step 6); it has not run yet.
+The 2026-10-20 restart run and the first 2026-10-26 run had no positive
+control after the handback; the second 2026-10-26 run did (step 6 of
+`test-gpu-memclear.sh`).
