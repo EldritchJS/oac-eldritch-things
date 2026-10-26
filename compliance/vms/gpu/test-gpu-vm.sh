@@ -608,6 +608,10 @@ sudo modprobe nvidia || true"
     if printf '%s' "${SSH_OUT}" | grep -qiE 'NVIDIA|H100|A100|L40'; then
       pass "Tier 2 — nvidia-smi reports the card from inside the guest"
       TIER2_OK=1
+      # The host has no NVIDIA driver in passthrough mode, so only a guest
+      # can read the firmware. For TESTED_VBIOS in memclear-record.md.
+      guest_ssh 'nvidia-smi --query-gpu=vbios_version --format=csv,noheader 2>&1 | sort -u' 60 \
+        && echo "  vbios=$(printf '%s' "${SSH_OUT}" | tr '\n' ' ')"
     else
       fail "Tier 2 — nvidia-smi ran but did not report a GPU"
     fi

@@ -16,7 +16,7 @@ export KUBECONFIG=...
 
 | Level | Checks |
 |---|---|
-| Read-only | Nodes Ready; one default StorageClass. Compliant clusters: FIPS on every node (T-01), default StorageClass is NFS over TLS. Virtualization: HyperConverged healthy, VM-capable nodes and virt-handler, ReadWriteMany for live migration. GPUs: ClusterPolicy ready, both GPU modes (T-06, T-07), `vfio_iommu_type1` and the IOMMU on passthrough nodes (not `amd_iommu=off`, groups present). GPU VMs (`../lib/gpu-vm-checks.py`): one tenant's GPU VMs per node, no GPU VM with `evictionStrategy` LiveMigrate (its own or the HyperConverged's), every passthrough resource a node advertises permitted on both CRs. Billing (T-17) last |
+| Read-only | Nodes Ready; one default StorageClass. Compliant clusters: FIPS on every node (T-01), default StorageClass is NFS over TLS. Virtualization: HyperConverged healthy, VM-capable nodes and virt-handler, ReadWriteMany for live migration. GPUs: ClusterPolicy ready, both GPU modes (T-06, T-07), `vfio_iommu_type1` and the IOMMU on passthrough nodes (not `amd_iommu=off`, groups present). GPU VMs (`../lib/gpu-vm-checks.py`): one tenant's GPU VMs per node, no GPU VM with `evictionStrategy` LiveMigrate (its own or the HyperConverged's), every passthrough resource a node advertises permitted on both CRs, no GPU VM on a `containerDisk` (WARN), `sandboxWorkloads` on wherever a node is labelled for VMs. Passthrough nodes compared with what the memory-clearing test ran on (`../vms/gpu/memclear-record.md`: kernel, device, reset method; WARN until the GPU firmware is recorded). Billing (T-17) last |
 | `--functional` | `../vms/test-vm.sh`, `test-vm-storage.sh`, `test-vm-migration.sh` in a throwaway project |
 | `--gpu` | `test-gpu-pod.sh` (a CUDA sample in a pod) and `../vms/gpu/test-gpu-vm.sh` (CUDA in a VM) |
 
@@ -86,7 +86,8 @@ they flag things needing a human, not broken things.
 
 `./test-gpu-vm-checks.sh` feeds `lib/gpu-vm-checks.py` synthetic nodes, VMs
 and CRs, so each FAIL path runs: two tenants' GPU VMs on one node, a GPU VM
-that would block drains, a passthrough resource the webhook would reject. A
+that would block drains, a passthrough resource the webhook would reject, a
+GPU VM on a `containerDisk`, a VM label the GPU Operator ignores. A
 properly set up cluster only ever shows the PASS side. Both HyperConverged
 layouts are covered (v1 keeps the settings under `spec.virtualization`).
 

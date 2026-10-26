@@ -16,13 +16,23 @@ Each check turns a finding from ../vms/gpu/README.md into a rule:
              both the HyperConverged and the KubeVirt CR, with
              externalResourceProvider true. Otherwise the webhook rejects
              GPU VMs that ask for it.
+  disk       No GPU VM boots from a containerDisk. That combination hung on
+             CNV 4.22.9 (jetty, 2026-10-01; cause unknown), so it is a WARN
+             that names the running CNV: retest it when CNV changes.
+  sandbox    A node labelled for VMs needs sandboxWorkloads on in the GPU
+             Operator's ClusterPolicy, or the label does nothing. A
+             defaultWorkload other than container sends every unlabelled GPU
+             node to VMs, which should be a choice: WARN.
 
 Usage: gpu-vm-checks.py <nodes.json> <vms.json> <hco.json> <kubevirt.json>
+                        <clusterpolicy.json>
 
   nodes.json     oc get nodes -o json
   vms.json       oc get vm,vmi -A -o json
   hco.json       oc get hyperconverged -A -o json
   kubevirt.json  oc get kubevirt -A -o json
+  clusterpolicy.json  oc get clusterpolicy -o json  (an empty list without
+                 the GPU Operator)
 
 Prints tab-separated lines:  LEVEL  CHECK  DETAIL   (LEVEL is PASS, FAIL or
 WARN). Fixtures and negative tests: ../tests/test-gpu-vm-checks.sh.
@@ -119,6 +129,49 @@ def check_permitted(nodes, hco_spec, kv_spec):
     return out
 
 
+def check_disk(vms, cnv):
+    out = []
+    for o in vms:
+        if o["kind"] != "VirtualMachine":
+            continue
+        spec = o["spec"].get("template", {}).get("spec", {})
+        if not gpu_devices(spec):
+            continue
+        cd = [v["name"] for v in spec.get("volumes", []) if "containerDisk" in v]
+        name = f"{o['metadata']['namespace']}/{o['metadata']['name']}"
+        if cd:
+            out.append(("WARN", "disk", f"GPU VM {name} boots from containerDisk {', '.join(cd)}: "
+                        f"hung with a GPU on CNV 4.22.9; running CNV {cnv or 'unknown'}. "
+                        "Use a DataVolume, or retest"))
+        else:
+            out.append(("PASS", "disk", f"GPU VM {name} uses no containerDisk"))
+    return out or [("PASS", "disk", "no GPU VM defined")]
+
+
+def check_sandbox(nodes, policies):
+    vm_nodes = [n["metadata"]["name"] for n in nodes
+                if n["metadata"].get("labels", {}).get(MODE_LABEL, "").startswith("vm-")]
+    if not policies:
+        return [("FAIL", "sandbox", f"no ClusterPolicy, but {', '.join(vm_nodes)} labelled for VMs")] \
+            if vm_nodes else []
+    sw = policies[0].get("spec", {}).get("sandboxWorkloads") or {}
+    out = []
+    if sw.get("enabled"):
+        out.append(("PASS", "sandbox", "sandboxWorkloads enabled"))
+    elif vm_nodes:
+        out.append(("FAIL", "sandbox", f"sandboxWorkloads off, so the VM label on "
+                    f"{', '.join(vm_nodes)} does nothing"))
+    else:
+        out.append(("PASS", "sandbox", "sandboxWorkloads off, and no node labelled for VMs"))
+    if sw.get("enabled"):
+        dw = sw.get("defaultWorkload") or "container"
+        if dw == "container":
+            out.append(("PASS", "sandbox", "defaultWorkload container: only labelled nodes serve VMs"))
+        else:
+            out.append(("WARN", "sandbox", f"defaultWorkload {dw}: every unlabelled GPU node serves VMs"))
+    return out
+
+
 def hco_settings(hco):
     """HyperConverged v1 (CNV 4.22) moved these under spec.virtualization;
     v1beta1 keeps them at spec. Read the new place first, as T-07 does."""
@@ -127,16 +180,20 @@ def hco_settings(hco):
     return {k: virt.get(k, spec.get(k)) for k in ("evictionStrategy", "permittedHostDevices")}
 
 
-def main(nodes_f, vms_f, hco_f, kv_f):
+def main(nodes_f, vms_f, hco_f, kv_f, cp_f):
     nodes, vms = items(nodes_f), items(vms_f)
-    hcos, kvs = items(hco_f), items(kv_f)
+    hcos, kvs, cps = items(hco_f), items(kv_f), items(cp_f)
     hco_spec = hco_settings(hcos[0]) if hcos else {}
     kv_spec = kvs[0].get("spec", {}).get("configuration", {}) if kvs else {}
-    for line in check_tenancy(vms) + check_eviction(vms, hco_spec) + check_permitted(nodes, hco_spec, kv_spec):
+    cnv = next((v.get("version") for v in (hcos[0].get("status", {}).get("versions") or [])
+                if v.get("name") == "operator"), "") if hcos else ""
+    for line in (check_tenancy(vms) + check_eviction(vms, hco_spec)
+                 + check_permitted(nodes, hco_spec, kv_spec) + check_disk(vms, cnv)
+                 + check_sandbox(nodes, cps)):
         print("\t".join(line))
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 5:
+    if len(sys.argv) != 6:
         sys.exit(__doc__)
     main(*sys.argv[1:])

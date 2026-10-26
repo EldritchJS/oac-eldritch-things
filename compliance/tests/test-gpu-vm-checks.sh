@@ -3,7 +3,8 @@
 #
 # The checks guard situations a healthy cluster should never be in: GPU VMs
 # from two tenants on one node, a GPU VM that blocks drains, a passthrough
-# resource the webhook would reject. A live cluster that is set up properly
+# resource the webhook would reject, a GPU VM on a containerDisk, a VM label
+# the GPU Operator ignores. A live cluster that is set up properly
 # can only show the PASS side, so each FAIL path is exercised here with
 # synthetic objects. Calls the same file cluster-acceptance.sh uses.
 set -uo pipefail
@@ -35,15 +36,18 @@ for a in sys.argv[1:]:
 print(json.dumps({"items": items}))
 EOF
 }
-vms() { # vms <kind:ns/name:node-or-strategy:gpu|nogpu>...
+vms() { # vms <kind:ns/name:node-or-strategy:gpu|nogpu|gpu-cd>...
   python3 - "$@" > "$D/vms.json" <<'EOF'
 import json, sys
 items = []
 for a in sys.argv[1:]:
     kind, nsname, extra, gpu = a.split(":")
     ns, name = nsname.split("/")
-    devices = {"gpus": [{"name": "g", "deviceName": "nvidia.com/GH100_H100_SXM5_80GB"}]} if gpu == "gpu" else {}
+    devices = {"gpus": [{"name": "g", "deviceName": "nvidia.com/GH100_H100_SXM5_80GB"}]} \
+        if gpu.startswith("gpu") else {}
     spec = {"domain": {"devices": devices}}
+    if gpu == "gpu-cd":
+        spec["volumes"] = [{"name": "rootdisk", "containerDisk": {"image": "quay.io/x/y"}}]
     if kind == "VirtualMachineInstance":
         items.append({"kind": kind, "metadata": {"namespace": ns, "name": name},
                       "spec": spec, "status": {"phase": "Running", "nodeName": extra}})
@@ -78,7 +82,19 @@ json.dump({"items": [{"spec": {"configuration": {"permittedHostDevices": phd(kp)
           open(f"{d}/kv.json", "w"))
 EOF
 }
-run() { python3 "$CHECKS" "$D/nodes.json" "$D/vms.json" "$D/hco.json" "$D/kv.json"; }
+cpol() { # cpol <enabled|disabled|none> [defaultWorkload]
+  python3 - "$@" > "$D/cp.json" <<'EOF'
+import json, sys
+state = sys.argv[1]
+if state == "none":
+    print(json.dumps({"items": []})); sys.exit()
+sw = {"enabled": state == "enabled"}
+if len(sys.argv) > 2:
+    sw["defaultWorkload"] = sys.argv[2]
+print(json.dumps({"items": [{"spec": {"sandboxWorkloads": sw}}]}))
+EOF
+}
+run() { python3 "$CHECKS" "$D/nodes.json" "$D/vms.json" "$D/hco.json" "$D/kv.json" "$D/cp.json"; }
 
 expect() { # expect <label> <LEVEL> <check> <substring>
   local out; out=$(run)
@@ -106,7 +122,9 @@ nodes "n1:vm-passthrough:$RES=4" "n2:container:nvidia.com/gpu=4"
 vms "VirtualMachine:alice/vm1:None:gpu" "VirtualMachineInstance:alice/vm1:n1:gpu" \
     "VirtualMachineInstance:bob/plain:n1:nogpu"
 crs LiveMigrate "$RES=true" "$RES=true"
+cpol enabled container
 expect_none "healthy cluster: nothing fails" FAIL
+expect_none "healthy cluster: nothing warns" WARN
 
 # tenancy
 vms "VirtualMachineInstance:alice/vm1:n1:gpu" "VirtualMachineInstance:bob/vm2:n1:gpu"
@@ -144,6 +162,27 @@ expect_none "v1beta1 layout: permitted at spec is read" FAIL
 nodes "n1:vm-passthrough:$RES=0" "n2:container:nvidia.com/gpu=4"
 crs LiveMigrate - -
 expect "nothing advertised: nothing to permit" PASS permitted "no node advertises a passthrough GPU"
+
+# disk
+nodes "n1:vm-passthrough:$RES=4"
+crs None "$RES=true" "$RES=true"
+vms "VirtualMachine:alice/vm1:None:gpu-cd"
+expect "GPU VM on a containerDisk warns" WARN disk "boots from containerDisk rootdisk"
+vms "VirtualMachine:alice/vm1:None:gpu" "VirtualMachine:bob/plain:-:nogpu"
+expect "GPU VM on a DataVolume passes" PASS disk "uses no containerDisk"
+
+# sandbox
+cpol disabled
+expect "VM label with sandboxWorkloads off fails" FAIL sandbox "does nothing"
+cpol none
+expect "VM label with no ClusterPolicy fails" FAIL sandbox "no ClusterPolicy"
+cpol enabled vm-passthrough
+expect "defaultWorkload other than container warns" WARN sandbox "every unlabelled GPU node serves VMs"
+cpol enabled
+expect "unset defaultWorkload counts as container" PASS sandbox "defaultWorkload container"
+nodes "n2:container:nvidia.com/gpu=4"
+cpol disabled
+expect "sandbox off with no VM label passes" PASS sandbox "no node labelled for VMs"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

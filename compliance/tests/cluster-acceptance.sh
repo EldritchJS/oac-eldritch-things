@@ -152,15 +152,27 @@ else
   # QEMU needs the vfio type1 backend for any passed-through GPU; the GPU
   # Operator does not load it (jetty, 2026-10-20). vfio-pci also needs the
   # IOMMU on, which an RDMA node turns off (amd_iommu=off): such a node
-  # cannot serve GPU VMs (../vms/gpu/README.md). Needs a debug pod, which a
+  # cannot serve GPU VMs (../vms/gpu/README.md). The same pod reads each
+  # GPU's device and reset methods, to compare with what the memory-clearing
+  # test ran on (../vms/gpu/memclear-record.md). Needs a debug pod, which a
   # hosted spoke may not allow.
+  rec=../vms/gpu/memclear-record.md
+  t_kernel=$(sed -n 's/^TESTED_KERNEL=//p' "$rec" 2>/dev/null)
+  t_dev=$(sed -n 's/^TESTED_DEVICE=//p' "$rec" 2>/dev/null)
+  t_reset=$(sed -n 's/^TESTED_RESET_METHOD=//p' "$rec" 2>/dev/null)
+  t_vbios=$(sed -n 's/^TESTED_VBIOS=//p' "$rec" 2>/dev/null)
   for n in $(oc get nodes -l nvidia.com/gpu.workload.config=vm-passthrough -o jsonpath='{.items[*].metadata.name}'); do
     r=$(oc debug "node/$n" -n default --quiet -- chroot /host sh -c \
         'm=missing; [ -d /sys/module/vfio_iommu_type1 ] && m=loaded
          g=$(ls /sys/kernel/iommu_groups 2>/dev/null | wc -l)
          o=$(grep -oE "(amd|intel)_iommu=off" /proc/cmdline | head -1)
-         echo "$m $g ${o:-none}"' 2>/dev/null)
-    read -r mod groups off <<< "$r"
+         echo "$m $g ${o:-none}"
+         for d in /sys/bus/pci/devices/*; do
+           [ "$(cat $d/vendor)" = 0x10de ] || continue
+           case "$(cat $d/class)" in 0x030*) ;; *) continue ;; esac
+           echo "gpu $(cat $d/device) $(cat $d/reset_method 2>/dev/null)"
+         done' 2>/dev/null)
+    read -r mod groups off <<< "$(printf '%s\n' "$r" | head -1)"
     case "$mod" in
       loaded)  ok "$n vfio_iommu_type1 loaded" ;;
       missing) bad "$n vfio_iommu_type1 not loaded: GPU VMs fail with 'No available IOMMU models'" ;;
@@ -173,9 +185,24 @@ else
     else
       bad "$n has no IOMMU groups: vfio-pci cannot claim its GPUs"
     fi
+    if [ ! -f "$rec" ]; then
+      warn "$n: no memory-clearing record ($rec)"; continue
+    fi
+    kernel=$(oc get node "$n" -o jsonpath='{.status.nodeInfo.kernelVersion}')
+    gpus=$(printf '%s\n' "$r" | sed -n 's/^gpu //p' | sort -u)
+    want="$t_dev $t_reset"
+    if [ "$kernel" = "$t_kernel" ] && [ "$gpus" = "$want" ]; then
+      ok "$n matches the memory-clearing test (kernel, device, reset method)"
+    else
+      warn "$n differs from what the memory-clearing test ran on: rerun it (billable)"
+      info "tested:  $t_kernel; $want"
+      info "running: $kernel; $(printf '%s' "$gpus" | tr '\n' ';')"
+    fi
+    [ -z "$t_vbios" ] && warn "$n: GPU firmware not in the memory-clearing record (next --gpu run prints vbios=)"
   done
   # Placement and configuration of GPU VMs: one tenant per node, no
-  # LiveMigrate, every passthrough resource permitted. Logic and fixtures:
+  # LiveMigrate, every passthrough resource permitted, no containerDisk, the
+  # ClusterPolicy's sandbox settings. Logic and fixtures:
   # ../lib/gpu-vm-checks.py, ./test-gpu-vm-checks.sh.
   if [ "$HAS_VIRT" = 1 ]; then
     d=$(mktemp -d)
@@ -183,13 +210,14 @@ else
        && oc get vm,vmi -A -o json > "$d/vms.json" 2>/dev/null \
        && oc get hyperconverged -A -o json > "$d/hco.json" 2>/dev/null \
        && oc get kubevirt -A -o json > "$d/kv.json" 2>/dev/null; then
+      oc get clusterpolicy -o json > "$d/cp.json" 2>/dev/null || echo '{"items":[]}' > "$d/cp.json"
       while IFS=$'\t' read -r lvl check detail; do
         case "$lvl" in
           PASS) ok "$check: $detail" ;;
           FAIL) bad "$check: $detail" ;;
           *)    warn "$check: $detail" ;;
         esac
-      done < <(python3 ../lib/gpu-vm-checks.py "$d/nodes.json" "$d/vms.json" "$d/hco.json" "$d/kv.json")
+      done < <(python3 ../lib/gpu-vm-checks.py "$d/nodes.json" "$d/vms.json" "$d/hco.json" "$d/kv.json" "$d/cp.json")
     else
       bad "could not read nodes, VMs, HyperConverged or KubeVirt for the GPU VM checks"
     fi
