@@ -56,3 +56,4 @@ nothing. Every word read exactly zero; on these GPUs a register that is
 not there reads 0xbadf5040, not zero (pramin.py), which suggests, but does
 not show, that memory out of reach would not read as zero either. A write
 and read-back through PRAMIN in the new guest would settle it.
+`test-gpu-memclear.sh` does that now (step 6); it has not run yet.

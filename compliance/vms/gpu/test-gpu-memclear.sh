@@ -25,6 +25,9 @@
 #                         on a node with that many it gets the same cards.
 #   5. Sample again; no driver has touched the GPUs since. Pattern found =
 #      memory survives a VM handing its GPUs back.
+#   6. Positive control for step 5: write a value through the same window,
+#      read it back and restore it. If it does not read back, the scan could
+#      not reach memory, and its zeros mean nothing.
 #
 # Usage: KUBECONFIG=... ./test-gpu-memclear.sh
 #   NAMESPACE  project to create (default gpu-memclear; must not exist).
@@ -170,14 +173,22 @@ if printf '%s\n' "$CHECK" | grep -qE 'loaded: [1-9]|^kernel log: |^bound: '; the
 fi
 AFTER=$(guest 'sudo python3 pramin.py scan 2>&1'); printf '%s\n' "$AFTER" | sed 's/^/  /'
 
+echo "=== 6. positive control: write through the window, read back, restore ==="
+PROBE=$(guest 'sudo python3 pramin.py probe 2>&1'); printf '%s\n' "$PROBE" | sed 's/^/  /'
+
+probe_ok() { # every GPU probed, and every written word read back
+  printf '%s\n' "$PROBE" | awk '/^PRAMIN_PROBE/ {n++; split($3,w,"="); split($4,b,"="); if (w[2] == 0 || w[2] != b[2]) bad++}
+    END {exit !(n == '"$GPU_COUNT"' && !bad)}'
+}
 hits() { printf '%s\n' "$1" | sed -n 's/.*pattern_words=\([0-9]*\).*/\1/p' | awk '{s += $1} END {print s + 0}'; }
 C=$(hits "$CONTROL"); A=$(hits "$AFTER")
 [ -n "$AFTER" ] || { echo "INCONCLUSIVE: no scan after the handback"; exit 2; }
+probe_ok || { echo "INCONCLUSIVE: a value written through the PRAMIN window did not read back, so the scan may not reach memory"; exit 2; }
 WHO=$([ "$HANDOFF" = new-vm ] && echo "in a new VM in another project" || echo "after restart")
 if [ "$C" -eq 0 ]; then
   echo "INCONCLUSIVE: the pattern was not visible through PRAMIN while it was held, so this method cannot see leftovers"; exit 2
 elif [ "$A" -eq 0 ]; then
-  echo "PASS GPU memory was cleared when the VM handed the GPUs back (control saw ${C} pattern words, ${WHO} 0)"; exit 0
+  echo "PASS GPU memory was cleared when the VM handed the GPUs back (control saw ${C} pattern words, ${WHO} 0; written words read back)"; exit 0
 else
   echo "FAIL ${A} pattern words survived the VM handing the GPUs back (control ${C})"; exit 1
 fi

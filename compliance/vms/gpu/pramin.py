@@ -7,12 +7,18 @@ shows: NV_XAL_EP_BAR0_WINDOW (0x10fd40) on Hopper. The older
 NV_PBUS_BAR0_WINDOW (0x1700) reads 0xbadf5040 on an H100: not there.
 
   pramin.py scan [GiB]    move the window across memory, sampling 256 KiB per GiB
+  pramin.py probe [GiB]   write a pattern to 4 KiB per GiB through the same
+                          window, read it back and restore what was there:
+                          shows the reads reach memory, so zeros from a scan
+                          mean zeros
 Run as root. Moves the window and puts it back; with the driver loaded this
 races the driver's own use of it, which is acceptable in a throwaway guest.
 """
 import collections, ctypes, glob, mmap, os, sys
 
 PATTERN = 0xC0DEFACE
+PROBE = 0x5EA1ED00
+PROBE_WORDS = 1024
 WINDOW, WINDOW_SIZE, SAMPLE = 0x700000, 1 << 20, 256 << 10
 WINDOW_REG = 0x10FD40
 
@@ -33,7 +39,27 @@ def sample(mm, size):
     return list(words)
 
 
+def probe(mm, r, saved, gib):
+    """Write PROBE to PROBE_WORDS words per GiB, read back, restore."""
+    wrote = back = 0
+    for g in range(gib):
+        r.value = (saved & ~0xFFFFFF) | ((g << 30) >> 16)
+        words = (ctypes.c_uint32 * PROBE_WORDS).from_buffer(mm, WINDOW)
+        old = list(words)
+        for i in range(PROBE_WORDS):
+            words[i] = PROBE ^ g ^ i
+        back += sum(words[i] == (PROBE ^ g ^ i) for i in range(PROBE_WORDS))
+        wrote += PROBE_WORDS
+        for i in range(PROBE_WORDS):
+            words[i] = old[i]
+        del words
+    return wrote, back
+
+
 def main():
+    mode = sys.argv[1] if len(sys.argv) > 1 else "scan"
+    if mode not in ("scan", "probe"):
+        sys.exit(__doc__)
     gib = int(sys.argv[2]) if len(sys.argv) > 2 else 79
     for dev in gpus():
         bdf = os.path.basename(dev)
@@ -50,6 +76,14 @@ def main():
             continue
         r = ctypes.c_uint32.from_buffer(mm, WINDOW_REG)
         saved, found, seen, values = r.value, 0, 0, collections.Counter()
+        if mode == "probe":
+            wrote, back = probe(mm, r, saved, gib)
+            r.value = saved
+            print(f"PRAMIN_PROBE {bdf} wrote={wrote} read_back={back}", flush=True)
+            del r
+            mm.close()
+            os.close(fd)
+            continue
         for g in range(gib):
             r.value = (saved & ~0xFFFFFF) | ((g << 30) >> 16)
             words = sample(mm, SAMPLE)

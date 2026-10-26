@@ -22,7 +22,7 @@ set -euo pipefail
 #           (passthrough plumbing works: vfio, IOMMU, permittedHostDevices)
 #   tier 2  the in-guest NVIDIA driver binds it and nvidia-smi reports the card
 #           (the device is functional, not just visible)
-#   tier 3  a CUDA kernel runs on it and returns correct results
+#   tier 3  a CUDA kernel runs on each GPU and returns correct results
 #           (the GPU does real work, and we get a host-to-device bandwidth
 #           number across the passthrough path)
 #
@@ -662,30 +662,21 @@ __global__ void saxpy(size_t n, float a, const float *x, float *y) {
   if (i < n) y[i] = a * x[i] + y[i];
 }
 
-int main(void) {
-  int count = 0;
-  if (cudaGetDeviceCount(&count) != cudaSuccess || count < 1) {
-    printf("CUDA_FAIL no devices\n");
-    return 1;
-  }
-  cudaDeviceProp p;
-  if (cudaGetDeviceProperties(&p, 0) != cudaSuccess) {
-    printf("CUDA_FAIL properties\n");
-    return 1;
-  }
-  printf("CUDA_DEVICES %d\n", count);
-  printf("CUDA_DEVICE %s sm_%d%d %.0fGiB\n", p.name, p.major, p.minor,
-         p.totalGlobalMem / 1073741824.0);
-
-  const size_t n = 1u << 26;            /* 64 Mi floats = 256 MiB per buffer */
+/* One GPU: copy in (timed), saxpy, copy back, check. 0 on success. */
+static int check(int d, size_t n, float *hx, float *hy) {
   const size_t bytes = n * sizeof(float);
-  float *hx = (float *)malloc(bytes), *hy = (float *)malloc(bytes);
-  if (!hx || !hy) { printf("CUDA_FAIL host alloc\n"); return 1; }
+  cudaDeviceProp p;
+  if (cudaSetDevice(d) != cudaSuccess || cudaGetDeviceProperties(&p, d) != cudaSuccess) {
+    printf("CUDA_FAIL gpu%d properties\n", d);
+    return 1;
+  }
+  printf("CUDA_DEVICE gpu%d %s sm_%d%d %.0fGiB\n", d, p.name, p.major, p.minor,
+         p.totalGlobalMem / 1073741824.0);
   for (size_t i = 0; i < n; i++) { hx[i] = 1.0f; hy[i] = 2.0f; }
 
   float *dx = NULL, *dy = NULL;
   if (cudaMalloc(&dx, bytes) != cudaSuccess || cudaMalloc(&dy, bytes) != cudaSuccess) {
-    printf("CUDA_FAIL device alloc\n");
+    printf("CUDA_FAIL gpu%d device alloc\n", d);
     return 1;
   }
 
@@ -698,20 +689,41 @@ int main(void) {
   cudaEventSynchronize(e);
   float ms = 0.0f;
   cudaEventElapsedTime(&ms, s, e);
-  printf("CUDA_H2D %.2f GB/s\n", (2.0 * bytes / 1e9) / (ms / 1000.0));
+  printf("CUDA_H2D %.2f GB/s gpu%d\n", (2.0 * bytes / 1e9) / (ms / 1000.0), d);
 
   saxpy<<<(unsigned)((n + 255) / 256), 256>>>(n, 3.0f, dx, dy);
   if (cudaDeviceSynchronize() != cudaSuccess) {
-    printf("CUDA_FAIL kernel %s\n", cudaGetErrorString(cudaGetLastError()));
+    printf("CUDA_FAIL gpu%d kernel %s\n", d, cudaGetErrorString(cudaGetLastError()));
     return 1;
   }
   cudaMemcpy(hy, dy, bytes, cudaMemcpyDeviceToHost);
+  cudaFree(dx); cudaFree(dy);
+  cudaEventDestroy(s); cudaEventDestroy(e);
 
   size_t bad = 0;
   for (size_t i = 0; i < n; i++) if (hy[i] != 5.0f) bad++;
-  if (bad == 0) printf("CUDA_COMPUTE_OK %zu elements\n", n);
-  else          printf("CUDA_FAIL %zu wrong elements\n", bad);
-  return bad == 0 ? 0 : 1;
+  if (bad) printf("CUDA_FAIL gpu%d %zu wrong elements\n", d, bad);
+  return bad != 0;
+}
+
+/* Every GPU the guest has, not just the first: a multi-GPU VM is only shown
+   working if CUDA runs on each of its cards. */
+int main(void) {
+  int count = 0;
+  if (cudaGetDeviceCount(&count) != cudaSuccess || count < 1) {
+    printf("CUDA_FAIL no devices\n");
+    return 1;
+  }
+  printf("CUDA_DEVICES %d\n", count);
+
+  const size_t n = 1u << 26;            /* 64 Mi floats = 256 MiB per buffer */
+  float *hx = (float *)malloc(n * sizeof(float)), *hy = (float *)malloc(n * sizeof(float));
+  if (!hx || !hy) { printf("CUDA_FAIL host alloc\n"); return 1; }
+
+  int failed = 0;
+  for (int d = 0; d < count; d++) failed += check(d, n, hx, hy);
+  if (failed == 0) printf("CUDA_COMPUTE_OK %zu elements on %d GPU(s)\n", n, count);
+  return failed == 0 ? 0 : 1;
 }
 CUEOF
 
@@ -736,8 +748,8 @@ CUEOF
   if guest_ssh 'cd /tmp && nvcc -O2 -o gpucheck gpucheck.cu 2>&1 && ./gpucheck' 300; then
     echo "${SSH_OUT}" | sed 's/^/  /'
     if printf '%s' "${SSH_OUT}" | grep -q CUDA_COMPUTE_OK; then
-      pass "Tier 3 — a CUDA kernel ran on the passed-through GPU and returned correct results"
-      H2D="$(printf '%s' "${SSH_OUT}" | sed -n 's/^CUDA_H2D //p')"
+      pass "Tier 3 — a CUDA kernel ran on every passed-through GPU and returned correct results"
+      H2D="$(printf '%s' "${SSH_OUT}" | sed -n 's/^CUDA_H2D //p' | paste -sd ';' - | sed 's/;/; /g')"
       [ -n "${H2D}" ] && echo "     host-to-device bandwidth across the passthrough path: ${H2D}"
       if [ "${BW_RUNS}" -gt 1 ] && guest_ssh "cd /tmp && for i in \$(seq 2 ${BW_RUNS}); do ./gpucheck | grep CUDA_H2D; done" 300; then
         echo "     runs 2-${BW_RUNS}: $(printf '%s' "${SSH_OUT}" | sed -n 's/^CUDA_H2D //p' | tr '\n' ' ')"
