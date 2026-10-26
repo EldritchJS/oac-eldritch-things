@@ -20,9 +20,11 @@ export KUBECONFIG=...
 | `--functional` | `../vms/test-vm.sh`, `test-vm-storage.sh`, `test-vm-migration.sh` in a throwaway project |
 | `--gpu` | `test-gpu-pod.sh` (a CUDA sample in a pod) and `../vms/gpu/test-gpu-vm.sh` (CUDA in a VM) |
 
-Results, read-only (2026-10-26): jetty 32 PASS, 0 FAIL, 1 WARN (the GPU
-firmware is not yet in `../vms/gpu/memclear-record.md`); nist-dev-infra
-6 PASS, 0 FAIL (no VMs or GPUs there, so those sections skip).
+Results, read-only (2026-10-26): jetty 32 PASS, 0 FAIL, 0 WARN, after
+the GPU firmware went into `../vms/gpu/memclear-record.md`; nist-dev-infra
+6 PASS, 0 FAIL (no VMs or GPUs there, so those sections skip). Just after a
+GPU node returns to container mode the ClusterPolicy can read `notReady`
+for a few minutes while its DCGM exporter restarts: rerun, don't chase it.
 
 Earlier, on jetty (2026-10-20): `--functional` passed all three VM tests,
 and `--gpu` ran CUDA in a pod and in a VM (about 10 minutes of GPU time).
