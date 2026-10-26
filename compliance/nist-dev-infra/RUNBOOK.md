@@ -6,8 +6,8 @@ go-ahead at the time.*
 
 **What it produces today (2026-10-26):** a workload cluster at 1 moderate
 failure (the cluster-wide proxy, a recorded gap) and 0 CIS, and a hub
-that is **not yet compliant**: 6 failing rules, two of them POA&M items,
-listed with their fixes in 2.9 (5 once the audit profile rollout ends).
+that is **not yet compliant**: 5 failing rules, two of them POA&M items,
+listed with their fixes in 2.9.
 
 This runbook gives the exact steps to rebuild the test hub and its first
 hosted cluster as they were actually built, so that someone other than
@@ -397,8 +397,8 @@ APPLY=1 $RB/route-rate-limits.sh    # annotates them
 Re-run it after any operator upgrade: an operator can drop the
 annotations.
 
-**6 distinct rules still fail** (rescan, 2026-10-26 19:05 UTC): 6 in
-moderate, 4 of them also in CIS, none in the three node scans. Remove
+**5 distinct rules still fail** (rescan, 2026-10-26 23:45 UTC): 5 in
+moderate, 3 of them also in CIS, none in the three node scans. Remove
 rows as fixes land.
 With everything in the Status column done, only the two POA&M items
 remain.
@@ -416,13 +416,13 @@ Fixed so far, from 19 (moderate) and 7 (CIS):
 | `default-ingress-ca-replaced` | Tailored, rationale `ingressCert` (fork `329a866`): the rule wants a custom CA in `proxy/cluster`, and a publicly issued certificate needs none |
 | `idp-is-configured`*, `oauth-or-oauthclient-inactivity-timeout`, `-token-maxage` | MOC SSO (`mocsso`) with 24-hour tokens and a 10-minute inactivity timeout: moc-keycloak [#55](https://github.com/CCI-MOC/moc-keycloak/pull/55), then oac-apps [#188](https://github.com/CCI-MOC/oac-apps/pull/188) (2026-10-26). An `oc` login through OAuth, kubeadmin's too, now expires after 10 idle minutes; the admin kubeconfig does not |
 | `resource-requests-limits-in-deployment` | pure-cosi v0.1.2 sets requests and limits on the COSI controller and driver for every cluster (CCI-MOC/pure-cosi#11, oac-apps [#185](https://github.com/CCI-MOC/oac-apps/pull/185), 2026-10-26) |
+| `audit-profile-set`* | `platform-hardening` `apiServerAudit`: WriteRequestBodies, server-side applied (fork `eadf121`, 2026-10-26). Argo's server-side apply takes the field over from the cluster-version-operator, which created the APIServer. The policy logs every write with its body, except Secrets, service account tokens, token reviews, OAuth clients, routes and MachineConfigs, which stay at Metadata. The kube-apiserver rollout took three hours: u15's and u17's kubelets froze at their API server switch, and each needed a power cycle (section 5) |
 
 Still failing (* also CIS):
 
 | Rule | Fix | Status |
 |---|---|---|
 | `kubeadmin-removed`* | Grant cluster-admin to an SSO group, then delete the `kubeadmin` secret in `kube-system`. The admin kubeconfig stays as break-glass | Drafted, not opened: a moc-keycloak group and an oac-apps `cluster-admins` chart. On hold |
-| `audit-profile-set`* | `platform-hardening` `apiServerAudit`: WriteRequestBodies, server-side applied. The cluster-version-operator created the APIServer and is recorded as owning the field; Argo's server-side apply takes it over | Pushed 2026-10-26 (fork `eadf121`). The kube-apiservers roll one master at a time; on this hub the rollout stalled for over an hour when u15's kubelet stopped reporting. Confirm on the next scan once all three masters are on the new revision |
 | `route-ip-whitelist` | Allowed client ranges on every route | Needs the ranges agreed (week of 2026-10-26) |
 | `configure-network-policies-namespaces`* | Policies for 20 namespaces, many of them ACM, HyperShift and storage. Each needs its traffic measured first; a wrong policy cuts off a hub component | Week of 2026-10-26; what cannot be measured goes in the exception register |
 | `api-server-encryption-provider-cipher`* | etcd encryption (`aesgcm`). On this hub it re-encrypts every Secret and ConfigMap on masters that stall under load | **POA&M** (decided 2026-10-24): enabled at install on the replacement hub, where etcd starts empty |
@@ -635,7 +635,7 @@ Archive the first results as the cluster's baseline.
 | A hosted cluster loses its compliance namespaces | An ApplicationSet deleted its Applications when the cluster left the placement | `preserveResourcesOnDeletion: true` (already set; BUILD.md Part 2 step 3) |
 | `openshift-samples` Degraded: "global openshift image configuration prevents the creation of imagestreams" | The allowlist has no bare `quay.io`, which the samples operator wants when `samplesRegistry` is empty | `imageConfig.samplesRegistry: registry.redhat.io` (fork `75773f6`, already set) |
 | workload0's audit collectors log "certificate verify failed" | The hub's apps certificate changed, and the forwarder trusted only the hub's ingress CA, copied by the audit-writers policy: for a Let's Encrypt certificate, a chain without its root | `forwarder.remote.hubIngressCA: false` in the hosted-cluster values (fork `9c2cbca`, already set) |
-| A kube-apiserver rollout stops: `installer-N` Pending on one master, the node `Unknown` | That master's kubelet stopped reporting in a spell; etcd on it stays healthy | Wait; the installer runs when the kubelet returns. If it does not return within an hour, `sudo systemctl restart kubelet` on that master over SSH |
+| A kube-apiserver rollout stops: `installer-N` Pending on one master, the node `Unknown` | That master's kubelet froze, on 2026-10-26 at the moment its own API server switched revision (u13 for 5 minutes, u15 and u17 until power-cycled); etcd on it stayed healthy | A graceful shutdown hangs on a node in this state. Power-cycle it from its iDRAC: `ssh root@<bmc_addr>` (oac-infra `infra/inventory/00hosts.yaml`; older iDRACs need `-o KexAlgorithms=+diffie-hellman-group14-sha1 -o HostKeyAlgorithms=+ssh-rsa`), then `racadm serveraction powercycle`. Check first that the other two masters' etcd members are healthy. The node is back in about 9 minutes and the rollout resumes |
 
 ---
 
