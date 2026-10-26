@@ -85,6 +85,10 @@ SSH_TIMEOUT="${SSH_TIMEOUT:-45}"
 # Driver and toolkit installs are long and talk to the network.
 INSTALL_TIMEOUT="${INSTALL_TIMEOUT:-1500}"
 KEEP_VM="${KEEP_VM:-0}"
+# 1 keeps every GPU driver (nvidia*, nouveau) from loading in the guest,
+# from its first boot: test-gpu-memclear.sh reads a fresh VM's GPU memory
+# before anything has touched it. Use with MAX_TIER=1.
+NO_GPU_DRIVER="${NO_GPU_DRIVER:-0}"
 
 WORKDIR=""
 PASSED=0
@@ -354,6 +358,15 @@ users:
       - ${SSH_PUBKEY}
 ssh_pwauth: false
 EOF
+if [ "${NO_GPU_DRIVER}" = "1" ]; then
+  # bootcmd runs early on every boot. It may run after udev has loaded a
+  # driver on the first boot, so the memclear test checks the guest's kernel
+  # log and the GPUs' bound drivers before it trusts a scan.
+  cat >> "${WORKDIR}/user-data" <<'EOF'
+bootcmd:
+  - printf 'blacklist %s\ninstall %s /bin/false\n' nvidia nvidia nvidia_uvm nvidia_uvm nvidia_drm nvidia_drm nvidia_modeset nvidia_modeset nouveau nouveau > /etc/modprobe.d/no-gpu-driver.conf
+EOF
+fi
 
 # The driver install is deliberately NOT in cloud-init: inline userdata is
 # capped at 2048 bytes and these namespaces cannot create secrets, so anything

@@ -126,7 +126,8 @@ Untested options, recorded so nobody re-derives them:
 | `iommu-machineconfig.yaml` | admin, once, **if needed** | Dedicated MachineConfigPool + IOMMU kernel arguments. Costs reboots. Standalone OpenShift only — not usable on a hosted control plane, and expected to be unnecessary on AMD. |
 | `setup-passthrough.sh` | admin | Reports, and with `APPLY=1` configures, one node for passthrough; teaches KubeVirt the device |
 | `test-gpu-vm.sh` | project user | Boots a VM with a GPU and verifies it in three tiers |
-| `test-gpu-memclear.sh` | project user | Whether GPU memory is cleared when a VM hands its GPUs back. Holds every passthrough GPU on a node for about 30 minutes |
+| `test-gpu-vm-pair.sh` | project user | Two VMs with `GPUS_PER_VM` GPUs each (default 2), side by side on one node, all three tiers; checks no GPU is shared. About 20 minutes of 4 GPUs |
+| `test-gpu-memclear.sh` | project user | Whether GPU memory is cleared when a VM hands its GPUs back. `HANDOFF=restart` (default) restarts the same VM; `HANDOFF=new-vm` deletes it and scans from a new VM in a second project with no GPU driver. Holds every passthrough GPU on a node for 30 to 40 minutes |
 | `gpu-vm.yaml` | project user | The same VM as a hand-applied Template, for poking at by console |
 | `test-gpu-switch.sh` | admin | **Destructive.** Times a container → VM → container round trip on a node |
 | `cleanup.sh` | either | Tears down test objects; `REVERT_NODE=1` also puts the node back |
