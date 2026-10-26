@@ -89,6 +89,11 @@ KEEP_VM="${KEEP_VM:-0}"
 # from its first boot: test-gpu-memclear.sh reads a fresh VM's GPU memory
 # before anything has touched it. Use with MAX_TIER=1.
 NO_GPU_DRIVER="${NO_GPU_DRIVER:-0}"
+# Pin the VM to one node, e.g. to test a second passthrough node, or to
+# measure bandwidth on the node a container figure came from. Empty: any.
+NODE="${NODE:-}"
+# Tier 3 measures host-to-device bandwidth this many times (one build).
+BW_RUNS="${BW_RUNS:-1}"
 
 WORKDIR=""
 PASSED=0
@@ -403,6 +408,7 @@ spec:
         kubevirt.io/vm: ${VM_NAME}
     spec:
       evictionStrategy: None
+$([ -n "${NODE}" ] && printf '      nodeSelector:\n        kubernetes.io/hostname: %s\n' "${NODE}")
       tolerations:
       - key: nvidia.com/gpu.product
         operator: Exists
@@ -733,6 +739,9 @@ CUEOF
       pass "Tier 3 — a CUDA kernel ran on the passed-through GPU and returned correct results"
       H2D="$(printf '%s' "${SSH_OUT}" | sed -n 's/^CUDA_H2D //p')"
       [ -n "${H2D}" ] && echo "     host-to-device bandwidth across the passthrough path: ${H2D}"
+      if [ "${BW_RUNS}" -gt 1 ] && guest_ssh "cd /tmp && for i in \$(seq 2 ${BW_RUNS}); do ./gpucheck | grep CUDA_H2D; done" 300; then
+        echo "     runs 2-${BW_RUNS}: $(printf '%s' "${SSH_OUT}" | sed -n 's/^CUDA_H2D //p' | tr '\n' ' ')"
+      fi
     else
       fail "Tier 3 — the CUDA program ran but did not report CUDA_COMPUTE_OK"
     fi

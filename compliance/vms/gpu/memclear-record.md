@@ -10,16 +10,22 @@ below was not shown for what the node now runs: rerun
 TESTED_KERNEL=5.14.0-687.50.1.el9_8.x86_64
 TESTED_DEVICE=0x2330
 TESTED_RESET_METHOD=flr bus
-TESTED_VBIOS=
+TESTED_VBIOS=96.00.DA.00.17
 ```
 
 ## The result
 
-On 2026-10-20, `test-gpu-memclear.sh` filled the memory of all four GPUs
-on jetty's `moc-r4pcc02u16` with a pattern, stopped the VM holding them,
-started it with the NVIDIA driver blocked, and read the memory through
-BAR0's PRAMIN window. Every sampled word on every GPU read zero
-(README.md, "Is GPU memory cleared between tenants?").
+On jetty's `moc-r4pcc02u16`, `test-gpu-memclear.sh` filled the memory of
+all four GPUs with a pattern, handed the GPUs back with the pattern still
+held, and read the memory through BAR0's PRAMIN window with no GPU driver
+loaded. Every sampled word on every GPU read zero, both times:
+
+- 2026-10-20, `HANDOFF=restart`: the same VM, stopped and started.
+- 2026-10-26, `HANDOFF=new-vm`: the VM and its disk deleted, and a new VM
+  in a second project took the same four GPUs. The control saw the
+  pattern in 98.7% of sampled words; afterwards none.
+
+README.md, "Is GPU memory cleared between tenants?", has the detail.
 
 ## Where each value comes from
 
@@ -31,13 +37,22 @@ BAR0's PRAMIN window. Every sampled word on every GPU read zero
   2026-10-08 and OpenShift Virtualization 4.22.12 since 2026-10-06, so
   these are the values the 2026-10-20 run used.
 - **Device.** H100 SXM5 80GB (PCI 10de:2330), on all four GPUs.
-- **VBIOS.** Not recorded. In passthrough mode the host has no NVIDIA
-  driver, so only a guest (or the BMC) can read it. `test-gpu-vm.sh` now
-  prints `vbios=` from the guest: copy it here after the next GPU run.
-  Until then the acceptance suite warns.
+- **VBIOS.** `96.00.DA.00.17`, read by `nvidia-smi` in the guests on
+  2026-10-26 (all four GPUs, in the 2026-10-26 run and the pair test). The
+  host has no NVIDIA driver in passthrough mode, so only a guest (or the
+  BMC) can read it; `test-gpu-vm.sh` prints it as `vbios=`. Whether it was
+  the same on 2026-10-20 is not recorded.
 
 ## What this does not show
 
 One node, one firmware. Sampled 256 KiB per GiB, not every byte. Which
 component clears the memory is not known, only that it is clear before
 the next guest can read it.
+
+No positive control after the handback: the pattern was seen through
+PRAMIN while held, but nothing was written and read back through PRAMIN
+in the new guest. Reads that cannot reach memory at all would also show
+nothing. Every word read exactly zero; on these GPUs a register that is
+not there reads 0xbadf5040, not zero (pramin.py), which suggests, but does
+not show, that memory out of reach would not read as zero either. A write
+and read-back through PRAMIN in the new guest would settle it.
