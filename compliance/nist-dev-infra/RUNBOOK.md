@@ -4,10 +4,10 @@
 **TODO**. Nothing here is torn down without the hub owner's explicit
 go-ahead at the time.*
 
-**What it produces today (2026-10-24):** a workload cluster at 1 moderate
+**What it produces today (2026-10-26):** a workload cluster at 1 moderate
 failure (the cluster-wide proxy, a recorded gap) and 0 CIS, and a hub
-that is **not yet compliant**: 12 failing rules, two of them POA&M items,
-listed with their fixes in 2.9.
+that is **not yet compliant**: 6 failing rules, two of them POA&M items,
+listed with their fixes in 2.9 (5 once the audit profile rollout ends).
 
 This runbook gives the exact steps to rebuild the test hub and its first
 hosted cluster as they were actually built, so that someone other than
@@ -397,8 +397,8 @@ APPLY=1 $RB/route-rate-limits.sh    # annotates them
 Re-run it after any operator upgrade: an operator can drop the
 annotations.
 
-**12 distinct rules still fail** (nightly scan, 2026-10-25): 12 in
-moderate, 5 of them also in CIS, none in the three node scans. Remove
+**6 distinct rules still fail** (rescan, 2026-10-26 19:05 UTC): 6 in
+moderate, 4 of them also in CIS, none in the three node scans. Remove
 rows as fixes land.
 With everything in the Status column done, only the two POA&M items
 remain.
@@ -412,16 +412,17 @@ Fixed so far, from 19 (moderate) and 7 (CIS):
 | `resource-requests-limits-in-daemonset`, `-statefulset` | Operator-owned namespaces exempted, rationale `vendorLimits` (`8490e2c`) |
 | `ocp-allowed-registries`*, `-for-import`*, and the node scan's `reject-unsigned-images-by-default` | A registry allowlist from an inventory of every image reference on the hub (`1c277e3`). All 248 running images matched it; the change reloaded CRI-O on each master, without reboots. The COSI controller comes from a staging registry at a release-candidate tag: a supply-chain gap to record. Confirmed passing 2026-10-25. The allowlist left `openshift-samples` Degraded (it wants a bare `quay.io` when `samplesRegistry` is empty); `imageConfig.samplesRegistry: registry.redhat.io` fixed it (fork `75773f6`, 2026-10-26) |
 | `routes-rate-limit` | `route-rate-limits.sh`, above. Confirmed passing 2026-10-25 |
+| `ingress-controller-certificate` | A Let's Encrypt wildcard apps certificate from `cluster-certificates` (oac-apps [#184](https://github.com/CCI-MOC/oac-apps/pull/184), 2026-10-26). The API certificate stays off: agents and kubeconfigs trust the current CA. workload0's audit forwarder pinned the hub's old ingress CA and stopped verifying; it now uses system trust (`forwarder.remote.hubIngressCA: false`, fork `9c2cbca`) |
+| `default-ingress-ca-replaced` | Tailored, rationale `ingressCert` (fork `329a866`): the rule wants a custom CA in `proxy/cluster`, and a publicly issued certificate needs none |
+| `idp-is-configured`*, `oauth-or-oauthclient-inactivity-timeout`, `-token-maxage` | MOC SSO (`mocsso`) with 24-hour tokens and a 10-minute inactivity timeout: moc-keycloak [#55](https://github.com/CCI-MOC/moc-keycloak/pull/55), then oac-apps [#188](https://github.com/CCI-MOC/oac-apps/pull/188) (2026-10-26). An `oc` login through OAuth, kubeadmin's too, now expires after 10 idle minutes; the admin kubeconfig does not |
+| `resource-requests-limits-in-deployment` | pure-cosi v0.1.2 sets requests and limits on the COSI controller and driver for every cluster (CCI-MOC/pure-cosi#11, oac-apps [#185](https://github.com/CCI-MOC/oac-apps/pull/185), 2026-10-26) |
 
 Still failing (* also CIS):
 
 | Rule | Fix | Status |
 |---|---|---|
-| `ingress-controller-certificate`, `default-ingress-ca-replaced` | `cluster-certificates` values for the hub: a Let's Encrypt apps certificate, then workload0's `ingressCert` tailoring for the CA rule. The API certificate stays off (agents and kubeconfigs trust the current CA) | oac-apps [#184](https://github.com/CCI-MOC/oac-apps/pull/184), one approval. After it merges, check that workload0's audit forwarding still reaches the hub's Loki |
-| `resource-requests-limits-in-deployment` | Requests and limits for oac-apps' own COSI controller and driver | oac-apps [#185](https://github.com/CCI-MOC/oac-apps/pull/185), open |
-| `idp-is-configured`*, `oauth-or-oauthclient-inactivity-timeout`, `-token-maxage` | Hub SSO and token timeouts: the Keycloak client, then `keycloak-oauth` for the hub with a new `tokenConfig` value | moc-keycloak [#55](https://github.com/CCI-MOC/moc-keycloak/pull/55) merged and applied 2026-10-24; oac-apps [#188](https://github.com/CCI-MOC/oac-apps/pull/188), one approval |
-| `kubeadmin-removed`* | Grant cluster-admin to an SSO group, then delete the `kubeadmin` secret in `kube-system`. The admin kubeconfig stays as break-glass | After #188 |
-| `audit-profile-set`* | `platform-hardening` `apiServerAudit`: WriteRequestBodies, server-side applied | Written, on fork branch `nist-dev-infra-audit-profile`. Rolls the kube-apiservers: push when the masters are steady |
+| `kubeadmin-removed`* | Grant cluster-admin to an SSO group, then delete the `kubeadmin` secret in `kube-system`. The admin kubeconfig stays as break-glass | Drafted, not opened: a moc-keycloak group and an oac-apps `cluster-admins` chart. On hold |
+| `audit-profile-set`* | `platform-hardening` `apiServerAudit`: WriteRequestBodies, server-side applied. The cluster-version-operator created the APIServer and is recorded as owning the field; Argo's server-side apply takes it over | Pushed 2026-10-26 (fork `eadf121`). The kube-apiservers roll one master at a time; on this hub the rollout stalled for over an hour when u15's kubelet stopped reporting. Confirm on the next scan once all three masters are on the new revision |
 | `route-ip-whitelist` | Allowed client ranges on every route | Needs the ranges agreed (week of 2026-10-26) |
 | `configure-network-policies-namespaces`* | Policies for 20 namespaces, many of them ACM, HyperShift and storage. Each needs its traffic measured first; a wrong policy cuts off a hub component | Week of 2026-10-26; what cannot be measured goes in the exception register |
 | `api-server-encryption-provider-cipher`* | etcd encryption (`aesgcm`). On this hub it re-encrypts every Secret and ConfigMap on masters that stall under load | **POA&M** (decided 2026-10-24): enabled at install on the replacement hub, where etcd starts empty |
@@ -632,7 +633,9 @@ Archive the first results as the cluster's baseline.
 | A hosted cluster's API returns 500, "failing health checks: etcd"; etcd logs "took too long" | etcd's WAL file creation blocked on a stale NFS lock on the FlashBlade (2026-10-23, 17:05 to 18:30) | Delete the stale `member/wal/*.tmp` file in etcd-0, then delete the etcd-0 pod. Hosted etcd on NFS is not supported: a POA&M item |
 | Masters go NotReady in turn, etcd restarts | FIPS TLS handshakes on large-core nodes | `nr_cpus=40` (2.3). Spells still happen a few times a day: wait them out |
 | A hosted cluster loses its compliance namespaces | An ApplicationSet deleted its Applications when the cluster left the placement | `preserveResourcesOnDeletion: true` (already set; BUILD.md Part 2 step 3) |
-| `openshift-samples` Degraded: "global openshift image configuration prevents the creation of imagestreams" | The import allowlist (`1c277e3`) | **TODO:** set `samplesRegistry`, or the samples operator to `Removed` |
+| `openshift-samples` Degraded: "global openshift image configuration prevents the creation of imagestreams" | The allowlist has no bare `quay.io`, which the samples operator wants when `samplesRegistry` is empty | `imageConfig.samplesRegistry: registry.redhat.io` (fork `75773f6`, already set) |
+| workload0's audit collectors log "certificate verify failed" | The hub's apps certificate changed, and the forwarder trusted only the hub's ingress CA, copied by the audit-writers policy: for a Let's Encrypt certificate, a chain without its root | `forwarder.remote.hubIngressCA: false` in the hosted-cluster values (fork `9c2cbca`, already set) |
+| A kube-apiserver rollout stops: `installer-N` Pending on one master, the node `Unknown` | That master's kubelet stopped reporting in a spell; etcd on it stays healthy | Wait; the installer runs when the kubelet returns. If it does not return within an hour, `sudo systemctl restart kubelet` on that master over SSH |
 
 ---
 
