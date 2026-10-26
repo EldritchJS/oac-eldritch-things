@@ -150,17 +150,51 @@ else
   [ "$cp_state" = ready ] && ok "GPU Operator ClusterPolicy ready" || bad "ClusterPolicy state '${cp_state:-none}'"
   verify t06,t07
   # QEMU needs the vfio type1 backend for any passed-through GPU; the GPU
-  # Operator does not load it (jetty, 2026-10-20). Needs a debug pod, which a
+  # Operator does not load it (jetty, 2026-10-20). vfio-pci also needs the
+  # IOMMU on, which an RDMA node turns off (amd_iommu=off): such a node
+  # cannot serve GPU VMs (../vms/gpu/README.md). Needs a debug pod, which a
   # hosted spoke may not allow.
   for n in $(oc get nodes -l nvidia.com/gpu.workload.config=vm-passthrough -o jsonpath='{.items[*].metadata.name}'); do
     r=$(oc debug "node/$n" -n default --quiet -- chroot /host sh -c \
-        '[ -d /sys/module/vfio_iommu_type1 ] && echo loaded || echo missing' 2>/dev/null)
-    case "$r" in
+        'm=missing; [ -d /sys/module/vfio_iommu_type1 ] && m=loaded
+         g=$(ls /sys/kernel/iommu_groups 2>/dev/null | wc -l)
+         o=$(grep -oE "(amd|intel)_iommu=off" /proc/cmdline | head -1)
+         echo "$m $g ${o:-none}"' 2>/dev/null)
+    read -r mod groups off <<< "$r"
+    case "$mod" in
       loaded)  ok "$n vfio_iommu_type1 loaded" ;;
       missing) bad "$n vfio_iommu_type1 not loaded: GPU VMs fail with 'No available IOMMU models'" ;;
-      *)       warn "$n could not check vfio_iommu_type1 (no debug pod)" ;;
+      *)       warn "$n could not check vfio_iommu_type1 or the IOMMU (no debug pod)"; continue ;;
     esac
+    if [ "$off" != none ]; then
+      bad "$n is in vm-passthrough mode with $off: an RDMA node cannot serve GPU VMs"
+    elif [ "${groups:-0}" -gt 0 ]; then
+      ok "$n IOMMU on ($groups groups)"
+    else
+      bad "$n has no IOMMU groups: vfio-pci cannot claim its GPUs"
+    fi
   done
+  # Placement and configuration of GPU VMs: one tenant per node, no
+  # LiveMigrate, every passthrough resource permitted. Logic and fixtures:
+  # ../lib/gpu-vm-checks.py, ./test-gpu-vm-checks.sh.
+  if [ "$HAS_VIRT" = 1 ]; then
+    d=$(mktemp -d)
+    if oc get nodes -o json > "$d/nodes.json" 2>/dev/null \
+       && oc get vm,vmi -A -o json > "$d/vms.json" 2>/dev/null \
+       && oc get hyperconverged -A -o json > "$d/hco.json" 2>/dev/null \
+       && oc get kubevirt -A -o json > "$d/kv.json" 2>/dev/null; then
+      while IFS=$'\t' read -r lvl check detail; do
+        case "$lvl" in
+          PASS) ok "$check: $detail" ;;
+          FAIL) bad "$check: $detail" ;;
+          *)    warn "$check: $detail" ;;
+        esac
+      done < <(python3 ../lib/gpu-vm-checks.py "$d/nodes.json" "$d/vms.json" "$d/hco.json" "$d/kv.json")
+    else
+      bad "could not read nodes, VMs, HyperConverged or KubeVirt for the GPU VM checks"
+    fi
+    rm -rf "$d"
+  fi
 fi
 
 # ------------------------------------------------------------- functional --

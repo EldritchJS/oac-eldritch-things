@@ -16,7 +16,7 @@ export KUBECONFIG=...
 
 | Level | Checks |
 |---|---|
-| Read-only | Nodes Ready; one default StorageClass. Compliant clusters: FIPS on every node (T-01), default StorageClass is NFS over TLS. Virtualization: HyperConverged healthy, VM-capable nodes and virt-handler, ReadWriteMany for live migration. GPUs: ClusterPolicy ready, both GPU modes (T-06, T-07), `vfio_iommu_type1` on passthrough nodes. Billing (T-17) last |
+| Read-only | Nodes Ready; one default StorageClass. Compliant clusters: FIPS on every node (T-01), default StorageClass is NFS over TLS. Virtualization: HyperConverged healthy, VM-capable nodes and virt-handler, ReadWriteMany for live migration. GPUs: ClusterPolicy ready, both GPU modes (T-06, T-07), `vfio_iommu_type1` and the IOMMU on passthrough nodes (not `amd_iommu=off`, groups present). GPU VMs (`../lib/gpu-vm-checks.py`): one tenant's GPU VMs per node, no GPU VM with `evictionStrategy` LiveMigrate (its own or the HyperConverged's), every passthrough resource a node advertises permitted on both CRs. Billing (T-17) last |
 | `--functional` | `../vms/test-vm.sh`, `test-vm-storage.sh`, `test-vm-migration.sh` in a throwaway project |
 | `--gpu` | `test-gpu-pod.sh` (a CUDA sample in a pod) and `../vms/gpu/test-gpu-vm.sh` (CUDA in a VM) |
 
@@ -82,7 +82,13 @@ they flag things needing a human, not broken things.
 | T-17 | No GPU claimed (billing) | GPUs on MOC are billed while claimed. FAILs on any non-terminal pod requesting an `nvidia.com/*` resource (pending included), any Deployment/StatefulSet/DaemonSet/Job/CronJob template requesting one (a template at 0 replicas claims tomorrow), any VM/VMI with a GPU or host device, and any GPU node whose own allocation count is non-zero. `GPU_CLAIM_ALLOW_NS=<regex>` downgrades approved namespaces to WARN; the GPU operator's seconds-long CUDA validator is always a WARN. Logic in `../lib/gpu-claims.py`; negative-tested offline with synthetic objects (no real GPU claimed). |
 | T-12 | GPU switch is delegated & constrained | `gpu-modality-switcher` can patch only the GPU nodes (verified by SubjectAccessReview), cannot touch masters or delete nodes, and the admission policy exists. WARNs while the policy is non-enforcing. |
 
-### Unit test — no cluster needed
+### Unit tests — no cluster needed
+
+`./test-gpu-vm-checks.sh` feeds `lib/gpu-vm-checks.py` synthetic nodes, VMs
+and CRs, so each FAIL path runs: two tenants' GPU VMs on one node, a GPU VM
+that would block drains, a passthrough resource the webhook would reject. A
+properly set up cluster only ever shows the PASS side. Both HyperConverged
+layouts are covered (v1 keeps the settings under `spec.virtualization`).
 
 `./test-remediation-ordering.sh` exercises `lib/select-remediations.py`, the
 stage 2 selector, against synthetic fixtures. It guards the invariant that
