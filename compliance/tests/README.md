@@ -20,22 +20,23 @@ export KUBECONFIG=...
 | `--functional` | `../vms/test-vm.sh`, `test-vm-storage.sh`, `test-vm-migration.sh` in a throwaway project |
 | `--gpu` | `test-gpu-pod.sh` (a CUDA sample in a pod) and `../vms/gpu/test-gpu-vm.sh` (CUDA in a VM) |
 
-Results (2026-10-20): jetty 24 PASS, 0 FAIL read-only; 27 PASS, 0 FAIL
-with `--functional` (all three VM tests). `--gpu`: CUDA in a pod and CUDA
-in a VM both passed (about 10 minutes of GPU time). The billing check
-then failed only because the VM's project was still being deleted; the
-suite now waits for deletion first, which has not yet been re-run.
-nist-dev-infra:
-fails only on its missing default StorageClass; no VMs or GPUs there. Not
-yet run on a hosted spoke. Checks that need a debug pod report WARN where
-a spoke does not allow one.
+Results, read-only (2026-10-26): jetty 32 PASS, 0 FAIL, 1 WARN (the GPU
+firmware is not yet in `../vms/gpu/memclear-record.md`); nist-dev-infra
+6 PASS, 0 FAIL (no VMs or GPUs there, so those sections skip).
+
+Earlier, on jetty (2026-10-20): `--functional` passed all three VM tests,
+and `--gpu` ran CUDA in a pod and in a VM (about 10 minutes of GPU time).
+The billing check then failed only because the VM's project was still
+being deleted; the suite now waits for deletion first, which has not yet
+been re-run. Not yet run on a hosted spoke. Checks that need a debug pod
+report WARN where a spoke does not allow one.
 
 The rest of this page is `verify.sh`, jetty's own regression net, whose
 generic checks the acceptance suite reuses.
 
 ## jetty: `verify.sh`
 
-*Last updated 2026-10-07. Current result: 38 PASS / 0 FAIL / 3 WARN.*
+*Current result (2026-10-26): 67 PASS / 0 FAIL / 2 WARN, the two below.*
 
 A regression net for `jetty`, covering compliance posture, FIPS, RHACS, and
 **both GPU modalities**.
@@ -197,10 +198,15 @@ currently hosting `central` and `central-db`.
 
 ## Known WARNs (expected, not bugs)
 
-Current state: **49 PASS, 0 FAIL, 2 WARN** (2026-10-08, after stage 3 and
-etcd backups).
+Current state: **67 PASS, 0 FAIL, 2 WARN** (2026-10-26).
 
-- **T-02** — no CMVP certificate record yet. Paperwork, not a cluster problem.
+- **T-02** — the nodes run OpenSSL FIPS provider `3.0.7-cda111b5812c30d4`, a
+  security build newer than the certified `3.0.7-395c1a240fbfffd8`
+  (`fips-cmvp-certificates.md`). Normal for a current release; it goes in the
+  SSP, not the cluster.
+- **T-12** — the GPU-switch admission policy is in `Warn`+`Audit`, not `Deny`.
+  Deliberate: enforcing a node admission policy before an identity provider
+  exists risks locking yourself out. Switch to `Deny` once an IdP is in place.
 
 T-10 no longer warns: `allowedRegistries` is set (`manifests/14-*`), and T-10
 now checks every in-use registry against it. Its blind spot is that it only
@@ -208,9 +214,6 @@ sees **running** containers — a registry used only by a CronJob, a
 scaled-to-zero workload, an operator's `relatedImages` or an ImageStream will
 not appear. Inventory those too before editing the allowlist (the manifest
 header lists what was checked).
-- **T-12** — the GPU-switch admission policy is in `Warn`+`Audit`, not `Deny`.
-  Deliberate: enforcing a node admission policy before an identity provider
-  exists risks locking yourself out. Switch to `Deny` once an IdP is in place.
 
 ## Gotchas baked into these scripts
 

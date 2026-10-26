@@ -33,17 +33,17 @@ daemonsets (driver, device plugin, `vfio-manager`, DCGM) bind and advertise
 the hardware but never request it as a pod resource, so they are not
 billable — that is just the operator doing its job.
 
-### Target cluster: `jetty` (as of 2026-10-01)
+### Target cluster: `jetty` (as of 2026-10-26)
 
 | | State |
 |---|---|
 | GPU nodes | `moc-r4pcc02u15`, `moc-r4pcc02u16` — 4× NVIDIA H100-80GB-HBM3 each (8 total) |
 | GPU PCI id | `10DE:2330` (GH100 SXM5 80GB) at `06:00.0`, `26:00.0`, `a6:00.0`, `c6:00.0` |
-| OpenShift Virtualization | 4.22.9 — **both GPU nodes `kubevirt.io/schedulable=true`**, q35 available |
-| NVIDIA GPU Operator | 26.7.1, `ClusterPolicy` state `ready`, 4 allocatable `nvidia.com/gpu` per node |
+| OpenShift Virtualization | 4.22.12 (4.22.9 for the 2026-10-01 run) — **both GPU nodes `kubevirt.io/schedulable=true`**, q35 available |
+| NVIDIA GPU Operator | 26.7.2 (26.7.1 for the 2026-10-01 run), `ClusterPolicy` state `ready` |
 | `ClusterPolicy.sandboxWorkloads` | `{"mode":"kubevirt","defaultWorkload":"container","enabled":true}` — ready to accept the node label |
-| `HyperConverged.permittedHostDevices` | ✅ `10DE:2330` → `nvidia.com/GH100_H100_SXM5_80GB`, `externalResourceProvider: true` |
-| `nvidia.com/gpu.workload.config` | **`u16` = `vm-passthrough`** (`GH100_H100_SXM5_80GB=4`, `nvidia.com/gpu=0`); `u15` unset, still serving containers with `nvidia.com/gpu=4` |
+| `HyperConverged.permittedHostDevices` | (under `spec.virtualization` in HyperConverged v1) ✅ `10DE:2330` → `nvidia.com/GH100_H100_SXM5_80GB`, `externalResourceProvider: true` |
+| `nvidia.com/gpu.workload.config` | **`u16` = `vm-passthrough`** (`GH100_H100_SXM5_80GB=4`, `nvidia.com/gpu=0`); `u15` = `container`, serving containers with `nvidia.com/gpu=4` |
 | **Storage** | ✅ **`nfs-over-tls` (default)** — Portworx CSI → Pure FlashBlade NFSv4.1 over TLS (since 2026-10-07; [../../NFS-TLS.md](../../NFS-TLS.md)). Was broken until 2026-10-02 (storage VLAN not trunked to the FlashBlade). The 7 TB `nvme1n1` on each worker remains untouched and unused |
 | IOMMU | ✅ **confirmed active: 103 groups**, and `/proc/cmdline` carries no `amd_iommu=`/`iommu=` argument at all |
 | Current GPU load | both nodes idle of **GPU** workloads — but see the warning below |
@@ -56,7 +56,7 @@ The node kernel also runs `fips=1`, which did not impede the driver build.
 > It cordons and drains whichever node `NODE` names. RHACS **`central` and
 > `central-db`** (the ACS control plane and its PostgreSQL database) run on
 > one of the GPU workers and move between them: `u16` on 2026-10-02, `u15`
-> since the 2026-10-05 reboots (checked 2026-10-10).
+> since the 2026-10-05 reboots (`central-db` still there, checked 2026-10-26).
 >
 > "Both nodes idle" is true of *GPU* workloads only, and is now misleading:
 > the node is not idle. RHACS pods hold no GPUs so a GPU-scoped drain would not
@@ -284,7 +284,10 @@ This directly inverts what `../test-vm-migration.sh` proves for an ordinary VM. 
 
 Ruled out, each by direct observation rather than reasoning: **memory** (reproduced at `MEMORY=2Gi`), **SELinux** (Enforcing, zero AVC denials on the node during the failure), and **QoS / ephemeral-storage eviction** (the pod is `Burstable` either way — this was my own hypothesis and it was wrong). The root cause is not known. What is known is that the combination does not work there, so a GPU VM needs a real PVC, which means a real StorageClass. `preflight.sh` now checks for one up front and `test-gpu-vm.sh` warns if you force `BOOT_MODE=containerdisk` with a GPU attached.
 
-## Result: partly proven on `jetty`; not re-run since storage was fixed
+## Result: proven on `jetty` (2026-10-20); the first attempt, 2026-10-01
+
+The 2026-10-20 run passed tiers 1 to 3 (status at the top of this page).
+What follows is the first attempt, kept for what it ruled out.
 
 Run on 2026-10-01 against `jetty` (OpenShift Virtualization 4.22.9, GPU Operator 26.7.1, NFD 4.22.0, node `moc-r4pcc02u16`).
 
@@ -296,7 +299,7 @@ Run on 2026-10-01 against `jetty` (OpenShift Virtualization 4.22.9, GPU Operator
 - IOMMU needed no intervention at all: 103 IOMMU groups on both workers, no `amd_iommu=` or `iommu=` anywhere in `/proc/cmdline`. See prerequisite 2.
 - `fips=1` is set on these nodes and did not impede the NVIDIA driver build, which was a plausible failure mode that simply did not materialise.
 
-**Not established:** the guest never booted, so tiers 1–3 (does the guest see the card, load the driver, run CUDA) are all still open. At the time (2026-10-01) `jetty` had no working storage, so the DataVolume path could not provision a root disk, and the containerDisk path is incompatible with passthrough as described above. Storage has worked since 2026-10-02 (Pure FlashBlade via Portworx, now `nfs-over-tls`), so nothing blocks a re-run except that it claims an H100 — billable, see the cost warning.
+**Not established then:** the guest never booted, so tiers 1–3 (does the guest see the card, load the driver, run CUDA) stayed open until 2026-10-20. At the time (2026-10-01) `jetty` had no working storage, so the DataVolume path could not provision a root disk, and the containerDisk path is incompatible with passthrough as described above. Storage has worked since 2026-10-02 (Pure FlashBlade via Portworx, now `nfs-over-tls`); the 2026-10-20 re-run booted from a DataVolume on it.
 
 ---
 
