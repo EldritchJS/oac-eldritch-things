@@ -1066,7 +1066,7 @@ The proxy ran with `verify: false` because the FlashBlade's self-signed
 certificate says `CA:FALSE`, and HAProxy will not use it as a trust anchor.
 Following Naved's suggestion, `nist-dev-infra::realm-cert` was replaced
 with a self-signed certificate marked as a CA. It is RSA 3072 and SHA-256,
-with IP SAN 10.9.7.10, `pathlen:0`, and a name constraint to that one
+with IP SAN <realm-data-vip>, `pathlen:0`, and a name constraint to that one
 address. It was generated on the laptop that imported it, so the key never
 moved.
 
@@ -1081,10 +1081,10 @@ moved.
   failed with a 503, and Loki and Thanos could no longer write. HAProxy
   3.4 takes the TLS server name from each request's Host header
   (`s3.nist-dev-infra…`) and checks the certificate against it, and the
-  certificate names only 10.9.7.10. Health checks send no Host header, so
+  certificate names only <realm-data-vip>. Health checks send no Host header, so
   they passed and the backend never showed as down. A test HAProxy in the
   proxy pod reached the FlashBlade, with verification on, once its server
-  line had `sni str(10.9.7.10)`. The chart fix adds that whenever
+  line had `sni str(<realm-data-vip>)`. The chart fix adds that whenever
   `verify` is on and `backend.host` is unset. Holding a hand edit would have
   meant pausing self-heal at three levels (`bootstrap`, the `hub-components`
   ApplicationSet, the Application), so the hub waited for the fix. Loki's
@@ -1203,7 +1203,7 @@ had 58 failures.
 | oac-apps, `hosted-clusters/nist-dev-infra/` ([#157](https://github.com/CCI-MOC/oac-apps/pull/157), [#159](https://github.com/CCI-MOC/oac-apps/pull/159), [#163](https://github.com/CCI-MOC/oac-apps/pull/163), [#164](https://github.com/CCI-MOC/oac-apps/pull/164), [#166](https://github.com/CCI-MOC/oac-apps/pull/166), [#171](https://github.com/CCI-MOC/oac-apps/pull/171)) | Hub-wide defaults (FIPS, node hardening, audit profile, registry allowlist) and nist-dev-workload0: two workers, 4.22.18, single-replica control plane, the storage NIC without a default route, MOC SSO |
 | oac-apps charts ([#167](https://github.com/CCI-MOC/oac-apps/pull/167), [#169](https://github.com/CCI-MOC/oac-apps/pull/169), [#170](https://github.com/CCI-MOC/oac-apps/pull/170), [#174](https://github.com/CCI-MOC/oac-apps/pull/174), [#179](https://github.com/CCI-MOC/oac-apps/pull/179)) | The hub-side audit error alert for hosted clusters, proxy and COO ordering fixes, proxy certificate checks, the TLS export policy |
 | moc-aws ([#53](https://github.com/CCI-MOC/moc-aws/pull/53) to [#60](https://github.com/CCI-MOC/moc-aws/pull/60)) | The `nist.int` zone, the hosted-cluster zones and their wildcards, the external-dns user, cert-manager in the hosted zones, the `s3.` record, the hub's and workload0's OIDC providers and ESO and cert-manager roles |
-| moc-dns, everpure-moc, moc-keycloak | Delegation of `nist.int` ([#33](https://github.com/CCI-MOC/moc-dns/pull/33)); FlashBlade realms for the hub ([#26](https://github.com/CCI-MOC/everpure-moc/pull/26)) and workload0 ([#29](https://github.com/CCI-MOC/everpure-moc/pull/29)); workload0's Keycloak client ([#54](https://github.com/CCI-MOC/moc-keycloak/pull/54)) |
+| moc-dns, everpure-moc, moc-keycloak | Delegation of `nist.int` ([#33](https://github.com/CCI-MOC/moc-dns/pull/33)); FlashBlade realms for the hub ([#26](https://github.com/CCI-MOC/everpure-moc/pull/26)) and workload0 ([#29](https://github.com/CCI-MOC/everpure-moc/pull/29)); Keycloak clients for workload0 ([#54](https://github.com/CCI-MOC/moc-keycloak/pull/54)) and the hub ([#55](https://github.com/CCI-MOC/moc-keycloak/pull/55)) |
 
 **Merged the evening of 2026-10-23:** [#172](https://github.com/CCI-MOC/oac-apps/pull/172) (token timeouts,
 import allowlist, `ghcr.io/grafana`), [#175](https://github.com/CCI-MOC/oac-apps/pull/175) (workload0's ESO and
@@ -1212,7 +1212,16 @@ cert-manager roles, a Let's Encrypt ingress certificate), and the ACS chart
 clusters is open in oac-apps. The other compliance charts are still on
 the fork's `nist-dev-infra-test` branch.
 
-### Still open (2026-10-23)
+**Merged 2026-10-26, for the hub's own rules:** [#184](https://github.com/CCI-MOC/oac-apps/pull/184) (a Let's Encrypt
+apps certificate), [#188](https://github.com/CCI-MOC/oac-apps/pull/188) (MOC SSO and token timeouts, after
+moc-keycloak [#55](https://github.com/CCI-MOC/moc-keycloak/pull/55)) and [#185](https://github.com/CCI-MOC/oac-apps/pull/185) (pure-cosi v0.1.2, with requests and
+limits from [pure-cosi#11](https://github.com/CCI-MOC/pure-cosi/pull/11), on every cluster). On the fork the same days: the
+samples registry, workload0's forwarder on system trust, the ingress CA
+and route allowlist tailorings, and the API server audit profile, whose
+rollout froze two masters' kubelets until they were power-cycled from
+their iDRACs ([RUNBOOK.md](RUNBOOK.md) §5).
+
+### Still open (2026-10-27)
 
 Everything listed as needed on 2026-10-20 is done (workers, addresses and
 wildcards, the cert-manager zones, a default StorageClass, the workload
@@ -1223,16 +1232,19 @@ stages, an identity provider), except:
   each node that runs hosted control planes a local disk for LVM Storage.
 - **The master spells:** capped at 40 CPUs
   ([MASTER-ROUND.md](MASTER-ROUND.md)), the masters stall less often, but
-  still do.
+  still do, and an API server rollout froze two of them on 2026-10-26.
+  The hub needs replacement masters. u17's iDRAC also logged a
+  correctable-memory warning for DIMM_B5 (2026-10-17), for the hardware
+  owners.
 - **The hub's own compliance:** 4 failing rules on 2026-10-27, down
   from 19 on 2026-10-23 (quotas, tailored false positives, operator
   exemptions, a registry allowlist, route rate limits, a Let's Encrypt
   certificate, hub SSO and token timeouts, COSI limits, the API server
   audit profile, the route allowlist tailored to the network). etcd
   encryption and the proxy are POA&M items, kubeadmin a known gap, and
-  NetworkPolicies wait for the production setup. Each, with its fix, is in [RUNBOOK.md](RUNBOOK.md) 2.9.
-  The masters had four spells that night (02:49 to about 03:45 UTC), so
-  changes that restart the control plane wait for a quiet hub.
+  NetworkPolicies wait for the production setup. Each, with its fix, is
+  in [RUNBOOK.md](RUNBOOK.md) 2.9. Changes that restart the control plane
+  wait for a quiet hub.
 - **Storage on workload0:** none yet, so its user-workload Prometheus and
   COO's Perses volumes stay Pending. The realm and its Portworx secret
   exist; a CA-marked realm certificate, the Portworx values and tlshd on

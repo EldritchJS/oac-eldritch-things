@@ -1,7 +1,7 @@
 # How a compliant hub and its workload clusters are built
 
 *Method, 2026-10-14, updated with lessons from nist-dev-infra and
-nist-dev-workload0 through 2026-10-23. Steps that depend on an unfinished
+nist-dev-workload0 through 2026-10-27. Steps that depend on an unfinished
 experiment are marked **to verify** with the experiment number from
 [HUB-SPOKE.md](HUB-SPOKE.md) §7.*
 
@@ -43,7 +43,7 @@ These are not cluster steps, but the build cannot start without them.
 |---|---|---|---|
 | P1 | The compliance charts merged into the repo the hub's ArgoCD reads (`CCI-MOC/oac-apps` `main`, or a separate repo; HUB-SPOKE.md §9) | The ApplicationSets point at `main`. The hosted-cluster changes (`hosted-cluster-nodepool-config`) are needed too | oac-apps maintainers |
 | P2 | Branch protection and required review on that repo's `main` | Whoever can merge can change the compliant hub (CM-3/CM-5, 3.4.3/3.4.5) | oac-apps maintainers |
-| P3 | A decision on how the hub's API audit settings are delivered (`patches/0001`, `cluster-certificates`) | Otherwise ArgoCD resets the audit profile to `Default` | oac-apps maintainers |
+| P3 | A decision on how the hub's API audit settings are delivered (`patches/0001`, `cluster-certificates`) | Otherwise ArgoCD resets the audit profile to `Default`. On nist-dev-infra, `platform-hardening` `apiServerAudit` sets it, and `cluster-certificates` leaves the APIServer alone (`certificates.api` off). A hub that turns on the API certificate needs another way | oac-apps maintainers |
 | P4 | Which workloads hold CUI or ePHI, and so which hub is compliant | Decides whether this hub is needed at all | Compliance office |
 | P5 | The approved system-use notice text | `platform-hardening` will not render without it | Legal or compliance office |
 | P6 | The registry allowlist inventory | A missing registry stops pods from pulling | Cluster owners |
@@ -241,6 +241,15 @@ Also set:
 - **`nfs-tls`:** the `tlshd` image digest and the CA (an `externalSecret`
   from `cluster/<hub>/nfs-tls-ca`), with `storageClass.enabled: false`: the
   hub's Portworx class is the TLS class (I6, I7).
+- **Hub SSO:** a Keycloak client for the hub in moc-keycloak `main.tf`
+  (NDI: moc-keycloak #55), then `apps/<hub>/keycloak-oauth.yaml` and its
+  values, with `tokenConfig` for the token rules: 86400 s maximum age,
+  10m0s inactivity (oac-apps #188).
+- **The apps certificate:** `cluster-certificates` with a Let's Encrypt
+  wildcard for `*.apps.<hub domain>` (oac-apps #184), API certificate
+  off. Anything that pinned the hub's old ingress CA stops verifying; the
+  hosted clusters' audit forwarders then need
+  `forwarder.remote.hubIngressCA: false`.
 - **`namespace-guardrails`:** the hub's own namespaces. Start from what
   HyperShift creates in its control-plane namespaces (HUB-SPOKE.md §6).
 - **Log forwarding:** to B1 when it exists (P9). Until then, the

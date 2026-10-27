@@ -1,12 +1,12 @@
 # A new compliant hub and workload cluster, from nothing
 
-*Draft, 2026-10-23. For review: not yet run end to end. Open items are
+*Draft, 2026-10-27. For review: not yet run end to end. Open items are
 marked **TODO**.*
 
 **What it produces today (2026-10-27):** a workload cluster at 1 moderate
-failure (the cluster-wide proxy, a recorded gap) and 0 CIS, and a hub that
-is at 4 failing rules: three accepted gaps and NetworkPolicies, to be done for production. Each, with its
-fix and status, is in
+failure (the cluster-wide proxy, a recorded gap) and 0 CIS, and a hub at
+4 failing rules: three accepted gaps and NetworkPolicies, to be done for
+production. Each, with its fix and status, is in
 [nist-dev-infra/RUNBOOK.md 2.9](nist-dev-infra/RUNBOOK.md#29-what-the-hub-does-not-pass-yet).
 A hub built from this runbook has the same gaps until those fixes land.
 
@@ -61,6 +61,7 @@ owner, and most take days. Ask a named reviewer on each.
 | 1.7 | Membership in `moc-aws-cluster-operators` for the hub owner | `moc-aws` `sso-users.tf` | moc-aws maintainers | in [#60](https://github.com/CCI-MOC/moc-aws/pull/60) | `ClusterOperatorAccess` profile logs in |
 | 1.8 | Storage VLAN, untagged, on each node's second port | switches | network admins | | DHCP lease on `br-storage` |
 | 1.9 | Nodes on the management network, VPN only, inventory entries | `open-accelerator-infra` | infra admins | | Nodes PXE or ISO boot |
+| 1.10 | A Keycloak client for the hub, redirect `https://oauth-openshift.apps.<hub domain>/oauth2callback/mocsso` | `moc-keycloak` `main.tf` | Keycloak maintainers | [#55](https://github.com/CCI-MOC/moc-keycloak/pull/55) | Secret in `cluster/<hub>/keycloak-oidc` |
 
 On NDI, the hub's records were first made by hand in `int.massopen.cloud`;
 [#54](https://github.com/CCI-MOC/moc-aws/pull/54) copied them into the new
@@ -131,6 +132,8 @@ One PR for the hub's own values, as upstream (NDI: [#142](https://github.com/CCI
 | `cert-manager.yaml`, `external-dns-operator.yaml` | The `cert-manager-<hub>` role, the zone | on main |
 | `openshift-gitops.yaml` | Argo controller at 8Gi, or it OOMs once clusters arrive | [#162](https://github.com/CCI-MOC/oac-apps/pull/162) |
 | `acm.yaml`, `acm-placements.yaml`, `hcp-config.yaml`, `metallb.yaml` | ACM, agent install service, hosted-clusters router | [#156](https://github.com/CCI-MOC/oac-apps/pull/156) |
+| `cluster-certificates.yaml` | A Let's Encrypt wildcard for the apps routes; API certificate off | [#184](https://github.com/CCI-MOC/oac-apps/pull/184) |
+| `keycloak-oauth.yaml`, and `apps/<hub>/keycloak-oauth.yaml` | Hub SSO through the 1.10 client, with `tokenConfig` (86400 s, 10m0s) | [#188](https://github.com/CCI-MOC/oac-apps/pull/188) |
 
 **Storage is TLS only from the first volume:** `portworx.yaml` and
 `nfs-tls.yaml` go in together, or `nfs-tls` first (BUILD.md, "Storage is
@@ -192,7 +195,7 @@ until their fixes are on main.
 | 4.3 | Zones for hosted clusters (`hcp.<zone>`, `hcp-int.<zone>`), an external-dns user, ESO prefixes | `moc-aws` | [#55](https://github.com/CCI-MOC/moc-aws/pull/55) |
 | 4.4 | cert-manager may answer DNS-01 in those zones | `moc-aws` | [#56](https://github.com/CCI-MOC/moc-aws/pull/56) |
 | 4.5 | Wildcards to the hosted-clusters router, for Ignition, Konnectivity, OAuth, and the agents' `api` checks | `moc-aws` | [#57](https://github.com/CCI-MOC/moc-aws/pull/57), [#58](https://github.com/CCI-MOC/moc-aws/pull/58) |
-| 4.6 | Hosted compliance values, all hosted clusters: tailoring, guardrails, ACS, audit forwarding | fork test branch, `values/<hub>/hosted-clusters/` | test branch |
+| 4.6 | Hosted compliance values, all hosted clusters: tailoring, guardrails, ACS, audit forwarding (`forwarder.remote.hubIngressCA: false` when the hub's apps certificate is publicly issued) | fork test branch, `values/<hub>/hosted-clusters/` | test branch |
 
 ---
 

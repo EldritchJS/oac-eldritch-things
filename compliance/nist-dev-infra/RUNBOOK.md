@@ -284,11 +284,15 @@ Argo does not retry a failed commit.
 ```
 cd ~/oat/oac-eldritch-things/compliance
 KUBECONFIG=$HUB AWS_PROFILE=$SM tests/hub-preflight.sh nist-dev-infra   # every check PASS
-KUBECONFIG=$HUB oc get sc                       # pure-fb-nfsv4 (default), and nothing else on the FlashBlade
+KUBECONFIG=$HUB oc get sc                       # pure-fb-nfsv4 (default) and nfs-over-tls, both TLS
 KUBECONFIG=$HUB oc -n nfs-tls get pods          # tlshd Running on all three nodes (after stage B, 2.8)
 ```
 
 If `pure-fb-nfsv4` is missing, re-sync `hub-portworx` (2.5).
+
+`nfs-over-tls` comes from the fork's nfs-tls values, kept for the volumes
+created on it on 2026-10-19 (ACS's databases, the etcd backups, COO's
+Perses). A new hub sets `storageClass.enabled: false` there instead.
 
 ### 2.7 Object storage
 

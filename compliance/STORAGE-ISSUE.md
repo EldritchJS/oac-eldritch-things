@@ -89,14 +89,14 @@ answering for that IP on that segment. This is not a filtering artifact.
 
 ### Why provisioning still works
 
-Portworx reaches the FlashBlade **management** endpoint `10.3.11.50` to create
+Portworx reaches the FlashBlade **management** endpoint `<fb-mgmt-ip>` to create
 filesystems, and that path is fine — PVCs bind and FlashBlade filesystems are
 created. Management plane OK, **NFS data plane broken**. That split is exactly
 why this looked like working storage at a glance.
 
 Config in `px-pure-secret`:
 ```
-FlashBlades: MgmtEndPoint: 10.3.11.50 | NFSEndPoint: <fb-data-vip>
+FlashBlades: MgmtEndPoint: <fb-mgmt-ip> | NFSEndPoint: <fb-data-vip>
 ```
 
 ---
@@ -113,7 +113,7 @@ That is consistent with every observation, and it is the fix:
 - **Gateway `<storage-gw>` reachable** — the switch carries the VLAN to the *node*
   ports and to the router, just not to the *FlashBlade* ports. This is why the
   subnet looked healthy while the FlashBlade stayed invisible.
-- **Management `10.3.11.50` works** — the FlashBlade's management interface sits
+- **Management `<fb-mgmt-ip>` works** — the FlashBlade's management interface sits
   on a different, correctly connected network. Management plane up, data plane
   isolated. That is precisely the split we measured.
 
