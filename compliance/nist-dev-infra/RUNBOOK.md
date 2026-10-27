@@ -422,7 +422,7 @@ Still failing (* also CIS):
 
 | Rule | Fix | Status |
 |---|---|---|
-| `kubeadmin-removed`* | Grant cluster-admin to an SSO group, then delete the `kubeadmin` secret in `kube-system`. The admin kubeconfig stays as break-glass | Drafted, not opened: a moc-keycloak group and an oac-apps `cluster-admins` chart. On hold |
+| `kubeadmin-removed`* | Grant cluster-admin to an SSO group, then delete the `kubeadmin` secret in `kube-system`. The admin kubeconfig stays as break-glass | **Known gap** (decided 2026-10-26). The kubeadmin login is a shared account, so the audit log cannot tell who used it (AC-2, IA-2). Removing it safely needs an SSO cluster-admin group first; a draft (a moc-keycloak group and an oac-apps `cluster-admins` chart) exists but is not opened |
 | `route-ip-whitelist` | Allowed client ranges on every route | Needs the ranges agreed (week of 2026-10-26) |
 | `configure-network-policies-namespaces`* | Policies for 20 namespaces, many of them ACM, HyperShift and storage. Each needs its traffic measured first; a wrong policy cuts off a hub component | Week of 2026-10-26; what cannot be measured goes in the exception register |
 | `api-server-encryption-provider-cipher`* | etcd encryption (`aesgcm`). On this hub it re-encrypts every Secret and ConfigMap on masters that stall under load | **POA&M** (decided 2026-10-24): enabled at install on the replacement hub, where etcd starts empty |
