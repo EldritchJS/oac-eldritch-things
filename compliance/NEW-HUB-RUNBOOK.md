@@ -3,9 +3,9 @@
 *Draft, 2026-10-23. For review: not yet run end to end. Open items are
 marked **TODO**.*
 
-**What it produces today (2026-10-26):** a workload cluster at 1 moderate
+**What it produces today (2026-10-27):** a workload cluster at 1 moderate
 failure (the cluster-wide proxy, a recorded gap) and 0 CIS, and a hub that
-is **not yet compliant**: 5 failing rules, two of them POA&M items. Each, with its
+is at 4 failing rules: three accepted gaps and NetworkPolicies, to be done for production. Each, with its
 fix and status, is in
 [nist-dev-infra/RUNBOOK.md 2.9](nist-dev-infra/RUNBOOK.md#29-what-the-hub-does-not-pass-yet).
 A hub built from this runbook has the same gaps until those fixes land.
@@ -258,7 +258,7 @@ applies to any new pair.
 - **TODO:** hosted etcd on FlashBlade NFS is test-only, and it failed on
   2026-10-23 (a stale NFS lock); a supported home for it.
 - **TODO:** a central audit and alert destination (P9).
-- **TODO:** the hub's own failures (5 rules, 2 of them POA&M): removing
-  kubeadmin, route allowlists, NetworkPolicies, and etcd encryption and the
-  proxy: [nist-dev-infra/RUNBOOK.md 2.9](nist-dev-infra/RUNBOOK.md#29-what-the-hub-does-not-pass-yet).
+- **TODO:** NetworkPolicies for the hub's namespaces, for production; the
+  rest of the hub's failures are accepted gaps (etcd encryption, the
+  proxy, kubeadmin): [nist-dev-infra/RUNBOOK.md 2.9](nist-dev-infra/RUNBOOK.md#29-what-the-hub-does-not-pass-yet).
 - **TODO:** a walk-through by someone who has not built a hub before.

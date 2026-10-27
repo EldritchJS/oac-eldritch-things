@@ -1224,11 +1224,13 @@ stages, an identity provider), except:
 - **The master spells:** capped at 40 CPUs
   ([MASTER-ROUND.md](MASTER-ROUND.md)), the masters stall less often, but
   still do.
-- **The hub's own compliance:** 5 failing rules on 2026-10-26, down
+- **The hub's own compliance:** 4 failing rules on 2026-10-27, down
   from 19 on 2026-10-23 (quotas, tailored false positives, operator
   exemptions, a registry allowlist, route rate limits, a Let's Encrypt
   certificate, hub SSO and token timeouts, COSI limits, the API server
-  audit profile). etcd encryption and the proxy are POA&M items. Each, with its fix, is in [RUNBOOK.md](RUNBOOK.md) 2.9.
+  audit profile, the route allowlist tailored to the network). etcd
+  encryption and the proxy are POA&M items, kubeadmin a known gap, and
+  NetworkPolicies wait for the production setup. Each, with its fix, is in [RUNBOOK.md](RUNBOOK.md) 2.9.
   The masters had four spells that night (02:49 to about 03:45 UTC), so
   changes that restart the control plane wait for a quiet hub.
 - **Storage on workload0:** none yet, so its user-workload Prometheus and

@@ -1,13 +1,16 @@
 # Rebuilding nist-dev-infra and nist-dev-workload0
 
-*Runbook, 2026-10-24. Not yet run end to end. Open items are marked
+*Runbook, final for this hub (2026-10-27). Not yet run end to end: the
+next iteration is a walk-through by someone other than the original
+builder, on the hub's replacement masters. Open items are marked
 **TODO**. Nothing here is torn down without the hub owner's explicit
 go-ahead at the time.*
 
-**What it produces today (2026-10-26):** a workload cluster at 1 moderate
-failure (the cluster-wide proxy, a recorded gap) and 0 CIS, and a hub
-that is **not yet compliant**: 5 failing rules, two of them POA&M items,
-listed with their fixes in 2.9.
+**What it produces today (2026-10-27):** a workload cluster at 1 moderate
+failure (the cluster-wide proxy, a recorded gap) and 0 CIS, and a hub at
+4 failing rules: three accepted gaps (etcd encryption and the proxy as
+POA&M items, kubeadmin as a known gap) and NetworkPolicies, to be done
+for the production setup. Each is in 2.9.
 
 This runbook gives the exact steps to rebuild the test hub and its first
 hosted cluster as they were actually built, so that someone other than
@@ -397,8 +400,8 @@ APPLY=1 $RB/route-rate-limits.sh    # annotates them
 Re-run it after any operator upgrade: an operator can drop the
 annotations.
 
-**5 distinct rules still fail** (rescan, 2026-10-26 23:45 UTC): 5 in
-moderate, 3 of them also in CIS, none in the three node scans. Remove
+**4 distinct rules still fail** (rescan, 2026-10-27): 4 in moderate, 3
+of them also in CIS, none in the three node scans. Remove
 rows as fixes land.
 With everything in the Status column done, only the two POA&M items
 remain.
@@ -417,14 +420,14 @@ Fixed so far, from 19 (moderate) and 7 (CIS):
 | `idp-is-configured`*, `oauth-or-oauthclient-inactivity-timeout`, `-token-maxage` | MOC SSO (`mocsso`) with 24-hour tokens and a 10-minute inactivity timeout: moc-keycloak [#55](https://github.com/CCI-MOC/moc-keycloak/pull/55), then oac-apps [#188](https://github.com/CCI-MOC/oac-apps/pull/188) (2026-10-26). An `oc` login through OAuth, kubeadmin's too, now expires after 10 idle minutes; the admin kubeconfig does not |
 | `resource-requests-limits-in-deployment` | pure-cosi v0.1.2 sets requests and limits on the COSI controller and driver for every cluster (CCI-MOC/pure-cosi#11, oac-apps [#185](https://github.com/CCI-MOC/oac-apps/pull/185), 2026-10-26) |
 | `audit-profile-set`* | `platform-hardening` `apiServerAudit`: WriteRequestBodies, server-side applied (fork `eadf121`, 2026-10-26). Argo's server-side apply takes the field over from the cluster-version-operator, which created the APIServer. The policy logs every write with its body, except Secrets, service account tokens, token reviews, OAuth clients, routes and MachineConfigs, which stay at Metadata. The kube-apiserver rollout took three hours: u15's and u17's kubelets froze at their API server switch, and each needed a power cycle (section 5) |
+| `route-ip-whitelist` | Tailored, rationale `routeNetwork` (fork `d9a1935`, 2026-10-27): the hub's names resolve to private addresses, also through public DNS, so the ingress is not reachable from the internet. **Assumed, not verified:** that only the VPN and the hub's own clusters can route to it inside MOC. If others can, re-enable the rule and add per-route allowlists (the VPN, workload0's egress, the hub's network) with `route-rate-limits.sh` |
 
 Still failing (* also CIS):
 
 | Rule | Fix | Status |
 |---|---|---|
 | `kubeadmin-removed`* | Grant cluster-admin to an SSO group, then delete the `kubeadmin` secret in `kube-system`. The admin kubeconfig stays as break-glass | **Known gap** (decided 2026-10-26). The kubeadmin login is a shared account, so the audit log cannot tell who used it (AC-2, IA-2). Removing it safely needs an SSO cluster-admin group first; a draft (a moc-keycloak group and an oac-apps `cluster-admins` chart) exists but is not opened |
-| `route-ip-whitelist` | Allowed client ranges on every route | Needs the ranges agreed (week of 2026-10-26) |
-| `configure-network-policies-namespaces`* | Policies for 20 namespaces, many of them ACM, HyperShift and storage. Each needs its traffic measured first; a wrong policy cuts off a hub component | Week of 2026-10-26; what cannot be measured goes in the exception register |
+| `configure-network-policies-namespaces`* | Policies for 20 namespaces, many of them ACM, HyperShift and storage. Each needs its traffic measured first; a wrong policy cuts off a hub component. ACS's Network Graph, already on the hub, records observed traffic and can generate policies from it | **TBD for the production setup.** Expect policies for the namespaces oac-apps owns (object-storage-proxy, COSI, cert-manager, hardware-inventory, portworx) and an exception register for the operator-managed ACM, MCE and HyperShift namespaces |
 | `api-server-encryption-provider-cipher`* | etcd encryption (`aesgcm`). On this hub it re-encrypts every Secret and ConfigMap on masters that stall under load | **POA&M** (decided 2026-10-24): enabled at install on the replacement hub, where etcd starts empty |
 | `cluster-wide-proxy-set` | None planned | **POA&M**, as on workload0 |
 
@@ -662,4 +665,14 @@ Every fix goes through a PR, as during the build:
   piece of work; until then the fork is part of the build.
 - **TODO:** a home for hosted etcd that is not NFS.
 - **TODO:** have someone other than the original builder walk through
-  this before the teardown, and fix what is unclear.
+  this on the hub's replacement masters, and fix what is unclear. The
+  current masters stall under FIPS (2.3, section 5), and an API server
+  rollout froze two of them on 2026-10-26.
+- **TODO:** NetworkPolicies for the hub's namespaces, for the production
+  setup (2.9).
+- **TODO:** ACS's scanner hits its memory limit about every 35 minutes on
+  the masters (2026-10-26, iDRAC console of u15); raise the limit or run
+  fewer replicas.
+- **TODO:** u17's iDRAC log has "Correctable memory error rate exceeded
+  for DIMM_B5" (2026-10-17); report it to the hardware owners. The
+  kernel logged no corrected errors from 2026-10-22 on.
