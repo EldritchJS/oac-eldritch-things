@@ -17,7 +17,7 @@ measurements from jetty are in [README.md](README.md). Status is as of
 |---|---|---|---|
 | 1. A VM with a GPU | **PCI passthrough**: a whole GPU is bound to `vfio-pci` and handed to one VM | None | **Proven on jetty (2026-10-20):** an Ubuntu VM got an H100, loaded the driver and ran a CUDA kernel correctly |
 | 2. Several VMs per host | **Yes**, one or more whole GPUs each. A 4-GPU node serves up to four 1-GPU VMs, two 2-GPU VMs, or one 4-GPU VM | None | **Proven on jetty (2026-10-20):** four 1-GPU VMs ran at once on one node, each on a different H100, and all passed |
-| 3. One GPU shared by several VMs | Only with **NVIDIA vGPU**: MIG-backed slices or time-sliced shares | NVIDIA AI Enterprise, plus a licence server | MOC has no licence today |
+| 3. One GPU shared by several VMs | Only with **NVIDIA vGPU**: MIG-backed slices or time-sliced shares | NVIDIA AI Enterprise, plus a licence server | MOC has no licence today; set aside (Next steps, 5) |
 
 Containers can share a GPU without a licence (MIG, time-slicing). VMs
 cannot: the GPU Operator's sharing features for VMs all go through vGPU.
@@ -32,7 +32,7 @@ cannot: the GPU Operator's sharing features for VMs all go through vGPU.
 | Host driver | None (`vfio-pci`) | NVIDIA vGPU manager | NVIDIA vGPU manager |
 | Licence | None | NVIDIA AI Enterprise | NVIDIA AI Enterprise |
 | GPU Operator node label | `vm-passthrough` | `vm-vgpu` | `vm-vgpu` |
-| Status at MOC | Proven on jetty | Not started | Not started |
+| Status at MOC | Proven on jetty | Set aside | Set aside |
 
 ## What OAC already has
 
@@ -129,10 +129,12 @@ Not a no, but a purchase and some setup:
 
 In order of what each one unblocks:
 
-1. **Reset between tenants: cleared (2026-10-20).** Memory written by one
-   VM read as zero, past the driver, after the VM was stopped and the GPUs
-   handed back (`test-gpu-memclear.sh`; sampled, one node). Ask NVIDIA to
-   confirm for H100 before relying on it for compliance.
+1. **Reset between tenants: cleared (2026-10-20, 2026-10-26).** Memory
+   written by one VM read as zero, past the driver, after the GPUs were
+   handed back: to the same VM, then to a new VM in another project, with
+   a positive control (`test-gpu-memclear.sh`; sampled, one node,
+   [memclear-record.md](memclear-record.md)). Ask NVIDIA to confirm for
+   H100 before relying on it for compliance.
 2. **NVLink between tenants (no licence involved).** On jetty's H100 boards
    each GPU is wired to the other three by NVLink, and with 1-GPU VMs the
    links between different tenants' GPUs stay physically up. A guest with
@@ -145,6 +147,17 @@ In order of what each one unblocks:
    NVLink between GPUs passed to different VMs is isolated, and whether the
    links can be turned off from the host.
 3. **On a spoke:** passthrough on a hosted cluster, with a GPU-VM NodePool.
-   `nist-dev-workload0` (being built, with H100s) or `oac-dev-workload0`.
+   A hosted cluster of the next compliant hub, or `oac-dev-workload0`.
+   (`nist-dev-workload0` went with its hub on 2026-10-28.)
 4. **Billing:** whether MOC's billing counts GPUs held by VMs.
-5. **vGPU:** price the licence, then decide.
+5. **vGPU: set aside (2026-10-28).** It only pays for VMs smaller than
+   one GPU, and costs a per-GPU licence each year, a licence server, a
+   private image, an unverified FIPS question and billing by fraction of
+   a GPU. On a compliant spoke, one tenant per GPU node rules out the
+   cross-tenant packing where the gain would be. If small GPUs are wanted,
+   offer MIG to containers instead: no licence, and each slice is its own
+   Kubernetes resource (`nvidia.com/mig-1g.10gb`), counted per pod like a
+   whole GPU. Check that the billing collector counts those names first.
+   VMs stay on passthrough, charged per GPU. Reopen only for real demand
+   for sub-GPU VMs. First check whether any GPU purchase came with NVIDIA
+   AI Enterprise (some data-center GPUs include a subscription).
