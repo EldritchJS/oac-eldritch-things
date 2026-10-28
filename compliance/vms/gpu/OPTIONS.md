@@ -102,7 +102,7 @@ Details and evidence: [README.md](README.md).
 | | Non-compliant spoke | Compliant spoke |
 |---|---|---|
 | Passthrough | Yes | Yes. Each VM has its own GPU behind the IOMMU |
-| Between tenants | Reuse the GPU | Check that the GPU is reset and its memory cleared before the next VM gets it. **To verify** |
+| Between tenants | Reuse the GPU | GPU memory is cleared before the next VM can read it: shown on one jetty node (2026-10-26), from a new VM in another project, with a positive control. The acceptance suite flags any passthrough node whose kernel, device, reset method or VBIOS differs from what was tested ([memclear-record.md](memclear-record.md)) |
 | MIG-backed vGPU | Yes, with a licence | Within one tenant. Across tenants, it is an argument to make in the SSP |
 | Time-sliced vGPU | Yes, with a licence | Not across tenants: compute and cache are shared |
 | FIPS | — | Passthrough needs no NVIDIA driver on the host. The vGPU manager is a kernel module on a FIPS host: **to verify** |
