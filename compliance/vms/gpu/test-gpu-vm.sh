@@ -73,12 +73,20 @@ BOOT_MODE="${BOOT_MODE:-}"
 # needs all guest pages present, so none of it is overcommittable.
 MEMORY="${MEMORY:-16Gi}"
 CPU_CORES="${CPU_CORES:-8}"
-# 1 gives each vCPU its own host core (KubeVirt dedicatedCpuPlacement). The
+# 1 gives each vCPU a host CPU of its own (KubeVirt dedicatedCpuPlacement). The
 # node needs the kubelet's static CPU manager, or the VM never schedules.
 DEDICATED_CPUS="${DEDICATED_CPUS:-0}"
+# Threads per core the guest is told about. With dedicated CPUs on a host
+# with SMT, KubeVirt pins vCPU pairs to one core's two threads; 2 tells the
+# guest so, and its scheduler stops putting two busy threads on one core.
+CPU_THREADS="${CPU_THREADS:-1}"
 CPU_PLACEMENT=""
-if [ "${DEDICATED_CPUS}" = "1" ]; then
+if [ "${CPU_THREADS}" != "1" ]; then
   CPU_PLACEMENT="
+          threads: ${CPU_THREADS}"
+fi
+if [ "${DEDICATED_CPUS}" = "1" ]; then
+  CPU_PLACEMENT="${CPU_PLACEMENT}
           dedicatedCpuPlacement: true"
 fi
 
