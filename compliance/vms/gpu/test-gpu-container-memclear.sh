@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# COSTS MONEY: claims GPU_COUNT GPUs on a container-mode node for about
-# 5 minutes per handoff (15 for the default three), plus the image pull.
+# COSTS MONEY: claims every GPU (or MIG slice) on a container-mode node for
+# about 5 minutes per handoff (15 for the default three), plus the image pull.
 # ---------------------------------------------------------------------------
 # Can a pod read GPU memory a previous pod left behind? Between containers
 # nothing resets the GPU: the host's NVIDIA driver keeps it, and clearing
@@ -10,25 +10,31 @@
 # (test-gpu-memclear.sh is the VM version, where vfio resets the GPU.)
 #
 # For each handoff in HANDOFFS:
-#   1. Pod A takes all GPU_COUNT GPUs on NODE, fills nearly all their memory
-#      with a pattern and reads it back. Control: it frees one chunk and
-#      allocates it again in the same process; pattern found there shows
-#      the scan can see leftovers when nothing clears them.
+#   1. Pod A takes all GPU_COUNT GPUs on NODE, or all its MIG slices, fills
+#      nearly all their memory with a pattern and reads it back. Control: it
+#      frees one chunk and allocates it again in the same process.
 #   2. Pod A lets go:
 #        exit    the process ends normally (memory never freed by hand)
 #        kill    the process kills itself with SIGKILL while holding it
 #        delete  the pod is deleted while the process holds it
-#   3. Pod B takes the same GPUs (same UUIDs checked), allocates as much
-#      memory as it can, does not write it, and counts the pattern.
+#   3. With RELABEL, the node's GPUs are repartitioned (MIG manager), as an
+#      operator changing the slice layout between tenants would.
+#   4. Pod B takes the same GPUs or slices (same UUIDs checked, unless
+#      repartitioned), allocates as much memory as it can, does not write it,
+#      and counts the pattern.
 #
-# Not covered: MIG slices, GPUs shared at once (time-slicing, MPS), and
-# anything CUDA cannot see (caches, registers).
+# MIG: label the node first (nvidia.com/mig.config=all-1g.10gb gives 28
+# slices on 4 H100s); GPU_COUNT follows. GPUs shared at once (time-slicing,
+# MPS) are test-gpu-sharing.sh. Not covered: anything CUDA cannot see
+# (caches, registers).
 #
 # Usage: KUBECONFIG=... NODE=<container-mode GPU node> ./test-gpu-container-memclear.sh
-#   NODE       node to run on (required; must be in container mode)
+#   NODE       node to run on (required; must be in container mode, unshared)
 #   NAMESPACE  project to create (default gpu-memclear-ctr; must not exist)
-#   GPU_COUNT  GPUs on the node (default 4); every pod takes all of them
+#   GPU_COUNT  GPUs or slices every pod takes (default: all the node has)
 #   HANDOFFS   which handoffs, in order (default "exit kill delete")
+#   RELABEL    a mig.config to switch to after pod A (e.g. all-3g.40gb or
+#              all-disabled); put back afterwards. One handoff only
 #   IMAGE      CUDA image with nvcc (default nvcr.io/nvidia/cuda:12.5.0-devel-ubi9)
 # Exit: 0 no pattern in any pod B, 1 pattern found, 2 could not run or
 # inconclusive.
@@ -37,108 +43,49 @@ cd "$(dirname "$0")"
 
 NODE="${NODE:-}"
 NAMESPACE="${NAMESPACE:-gpu-memclear-ctr}"
-GPU_COUNT="${GPU_COUNT:-4}"
 HANDOFFS="${HANDOFFS:-exit kill delete}"
+RELABEL="${RELABEL:-}"
 IMAGE="${IMAGE:-nvcr.io/nvidia/cuda:12.5.0-devel-ubi9}"
 
 [ -n "$NODE" ] || { echo "NODE is required" >&2; exit 2; }
 for h in $HANDOFFS; do
   case "$h" in exit|kill|delete) ;; *) echo "unknown handoff $h (exit, kill, delete)" >&2; exit 2 ;; esac
 done
-MODE=$(oc get node "$NODE" -o jsonpath='{.metadata.labels.nvidia\.com/gpu\.workload\.config}' 2>/dev/null)
-FREE=$(oc get node "$NODE" -o jsonpath='{.status.allocatable.nvidia\.com/gpu}' 2>/dev/null)
-[ "${MODE:-container}" = container ] && [ "${FREE:-0}" -ge "$GPU_COUNT" ] ||
-  { echo "$NODE is not serving $GPU_COUNT GPUs to containers (mode=${MODE:-unset}, nvidia.com/gpu=${FREE:-0})" >&2; exit 2; }
+[ -z "$RELABEL" ] || [ "$(echo $HANDOFFS | wc -w)" -eq 1 ] || { echo "RELABEL takes one handoff" >&2; exit 2; }
+label() { oc get node "$NODE" -o jsonpath="{.metadata.labels.nvidia\.com/$1}" 2>/dev/null; }
+free() { oc get node "$NODE" -o jsonpath='{.status.allocatable.nvidia\.com/gpu}' 2>/dev/null; }
+MODE=$(label 'gpu\.workload\.config'); SHARING=$(label 'gpu\.sharing-strategy'); MIG_CONFIG=$(label 'mig\.config')
+GPU_COUNT="${GPU_COUNT:-$(free)}"
+[ "${MODE:-container}" = container ] && [ "${SHARING:-none}" = none ] && [ "${GPU_COUNT:-0}" -gt 0 ] && [ "$(free)" -ge "$GPU_COUNT" ] 2>/dev/null ||
+  { echo "$NODE is not serving ${GPU_COUNT:-?} unshared GPUs to containers (mode=${MODE:-unset}, sharing=${SHARING:-none}, nvidia.com/gpu=$(free))" >&2; exit 2; }
 oc get ns "$NAMESPACE" >/dev/null 2>&1 && { echo "project $NAMESPACE already exists" >&2; exit 2; }
 oc create ns "$NAMESPACE" >/dev/null || exit 2
-WORK=$(mktemp -d)
+RELABELLED=
+# Wait for the MIG manager to finish a layout and the device plugin to show it.
+mig_settle() {
+  for _ in $(seq 120); do
+    # The device plugin restarts after the MIG manager, so the count must be
+    # non-zero and the same twice, 20 s apart.
+    if [ "$(label 'mig\.config\.state')" = success ] && [ "$(label 'mig\.config')" = "$1" ]; then
+      n1=$(free); sleep 20; n2=$(free)
+      [ "${n1:-0}" -gt 0 ] && [ "$n1" = "$n2" ] 2>/dev/null && return 0
+    fi
+    [ "$(label 'mig\.config\.state')" = failed ] && return 1
+    sleep 5
+  done
+  return 1
+}
 cleanup() {
   oc delete ns "$NAMESPACE" --timeout=300s >/dev/null 2>&1
-  rm -rf "$WORK"
+  if [ -n "$RELABELLED" ]; then
+    oc label node "$NODE" "nvidia.com/mig.config=$MIG_CONFIG" --overwrite >/dev/null
+    mig_settle "$MIG_CONFIG" && echo "put back mig.config=$MIG_CONFIG" || echo "WARNING: mig.config=$MIG_CONFIG not back to success; check $NODE" >&2
+  fi
 }
 trap cleanup EXIT
+oc create configmap memtest -n "$NAMESPACE" --from-file=memtest.cu --from-file=memtest-run.sh >/dev/null || exit 2
 
-cat > "$WORK/memtest.cu" <<'CUEOF'
-// memtest fill exit|kill|hold   fill every GPU's memory with PATTERN, then let go
-// memtest scan                  allocate every GPU's memory, unwritten, and count PATTERN
-#include <stdio.h>
-#include <string.h>
-#include <signal.h>
-#include <unistd.h>
-#include <cuda_runtime.h>
-#define PATTERN 0xC0DEFACEu
-#define CHUNK (1ull << 30)
-#define SMALL (64ull << 20)
-#define MAXB 256
-
-__global__ void fill(unsigned *p, size_t n) {
-  for (size_t i = blockIdx.x * (size_t)blockDim.x + threadIdx.x; i < n; i += (size_t)gridDim.x * blockDim.x) p[i] = PATTERN;
-}
-__global__ void count(const unsigned *p, size_t n, unsigned long long *c) {
-  unsigned long long hit = 0, zero = 0;
-  for (size_t i = blockIdx.x * (size_t)blockDim.x + threadIdx.x; i < n; i += (size_t)gridDim.x * blockDim.x) {
-    unsigned v = p[i]; hit += v == PATTERN; zero += v == 0;
-  }
-  atomicAdd(&c[0], hit); atomicAdd(&c[1], zero);
-}
-
-static void *buf[MAXB]; static size_t len[MAXB]; static int nbuf;
-
-static void grab(void) {  // as much memory as the driver will give, 1 GiB then 64 MiB at a time
-  size_t s = CHUNK;
-  for (nbuf = 0; nbuf < MAXB;) {
-    if (cudaMalloc(&buf[nbuf], s) == cudaSuccess) { len[nbuf++] = s; continue; }
-    cudaGetLastError();
-    if (s == SMALL) break;
-    s = SMALL;
-  }
-}
-static void tally(int from, int to, unsigned long long *c, unsigned long long *words) {
-  cudaMemset(c, 0, 16); *words = 0;
-  for (int i = from; i < to; i++) { count<<<1024, 256>>>((unsigned *)buf[i], len[i] / 4, c); *words += len[i] / 4; }
-  cudaDeviceSynchronize();
-}
-static void uuid(int d, char *out) {
-  cudaDeviceProp p; cudaGetDeviceProperties(&p, d);
-  for (int i = 0; i < 16; i++) sprintf(out + 2 * i, "%02x", (unsigned char)p.uuid.bytes[i]);
-}
-
-int main(int argc, char **argv) {
-  setvbuf(stdout, NULL, _IOLBF, 0);  // a crash must not lose what was printed
-  if (argc < 2 || (strcmp(argv[1], "fill") && strcmp(argv[1], "scan"))) { fprintf(stderr, "usage: memtest fill exit|kill|hold | scan\n"); return 2; }
-  int n = 0;
-  if (cudaGetDeviceCount(&n) != cudaSuccess || n == 0) { printf("MEMTEST_FAIL no CUDA devices\n"); return 2; }
-  for (int d = 0; d < n; d++) {
-    char id[33]; uuid(d, id);
-    cudaSetDevice(d);
-    unsigned long long *c, words;
-    if (cudaMallocManaged(&c, 16) != cudaSuccess) { printf("MEMTEST_FAIL gpu%d counter\n", d); return 2; }
-    grab();
-    if (nbuf == 0) { printf("MEMTEST_FAIL gpu%d no memory\n", d); return 2; }
-    if (!strcmp(argv[1], "scan")) {
-      tally(0, nbuf, c, &words);
-      printf("SCAN gpu%d %s pattern_words=%llu zero_words=%llu of %llu\n", d, id, c[0], c[1], words);
-      continue;  // memory freed at exit
-    }
-    for (int i = 0; i < nbuf; i++) fill<<<1024, 256>>>((unsigned *)buf[i], len[i] / 4);
-    tally(0, nbuf, c, &words);
-    printf("FILLED gpu%d %s pattern_words=%llu of %llu\n", d, id, c[0], words);
-    // Control: free a chunk and take it back in the same process.
-    cudaFree(buf[0]); cudaMalloc(&buf[0], len[0]);
-    tally(0, 1, c, &words);
-    printf("REALLOC gpu%d pattern_words=%llu of %llu\n", d, c[0], words);
-    fill<<<1024, 256>>>((unsigned *)buf[0], len[0] / 4);
-    cudaDeviceSynchronize();
-  }
-  fflush(stdout);
-  if (!strcmp(argv[1], "fill") && argc > 2 && !strcmp(argv[2], "kill")) { printf("KILLING\n"); fflush(stdout); raise(SIGKILL); }
-  if (!strcmp(argv[1], "fill") && argc > 2 && !strcmp(argv[2], "hold")) { printf("HOLDING\n"); fflush(stdout); for (;;) pause(); }
-  return 0;
-}
-CUEOF
-oc create configmap memtest -n "$NAMESPACE" --from-file=memtest.cu="$WORK/memtest.cu" >/dev/null || exit 2
-
-pod() { # pod <name> <memtest args>
+pod() { # pod <name> <gpus> <memtest-run.sh arguments>
   cat <<EOF | oc apply -n "$NAMESPACE" -f - >/dev/null
 apiVersion: v1
 kind: Pod
@@ -151,12 +98,13 @@ spec:
   containers:
     - name: cuda
       image: $IMAGE
-      command: ["sh", "-c", "nvcc -O2 -o /work/memtest /src/memtest.cu && exec /work/memtest $2"]
+      command: ["sh", "/src/memtest-run.sh"]
+      args: [$(printf '"%s", ' $3 | sed 's/, $//')]
       env:
         - {name: NVIDIA_DRIVER_CAPABILITIES, value: "compute,utility"}
         - {name: TMPDIR, value: /work}  # the image's /tmp is not writable by OpenShift's random UID
       resources:
-        limits: {nvidia.com/gpu: $GPU_COUNT}
+        limits: {nvidia.com/gpu: $2}
       volumeMounts:
         - {name: src, mountPath: /src}
         - {name: work, mountPath: /work}
@@ -173,52 +121,76 @@ spec:
 EOF
 }
 phase() { oc get pod "$1" -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null; }
+logs() { oc logs "$1" -n "$NAMESPACE" 2>&1; }
 # Why a pod gave no result lines: its phase, exit code and the end of its log.
 why() { # why <name> <log>
   echo "    pod $1: $(oc get pod "$1" -n "$NAMESPACE" -o jsonpath='{.status.phase} {.status.containerStatuses[0].state}' 2>/dev/null)"
   printf '%s\n' "$2" | tail -15 | sed 's/^/    | /'
 }
-# Wait until the pod has finished, or (with a pattern) printed a line matching it.
-await() { # await <name> [pattern]
+# Wait until the pod has finished, or has printed a line matching a pattern
+# at least <count> times.
+await() { # await <name> [pattern count]
   for _ in $(seq 180); do
     case "$(phase "$1")" in Succeeded|Failed) return 0 ;; esac
-    [ -n "${2:-}" ] && oc logs "$1" -n "$NAMESPACE" 2>/dev/null | grep -q "$2" && return 0
+    [ -n "${2:-}" ] && [ "$(logs "$1" | grep -c "$2")" -ge "$3" ] && return 0
     sleep 5
   done
   return 1
 }
 sum() { printf '%s\n' "$1" | sed -n "s/^$2 .*pattern_words=\([0-9]*\).*/\1/p" | awk '{s += $1} END {print s + 0}'; }
+lines() { printf '%s\n' "$1" | grep -c "^$2 "; }
+has() { printf '%s\n' "$1" | grep -c "^$2" >/dev/null; }  # not grep -q: with pipefail, its early exit fails printf
+# Result lines, or a one-line summary when there is one per MIG slice.
+show() { # show <prefix> <log> <keys>
+  if [ "$(printf '%s\n' "$2" | grep -cE "^($3) ")" -le 8 ]; then
+    printf '%s\n' "$2" | grep -E "^($3|MEMTEST_FAIL) " | sed "s/^/  $1: /"
+  else
+    for k in ${3//|/ }; do
+      echo "  $1: $(lines "$2" "$k") $k lines, $(sum "$2" "$k") pattern words in all"
+    done
+    printf '%s\n' "$2" | grep '^MEMTEST_FAIL' | sed "s/^/  $1: /"
+  fi
+}
 uuids() { printf '%s\n' "$1" | awk -v k="$2" '$1 == k {print $3}' | sort | tr '\n' ' '; }
 
 FOUND=0; BAD=0
 for h in $HANDOFFS; do
-  echo "=== handoff: $h ==="
-  ARG=$([ "$h" = delete ] && echo "fill hold" || echo "fill $h")
-  pod "fill-$h" "$ARG"
+  echo "=== handoff: $h$([ -n "$RELABEL" ] && echo ", then mig.config ${MIG_CONFIG:-unset} -> $RELABEL") ==="
+  # One memtest process per MIG slice, one for all GPUs otherwise.
+  PROCS=$([ -n "$MIG_CONFIG" ] && [ "$MIG_CONFIG" != all-disabled ] && echo "$GPU_COUNT" || echo 1)
   if [ "$h" = delete ]; then
-    await "fill-$h" HOLDING || { echo "  pod A did not start holding" >&2; BAD=1; continue; }
-    A=$(oc logs "fill-$h" -n "$NAMESPACE" 2>&1)  # gone with the pod
-    printf '%s\n' "$A" | grep -q '^FILLED' || why "fill-$h" "$A"
+    pod "fill-$h" "$GPU_COUNT" "fill hold"
+    await "fill-$h" '^HOLDING' "$PROCS" || { echo "  pod A did not start holding" >&2; BAD=1; continue; }
+    A=$(logs "fill-$h")  # gone with the pod
     oc delete pod "fill-$h" -n "$NAMESPACE" --grace-period=1 --wait=true >/dev/null 2>&1
   else
+    pod "fill-$h" "$GPU_COUNT" "fill $h"
     await "fill-$h" || { echo "  pod A did not finish" >&2; BAD=1; continue; }
-    A=$(oc logs "fill-$h" -n "$NAMESPACE" 2>&1)
-    printf '%s\n' "$A" | grep -q '^FILLED' || why "fill-$h" "$A"
+    A=$(logs "fill-$h")
     oc delete pod "fill-$h" -n "$NAMESPACE" --wait=true >/dev/null 2>&1
   fi
-  printf '%s\n' "$A" | grep -E '^(FILLED|REALLOC|KILLING|HOLDING|MEMTEST_FAIL)' | sed 's/^/  A: /'
+  has "$A" FILLED || why "fill-$h" "$A"
+  show A "$A" 'FILLED|REALLOC'
 
-  pod "scan-$h" scan
+  B_COUNT=$GPU_COUNT
+  if [ -n "$RELABEL" ]; then
+    oc label node "$NODE" "nvidia.com/mig.config=$RELABEL" --overwrite >/dev/null && RELABELLED=1
+    mig_settle "$RELABEL" || { echo "  mig.config=$RELABEL did not reach success" >&2; BAD=1; continue; }
+    B_COUNT=$(free)
+    [ "${B_COUNT:-0}" -gt 0 ] 2>/dev/null || { echo "  no GPUs advertised after repartitioning" >&2; BAD=1; continue; }
+    echo "  repartitioned: mig.config=$RELABEL, nvidia.com/gpu=$B_COUNT"
+  fi
+  pod "scan-$h" "$B_COUNT" scan
   await "scan-$h" || { echo "  pod B did not finish" >&2; BAD=1; continue; }
-  B=$(oc logs "scan-$h" -n "$NAMESPACE" 2>&1)
-  printf '%s\n' "$B" | grep -q '^SCAN' || why "scan-$h" "$B"
+  B=$(logs "scan-$h")
   oc delete pod "scan-$h" -n "$NAMESPACE" --wait=true >/dev/null 2>&1
-  printf '%s\n' "$B" | grep -E '^(SCAN|MEMTEST_FAIL)' | sed 's/^/  B: /'
+  has "$B" SCAN || why "scan-$h" "$B"
+  show B "$B" SCAN
 
   FILLED=$(sum "$A" FILLED); LEFT=$(sum "$B" SCAN)
-  if [ "$(printf '%s\n' "$A" | grep -c '^FILLED')" -ne "$GPU_COUNT" ] || [ "$(printf '%s\n' "$B" | grep -c '^SCAN')" -ne "$GPU_COUNT" ]; then
+  if [ "$(lines "$A" FILLED)" -ne "$GPU_COUNT" ] || [ "$(lines "$B" SCAN)" -ne "$B_COUNT" ] || [ "$B_COUNT" -eq 0 ]; then
     echo "  INCONCLUSIVE: not every GPU was filled and scanned"; BAD=1
-  elif [ "$(uuids "$A" FILLED)" != "$(uuids "$B" SCAN)" ]; then
+  elif [ -z "$RELABEL" ] && [ "$(uuids "$A" FILLED)" != "$(uuids "$B" SCAN)" ]; then
     echo "  INCONCLUSIVE: pod B got different GPUs from pod A"; BAD=1
   elif [ "$FILLED" -eq 0 ]; then
     echo "  INCONCLUSIVE: pod A could not read its own pattern back"; BAD=1
@@ -234,5 +206,5 @@ if [ "$FOUND" = 1 ]; then
 elif [ "$BAD" = 1 ]; then
   echo "INCONCLUSIVE: see above"; exit 2
 else
-  echo "PASS no pod read a previous pod's GPU memory (handoffs: $HANDOFFS)"; exit 0
+  echo "PASS no pod read a previous pod's GPU memory (handoffs: $HANDOFFS${RELABEL:+, repartitioned to $RELABEL})"; exit 0
 fi

@@ -160,6 +160,18 @@ In order of what each one unblocks:
   resets the GPU; the host's NVIDIA driver zeroes memory on every
   allocation instead, shown for pods that exit, are killed or are deleted
   (`test-gpu-container-memclear.sh`).
+- **Sharing a GPU between containers (2026-10-29).** Between tenants,
+  give containers MIG slices or whole GPUs. On jetty, a pod on a MIG slice
+  could neither read its neighbours' memory, nor see their use, nor crash
+  them. Time-slicing and MPS kept memory private too, but showed each pod
+  its neighbours' memory use and activity; time-slicing sets no limit, so
+  one pod can take the whole GPU; and under MPS one pod's fault killed
+  every other pod on its GPU. Use those within one tenant only (README.md,
+  "What can pods sharing a GPU at once see of, or do to, each other?").
+- **The GPU Operator's toolkit needs
+  `ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED=false` on any
+  cluster with more than one tenant.** Without it, a pod can use GPUs it
+  never requested. Set on jetty 2026-10-29; not yet in oac-apps' chart.
 - **vGPU is set aside (2026-10-28).** It only pays for VMs smaller than
   one GPU, and costs a per-GPU licence each year, a licence server, a
   private image, an unverified FIPS question and billing by fraction of

@@ -1,0 +1,44 @@
+# GPU sharing for containers, per node, for test-gpu-sharing.sh.
+#
+# The NVIDIA device plugin reads one of these configs per node, chosen by the
+# node label nvidia.com/device-plugin.config; unlabelled nodes get "none" (no
+# sharing). Each config advertises every GPU as `replicas` nvidia.com/gpu, so
+# that many pods can hold one GPU at once:
+#   timeslice-4  pods take turns on the GPU; memory is not divided, so one pod
+#                can take all of it, and nothing limits a pod's share
+#   mps-4        one MPS server per GPU runs every pod's work side by side, with
+#                memory and compute limited to 1/4 each
+#
+# Apply, then point the ClusterPolicy at it (restarts the device plugin on
+# every container-mode GPU node; nothing changes where there is no label):
+#   oc apply -f device-plugin-sharing.yaml
+#   oc patch clusterpolicy gpu-cluster-policy --type merge \
+#     -p '{"spec":{"devicePlugin":{"config":{"name":"device-plugin-sharing","default":"none"}}}}'
+#   oc label node <node> nvidia.com/device-plugin.config=timeslice-4 --overwrite   # or mps-4
+# Undo:
+#   oc label node <node> nvidia.com/device-plugin.config-
+#   oc patch clusterpolicy gpu-cluster-policy --type merge \
+#     -p '{"spec":{"devicePlugin":{"config":{"name":"","default":""}}}}'
+#   oc delete -f device-plugin-sharing.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: device-plugin-sharing
+  namespace: nvidia-gpu-operator
+data:
+  none: |-
+    version: v1
+  timeslice-4: |-
+    version: v1
+    sharing:
+      timeSlicing:
+        resources:
+          - name: nvidia.com/gpu
+            replicas: 4
+  mps-4: |-
+    version: v1
+    sharing:
+      mps:
+        resources:
+          - name: nvidia.com/gpu
+            replicas: 4
