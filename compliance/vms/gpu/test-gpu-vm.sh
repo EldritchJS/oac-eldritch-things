@@ -622,7 +622,17 @@ sudo modprobe nvidia || true"
   fi
   tail -20 "${SSH_LOG}" 2>/dev/null | sed 's/^/    /' || true
 
-  if guest_ssh 'nvidia-smi --query-gpu=name,memory.total,driver_version,pci.bus_id --format=csv,noheader 2>&1' 120; then
+  # With several GPUs the driver can still be initialising them when modprobe
+  # returns, and nvidia-smi then fails to reach it (4 GPUs, jetty, 2026-10-29).
+  SMI_OK=0
+  for attempt in $(seq 1 20); do
+    if guest_ssh 'nvidia-smi --query-gpu=name,memory.total,driver_version,pci.bus_id --format=csv,noheader 2>&1' 120; then
+      SMI_OK=1; break
+    fi
+    echo "  nvidia-smi not ready yet (attempt ${attempt}/20)"
+    sleep 15
+  done
+  if [ "${SMI_OK}" = 1 ]; then
     echo "${SSH_OUT}" | sed 's/^/  /'
     if printf '%s' "${SSH_OUT}" | grep -qiE 'NVIDIA|H100|A100|L40'; then
       pass "Tier 2 — nvidia-smi reports the card from inside the guest"
