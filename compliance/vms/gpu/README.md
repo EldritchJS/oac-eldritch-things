@@ -37,41 +37,44 @@ daemonsets (driver, device plugin, `vfio-manager`, DCGM) bind and advertise
 the hardware but never request it as a pod resource, so they are not
 billable — that is just the operator doing its job.
 
-### Target cluster: `jetty` (as of 2026-10-26)
+### Target cluster: `jetty`, reinstalled (as of 2026-10-28)
+
+jetty was reinstalled on 2026-10-28 as a spoke of `oac-dev-infra` (FIPS on,
+nothing else installed), and set up again by hand for these tests. The
+results below from before that date are from the first install, on the same
+hardware.
 
 | | State |
 |---|---|
-| GPU nodes | `moc-r4pcc02u15`, `moc-r4pcc02u16` — 4× NVIDIA H100-80GB-HBM3 each (8 total) |
-| GPU PCI id | `10DE:2330` (GH100 SXM5 80GB) at `06:00.0`, `26:00.0`, `a6:00.0`, `c6:00.0` |
-| OpenShift Virtualization | 4.22.12 (4.22.9 for the 2026-10-01 run) — **both GPU nodes `kubevirt.io/schedulable=true`**, q35 available |
-| NVIDIA GPU Operator | 26.7.2 (26.7.1 for the 2026-10-01 run), `ClusterPolicy` state `ready` |
-| `ClusterPolicy.sandboxWorkloads` | `{"mode":"kubevirt","defaultWorkload":"container","enabled":true}` — ready to accept the node label |
-| `HyperConverged.permittedHostDevices` | (under `spec.virtualization` in HyperConverged v1) ✅ `10DE:2330` → `nvidia.com/GH100_H100_SXM5_80GB`, `externalResourceProvider: true` |
-| `nvidia.com/gpu.workload.config` | **`u16` = `vm-passthrough`** (`GH100_H100_SXM5_80GB=4`, `nvidia.com/gpu=0`); `u15` = `container`, serving containers with `nvidia.com/gpu=4` |
-| **Storage** | ✅ **`nfs-over-tls` (default)** — Portworx CSI → Pure FlashBlade NFSv4.1 over TLS (since 2026-10-07; [../../NFS-TLS.md](../../NFS-TLS.md)). Was broken until 2026-10-02 (storage VLAN not trunked to the FlashBlade). The 7 TB `nvme1n1` on each worker remains untouched and unused |
-| IOMMU | ✅ **confirmed active: 103 groups**, and `/proc/cmdline` carries no `amd_iommu=`/`iommu=` argument at all |
-| Current GPU load | both nodes idle of **GPU** workloads — but see the warning below |
-| Control plane | `HighlyAvailable` — standalone, MachineConfig API present |
+| GPU nodes | `a0-88-c2-27-c2-d4` (`moc-r4pcc02u15`) and `a0-88-c2-27-c0-d4` (`moc-r4pcc02u16`), named by MAC since the reinstall — 4× NVIDIA H100-80GB-HBM3 each (8 total) |
+| GPU PCI id | `10DE:2330` (GH100 SXM5 80GB) |
+| OpenShift | 4.22.14, kernel `5.14.0-687.46.1.el9_8` (4.22.16 and `687.50.1` before the reinstall) |
+| OpenShift Virtualization | 4.22.12, from `install-operators.sh` |
+| NVIDIA GPU Operator | 26.7.2, `ClusterPolicy` state `ready`, `sandboxWorkloads` on with `defaultWorkload: container` |
+| `HyperConverged.permittedHostDevices` | (under `spec.virtualization` in HyperConverged v1) `10DE:2330` → `nvidia.com/GH100_H100_SXM5_80GB`, set by `setup-passthrough.sh` |
+| `nvidia.com/gpu.workload.config` | **u16 = `vm-passthrough`** (`GH100_H100_SXM5_80GB=4`); u15 = `container` (`nvidia.com/gpu=4`) |
+| `vfio_iommu_type1` | Loaded at boot on both workers (`vfio-iommu-type1-machineconfig.yaml`) |
+| **Storage** | `pure-fb-nfsv4` (default) — Portworx CSI → Pure FlashBlade NFSv4.1, cleartext. Installed by hand from oac-apps' `nmstate` and `portworx` charts (below) |
+| Control plane | 3 masters, standalone, MachineConfig API present |
 
-The node kernel also runs `fips=1`, which did not impede the driver build.
+Setting it up again, by hand, took these steps beyond the ones in
+"Prerequisites", in this order:
 
-> ### ⚠️ `test-gpu-switch.sh` can drain RHACS Central
->
-> It cordons and drains whichever node `NODE` names. RHACS **`central` and
-> `central-db`** (the ACS control plane and its PostgreSQL database) run on
-> one of the GPU workers and move between them: `u16` on 2026-10-02, `u15`
-> since the 2026-10-05 reboots (`central-db` still there, checked 2026-10-26).
->
-> "Both nodes idle" is true of *GPU* workloads only, and is now misleading:
-> the node is not idle. RHACS pods hold no GPUs so a GPU-scoped drain would not
-> evict them, but a full drain would, and taking `central-db` down mid-write is
-> not something to do casually.
->
-> Check before running:
-> ```sh
-> oc get pods -n stackrox -o wide | grep central
-> ```
-> Pick the GPU node that is *not* hosting Central, or stop RHACS first.
+1. `vfio-iommu-type1-machineconfig.yaml` (reboots both workers), then
+   `install-operators.sh`, then `setup-passthrough.sh` on u16.
+2. Storage: oac-apps' `nmstate` and `portworx` charts, rendered with
+   `helm template` from jetty's values and applied with `oc apply`. The
+   NodeNetworkConfigurationPolicies in those values select the old
+   hostnames (`moc-r4p...`), so they were rendered with the MAC-based node
+   names instead, and the ExternalSecret was replaced by `px-pure-secret`
+   created from AWS by hand (jetty has no External Secrets Operator).
+3. **The CDI StorageProfile for `pure-fb-nfsv4`:** ReadWriteMany,
+   Filesystem. Without it CDI picks Block for Portworx, and every import
+   fails with `MapVolume.MapBlockVolume failed`. oac-apps'
+   `openshift-virtualization` chart sets this (`storageProfilePatch`); a
+   hand install does not. Virtualization's own boot images
+   (`openshift-virtualization-os-images`) made before the patch stay stuck
+   until their DataVolumes are deleted.
 
 Re-run `./preflight.sh` rather than trusting this table — it is a snapshot, and
 it is the script's whole job to produce a current one.
@@ -132,6 +135,7 @@ Untested options, recorded so nobody re-derives them:
 | `test-gpu-vm.sh` | project user | Boots a VM with a GPU and verifies it in three tiers. `NODE=` pins it to a node, `BW_RUNS=` repeats the bandwidth measurement |
 | `test-gpu-vm-pair.sh` | project user | Two VMs with `GPUS_PER_VM` GPUs each (default 2), side by side on one node, all three tiers; checks no GPU is shared. About 20 minutes of 4 GPUs |
 | `test-gpu-memclear.sh` | project user | Whether GPU memory is cleared when a VM hands its GPUs back. `HANDOFF=restart` (default) restarts the same VM; `HANDOFF=new-vm` deletes it and scans from a new VM in a second project with no GPU driver. Then writes through the same window and reads back, to show the scan reached memory. Holds every passthrough GPU on a node for 30 to 40 minutes |
+| `test-gpu-nvlink.sh` | project user | One VM with `GPU_COUNT` GPUs (default 4): topology and link state from the guest, then 1 GiB copies between every pair with peer access on and off. Passes if every pair gets NVLink-speed peer access. About 20 minutes of 4 GPUs |
 | `gpu-vm.yaml` | project user | The same VM as a hand-applied Template, for poking at by console |
 | `test-gpu-switch.sh` | admin | **Destructive.** Times a container → VM → container round trip on a node |
 | `cleanup.sh` | either | Tears down test objects; `REVERT_NODE=1` also puts the node back |
@@ -289,10 +293,15 @@ This directly inverts what `../test-vm-migration.sh` proves for an ordinary VM. 
 
 Ruled out, each by direct observation rather than reasoning: **memory** (reproduced at `MEMORY=2Gi`), **SELinux** (Enforcing, zero AVC denials on the node during the failure), and **QoS / ephemeral-storage eviction** (the pod is `Burstable` either way — this was my own hypothesis and it was wrong). The root cause is not known. What is known is that the combination does not work there, so a GPU VM needs a real PVC, which means a real StorageClass. `preflight.sh` now checks for one up front and `test-gpu-vm.sh` warns if you force `BOOT_MODE=containerdisk` with a GPU attached.
 
-## Result: proven on `jetty` (2026-10-20); the first attempt, 2026-10-01
+## Result: proven on `jetty` (2026-10-20), again after the reinstall (2026-10-28); the first attempt, 2026-10-01
 
 The 2026-10-20 run passed tiers 1 to 3 (status at the top of this page).
-What follows is the first attempt, kept for what it ruled out.
+After the reinstall, on u16 (2026-10-28): `test-gpu-vm.sh` with one GPU
+passed all 6 checks at 15.52 GB/s host-to-device, `test-gpu-vm-pair.sh` ran
+two 2-GPU VMs side by side on 4 distinct GPUs, all passing, and the VBIOS
+was again `96.00.DA.00.17`. `../test-vm-storage.sh` passed 9 of 9 on
+`pure-fb-nfsv4` first. What follows is the first attempt, kept for what it
+ruled out.
 
 Run on 2026-10-01 against `jetty` (OpenShift Virtualization 4.22.9, GPU Operator 26.7.1, NFD 4.22.0, node `moc-r4pcc02u16`).
 
@@ -379,7 +388,9 @@ Both nodes on `jetty` currently have zero GPU-holding pods, so the drain half of
 Written down because they are the reason to run this at all, not afterthoughts.
 
 - **Does passing a subset of an NVLink clique work?** **Yes (2026-10-20).** With four 1-GPU VMs on one node, each guest ran CUDA normally. `nvidia-smi nvlink -s` in three guests showed all 18 links up at 26.562 GB/s, and in one guest 12 up and 6 inactive (one peer's links, likely while that peer's guest was still loading its driver). A 1-GPU VM cannot use NVLink, since its peers are not in the guest, but the usable unit is one GPU, not four. **Open:** links between GPUs held by different tenants are physically up. A guest with the stock driver sees no peers; whether one running its own driver can reach a peer over NVLink is a question for NVIDIA (see OPTIONS.md, next steps). Until then, compliant spokes give one tenant whole nodes or 4-GPU VMs.
+- **Can one VM use NVLink between its own GPUs?** **Yes (2026-10-28).** `test-gpu-nvlink.sh`, one VM with all four of u16's GPUs: `nvidia-smi topo -m` in the guest shows `NV6` (six bonded links) between every pair, all 18 links up on each GPU, and peer access between all 12 ordered pairs. A 1 GiB copy took the NVLink path at 133.1 GB/s for every pair (about 89% of six links' 150 GB/s), against 22.8–23.4 GB/s staged through host memory. No Fabric Manager is needed: this 4-GPU board has no NVSwitch. Between GPUs held by different VMs, see the bullet above.
+- **Can containers share a GPU without a licence?** **Yes (2026-10-28), with MIG.** u15 (container mode) labelled `nvidia.com/mig.config=all-1g.10gb`: the MIG manager split its 4 H100s into 28 slices of 10 GB and 16 SMs, and eight CUDA pods ran at once, each on its own slice (8 distinct MIG UUIDs over all four GPUs), all passing NVIDIA's `vectorAdd`. Reverted with `all-disabled`. With the ClusterPolicy's default `mig.strategy: single` a slice is advertised as plain `nvidia.com/gpu`, the same name as a whole GPU; only the node label (`NVIDIA-H100-80GB-HBM3-MIG-1g.10gb`) says otherwise. Billing per slice needs `mixed` (`nvidia.com/mig-1g.10gb`) or a collector that reads the label. `mixed` was not tried: it is a cluster-wide ClusterPolicy change.
 - **How long does the driver stack actually take to come back?** This is the number that decides whether node-level time-sharing is practical or whether GPU VM nodes should just be permanently dedicated.
 - **What is the CUDA bandwidth penalty, if any?** **About 8% on the same node (2026-10-26).** The tier-3 program (pageable host memory, 512 MiB host-to-device) gave 16.6–16.8 GB/s in a container on `moc-r4pcc02u15` (5 runs, 2026-10-20) and 15.09–15.42 GB/s in a VM on the same node (5 runs, 2026-10-26; nothing on jetty changed in between): 7–10%. VMs on `moc-r4pcc02u16` gave 15.4–15.7 GB/s (2026-10-20), about 7% against u15's containers. Same program throughout, but not the card's peak.
 - **Does any of this survive a node reboot?** **Yes (2026-10-20).** After the MachineConfig rebooted both nodes, `u16` came back with its 4 GPUs on `vfio-pci` and `vfio_iommu_type1` loaded, and the four-VM run above passed on it.
-- **Is GPU memory cleared between tenants?** `test-gpu-memclear.sh` fills every GPU's memory with a pattern, stops the VM so the GPUs go back to the host, starts it and scans. A control scan without the reset shows whether the method can see leftovers at all. **Cleared (2026-10-20).** CUDA alone could not answer it: the guest's NVIDIA driver clears memory before handing it out. So `pramin.py` reads memory through BAR0's PRAMIN window, bypassing the driver. With the pattern held on all 4 GPUs, it found the pattern in 98.7% of sampled words (the rest are driver-reserved). The VM was then stopped mid-hold, as a tenant's VM would be, and started with the NVIDIA driver blocked from loading: every sampled word on every GPU read zero. **Repeated in a new VM (2026-10-26):** with `HANDOFF=new-vm`, VM A (pattern in 5,111,808 of 5,177,344 sampled words on each GPU) was deleted with its disk, and a new VM in a second project, with no GPU driver loaded, logged or bound, took the same four GPUs: every sampled word read zero. A second run added a positive control: a value written through the same window to 4 KiB of every GiB read back on all four GPUs, so the scan reached memory and its zeros are real. Firmware `96.00.DA.00.17`. What it ran on: [memclear-record.md](memclear-record.md), which also says what it does not show. Limits: 256 KiB sampled per GiB, not every byte; one node, one firmware; whether the host's reset or the GPU's own firmware does the clearing is not known, only that the memory is clear before the next guest can read it. The acceptance suite compares that record with every passthrough node.
+- **Is GPU memory cleared between tenants?** `test-gpu-memclear.sh` fills every GPU's memory with a pattern, stops the VM so the GPUs go back to the host, starts it and scans. A control scan without the reset shows whether the method can see leftovers at all. **Cleared (2026-10-20).** CUDA alone could not answer it: the guest's NVIDIA driver clears memory before handing it out. So `pramin.py` reads memory through BAR0's PRAMIN window, bypassing the driver. With the pattern held on all 4 GPUs, it found the pattern in 98.7% of sampled words (the rest are driver-reserved). The VM was then stopped mid-hold, as a tenant's VM would be, and started with the NVIDIA driver blocked from loading: every sampled word on every GPU read zero. **Repeated in a new VM (2026-10-26):** with `HANDOFF=new-vm`, VM A (pattern in 5,111,808 of 5,177,344 sampled words on each GPU) was deleted with its disk, and a new VM in a second project, with no GPU driver loaded, logged or bound, took the same four GPUs: every sampled word read zero. A second run added a positive control: a value written through the same window to 4 KiB of every GiB read back on all four GPUs, so the scan reached memory and its zeros are real. Firmware `96.00.DA.00.17`. What it ran on: [memclear-record.md](memclear-record.md), which also says what it does not show. Limits: 256 KiB sampled per GiB, not every byte; one node, one firmware; whether the host's reset or the GPU's own firmware does the clearing is not known, only that the memory is clear before the next guest can read it. **Repeated after the reinstall (2026-10-28)**, on kernel `687.46.1`, with the same numbers and the positive control. The acceptance suite compares that record with every passthrough node.

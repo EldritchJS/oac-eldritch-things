@@ -146,7 +146,8 @@ In order of what each one unblocks:
 
 ## Settled
 
-- **GPU memory is cleared between tenants (2026-10-20, 2026-10-26).**
+- **GPU memory is cleared between tenants (2026-10-20, 2026-10-26,
+  2026-10-28 after jetty's reinstall).**
   Memory written by one VM read as zero, past the driver, after the GPUs
   were handed back: to the same VM, then to a new VM in another project,
   with a positive control (`test-gpu-memclear.sh`; sampled, one node,
@@ -157,9 +158,17 @@ In order of what each one unblocks:
   private image, an unverified FIPS question and billing by fraction of
   a GPU. On a compliant spoke, one tenant per GPU node rules out the
   cross-tenant packing where the gain would be. If small GPUs are wanted,
-  offer MIG to containers instead: no licence, and each slice is its own
-  Kubernetes resource (`nvidia.com/mig-1g.10gb`), counted per pod like a
-  whole GPU. Check that the billing collector counts those names first.
-  VMs stay on passthrough, charged per GPU. Reopen only for real demand
+  offer MIG to containers instead: no licence, shown on jetty (README.md,
+  "Can containers share a GPU without a licence?"). With the GPU
+  Operator's default `mig.strategy: single`, though, a slice is advertised
+  as `nvidia.com/gpu`, the same name as a whole GPU, so billing would
+  charge it as one. Per-slice billing needs `mixed`, where each profile is
+  its own resource (`nvidia.com/mig-1g.10gb`), or a collector that reads
+  the node's product label. VMs stay on passthrough, charged per GPU. Reopen only for real demand
   for sub-GPU VMs. First check whether any GPU purchase came with NVIDIA
   AI Enterprise (some data-center GPUs include a subscription).
+- **A VM gets NVLink between its own GPUs (2026-10-28).** A 4-GPU VM saw
+  six bonded links between every pair and copied between any two GPUs at
+  133.1 GB/s, against about 23 GB/s through host memory
+  (`test-gpu-nvlink.sh`). So a whole-node VM is a full NVLink machine.
+  Between GPUs of different VMs, next steps 1 still stands.
