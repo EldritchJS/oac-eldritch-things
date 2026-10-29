@@ -73,6 +73,14 @@ BOOT_MODE="${BOOT_MODE:-}"
 # needs all guest pages present, so none of it is overcommittable.
 MEMORY="${MEMORY:-16Gi}"
 CPU_CORES="${CPU_CORES:-8}"
+# 1 gives each vCPU its own host core (KubeVirt dedicatedCpuPlacement). The
+# node needs the kubelet's static CPU manager, or the VM never schedules.
+DEDICATED_CPUS="${DEDICATED_CPUS:-0}"
+CPU_PLACEMENT=""
+if [ "${DEDICATED_CPUS}" = "1" ]; then
+  CPU_PLACEMENT="
+          dedicatedCpuPlacement: true"
+fi
 
 MAX_TIER="${MAX_TIER:-3}"      # stop after this tier; 2 skips the CUDA toolkit
 DV_TIMEOUT="${DV_TIMEOUT:-900}"
@@ -422,7 +430,7 @@ $([ -n "${NODE}" ] && printf '      nodeSelector:\n        kubernetes.io/hostnam
         machine:
           type: q35
         cpu:
-          cores: ${CPU_CORES}
+          cores: ${CPU_CORES}${CPU_PLACEMENT}
         memory:
           guest: ${MEMORY}
         devices:
