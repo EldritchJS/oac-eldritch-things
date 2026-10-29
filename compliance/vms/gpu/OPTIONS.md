@@ -129,7 +129,9 @@ Not a no, but a purchase and some setup:
 
 In order of what each one unblocks:
 
-1. **Ask NVIDIA** about H100: what a reset clears, whether NVLink between
+1. **Ask NVIDIA** about H100: whether a function-level reset always
+   clears HBM (jetty shows it does, on VBIOS `96.00.DA.00.17`; is it
+   guaranteed, and what if a reset fails?), whether NVLink between
    GPUs passed to different VMs is isolated, and whether the links can be
    turned off from the host. On jetty's boards each GPU is wired to the
    other three by NVLink, and with 1-GPU VMs the links between different
@@ -151,8 +153,13 @@ In order of what each one unblocks:
   Memory written by one VM read as zero, past the driver, after the GPUs
   were handed back: to the same VM, then to a new VM in another project,
   with a positive control (`test-gpu-memclear.sh`; sampled, one node,
-  [memclear-record.md](memclear-record.md)). NVIDIA's confirmation (next
-  steps, 1) would back it for compliance.
+  [memclear-record.md](memclear-record.md)). Read from the host, memory
+  is already clear once the VM lets go, with no suspend in between: the
+  reset vfio does on release clears it. NVIDIA's confirmation (next
+  steps, 1) would back it for compliance. Between containers nothing
+  resets the GPU; the host's NVIDIA driver zeroes memory on every
+  allocation instead, shown for pods that exit, are killed or are deleted
+  (`test-gpu-container-memclear.sh`).
 - **vGPU is set aside (2026-10-28).** It only pays for VMs smaller than
   one GPU, and costs a per-GPU licence each year, a licence server, a
   private image, an unverified FIPS question and billing by fraction of

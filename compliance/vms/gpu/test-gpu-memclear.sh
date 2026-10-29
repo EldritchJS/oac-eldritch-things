@@ -23,6 +23,18 @@
 #                         a second project (a second tenant) with no GPU
 #                         driver at all. It asks for all GPU_COUNT GPUs, so
 #                         on a node with that many it gets the same cards.
+#        HANDOFF=host     as restart, but while the VM is stopped, read the
+#                         GPUs from the host too (pramin.py in a privileged
+#                         debug pod on the node). Separates the reset vfio
+#                         does when a VM lets go of a GPU from the one it
+#                         does when the next VM opens it: pattern on the
+#                         host and none in the guest = cleared on open;
+#                         none on the host = cleared by the release. The
+#                         host also writes through the window and reads
+#                         back, as step 6 does in the guest.
+#                         HOST_AWAKE=1 also holds the GPUs out of D3 from
+#                         before the VM stops, so the release is the reset
+#                         alone: clear then = the reset clears it.
 #   5. Sample again; no driver has touched the GPUs since. Pattern found =
 #      memory survives a VM handing its GPUs back.
 #   6. Positive control for step 5: write a value through the same window,
@@ -33,7 +45,8 @@
 #   NAMESPACE  project to create (default gpu-memclear; must not exist).
 #              HANDOFF=new-vm also creates ${NAMESPACE}-b
 #   GPU_COUNT  GPUs per node in passthrough mode (default 4)
-#   HANDOFF    restart or new-vm (default restart)
+#   HANDOFF    restart, new-vm or host (default restart)
+#   HOST_AWAKE 1 = with HANDOFF=host, no D3 between the VMs (default 0)
 # Exit: 0 cleared, 1 pattern survived, 2 could not run or inconclusive.
 set -uo pipefail
 cd "$(dirname "$0")"
@@ -41,12 +54,13 @@ cd "$(dirname "$0")"
 NAMESPACE="${NAMESPACE:-gpu-memclear}"
 GPU_COUNT="${GPU_COUNT:-4}"
 HANDOFF="${HANDOFF:-restart}"
+HOST_AWAKE="${HOST_AWAKE:-0}"
 VM_NAME=gpu-memclear
 GUEST_USER=ubuntu
 NAMESPACE_B="${NAMESPACE}-b"
 VM_NAME_B=gpu-memclear-b
 
-case "$HANDOFF" in restart|new-vm) ;; *) echo "HANDOFF must be restart or new-vm" >&2; exit 2 ;; esac
+case "$HANDOFF" in restart|new-vm|host) ;; *) echo "HANDOFF must be restart, new-vm or host" >&2; exit 2 ;; esac
 for ns in "$NAMESPACE" $([ "$HANDOFF" = new-vm ] && echo "$NAMESPACE_B"); do
   oc get ns "$ns" >/dev/null 2>&1 && { echo "project $ns already exists" >&2; exit 2; }
 done
@@ -135,11 +149,49 @@ CONTROL=$(guest 'sudo python3 pramin.py scan 2>&1'); printf '%s\n' "$CONTROL" | 
 # Nothing in the guest may touch the GPUs after the restart.
 guest 'printf "blacklist %s\ninstall %s /bin/false\n" nvidia nvidia nvidia_uvm nvidia_uvm nvidia_drm nvidia_drm nvidia_modeset nvidia_modeset nouveau nouveau | sudo tee /etc/modprobe.d/memclear-no-driver.conf >/dev/null; sudo systemctl disable nvidia-persistenced 2>/dev/null; echo blocked' | sed 's/^/  driver at boot: /'
 
-if [ "$HANDOFF" = restart ]; then
+if [ "$HANDOFF" != new-vm ]; then
   echo "=== 4. stop the VM with the pattern still held (as a tenant VM is stopped), start it ==="
+  NODE_A=$(oc get vmi "$VM_NAME" -n "$NAMESPACE" -o jsonpath='{.status.nodeName}')
+  if [ "$HANDOFF" = host ] && [ "$HOST_AWAKE" = 1 ]; then
+    # Runtime PM held on while the VM still has the GPUs, so vfio cannot
+    # suspend them when it lets go. 4a puts it back to auto.
+    oc debug "node/$NODE_A" --to-namespace=default --quiet -- sh -c '
+      for d in /sys/bus/pci/devices/*; do
+        [ "$(cat $d/vendor)" = 0x10de ] && case "$(cat $d/class)" in 0x0302*) ;; *) continue ;; esac || continue
+        echo on > $d/power/control && echo "held awake: $(basename $d)"
+      done' 2>&1 | sed 's/^/  /'
+  fi
   virtctl stop "$VM_NAME" -n "$NAMESPACE" >/dev/null
   oc wait vmi "$VM_NAME" -n "$NAMESPACE" --for=delete --timeout=600s >/dev/null 2>&1
   STOPPED=$(date +%s)
+  if [ "$HANDOFF" = host ]; then
+    echo "  --- 4a. read the GPUs from $NODE_A while no VM holds them ---"
+    # The state first: a GPU still in a VM's hands, or asleep (D3), would
+    # explain a read of zeros or 0xffffffff without any clearing. vfio-pci
+    # suspends an idle GPU to D3hot, where every read fails slowly, so
+    # runtime PM is held on for the scan ("NoSoftRst+" on these GPUs: waking
+    # them does not reset them). pramin.py writes the sysfs enable bit; both
+    # are put back afterwards.
+    HOST=$(oc debug "node/$NODE_A" --to-namespace=default --quiet -- sh -c '
+      echo "lockdown: $(cat /sys/kernel/security/lockdown 2>/dev/null || echo unknown)"
+      for d in /sys/bus/pci/devices/*; do
+        [ "$(cat $d/vendor)" = 0x10de ] && case "$(cat $d/class)" in 0x0302*) ;; *) continue ;; esac || continue
+        echo "gpu $(basename $d): driver=$(basename "$(readlink $d/driver)") power=$(cat $d/power_state 2>/dev/null) enable=$(cat $d/enable) reset_method=[$(cat $d/reset_method 2>/dev/null)]"
+        echo "$(basename $d) $(cat $d/enable) $(cat $d/power/control)" >> /tmp/enable.before
+        echo on > $d/power/control
+        echo "  awake: $(basename $d) power=$(cat $d/power_state) runtime=$(cat $d/power/runtime_status)"
+      done
+      dmesg 2>/dev/null | grep -E "vfio|reset" | tail -8 | sed "s/^/kernel log: /"
+      PY=$(command -v python3 || command -v platform-python || echo /host/usr/bin/python3)
+      echo "'"$(base64 < pramin.py | tr -d '\n')"'" | base64 -d > /tmp/pramin.py && $PY /tmp/pramin.py scan 2>&1 && $PY /tmp/pramin.py probe 2>&1
+      while read b e c; do
+        [ "$e" = 0 ] && echo 0 > /sys/bus/pci/devices/$b/enable 2>/dev/null
+        [ '"$HOST_AWAKE"' = 1 ] && c=auto
+        echo "$c" > /sys/bus/pci/devices/$b/power/control
+      done < /tmp/enable.before
+      echo host-read-done' 2>&1)
+    printf '%s\n' "$HOST" | sed 's/^/  /'
+  fi
   virtctl start "$VM_NAME" -n "$NAMESPACE" >/dev/null
   for _ in $(seq 120); do guest true && break; sleep 5; done
   echo "  back after $(( $(date +%s) - STOPPED ))s"
@@ -185,6 +237,23 @@ C=$(hits "$CONTROL"); A=$(hits "$AFTER")
 [ -n "$AFTER" ] || { echo "INCONCLUSIVE: no scan after the handback"; exit 2; }
 probe_ok || { echo "INCONCLUSIVE: a value written through the PRAMIN window did not read back, so the scan may not reach memory"; exit 2; }
 WHO=$([ "$HANDOFF" = new-vm ] && echo "in a new VM in another project" || echo "after restart")
+if [ "$HANDOFF" = host ]; then
+  H=$(hits "$HOST")
+  if ! printf '%s\n' "$HOST" | grep -q '^PRAMIN_SCAN.*boot0=0x180000a1'; then
+    echo "WHERE: unknown, the host read did not reach the GPUs (see 4a: driver, power state, lockdown)"
+  elif ! printf '%s\n' "$HOST" | awk '/^PRAMIN_PROBE/ {n++; split($3,w,"="); split($4,b,"="); if (w[2] == 0 || w[2] != b[2]) bad++}
+      END {exit !(n == '"$GPU_COUNT"' && !bad)}'; then
+    echo "WHERE: unknown, values written through the window from the host did not read back (see 4a)"
+  elif [ "$H" -gt 0 ]; then
+    echo "WHERE: the pattern was still in memory after the VM let go (host saw ${H} words), so it is cleared when a VM opens the GPUs"
+  else
+    if [ "$HOST_AWAKE" = 1 ]; then
+      echo "WHERE: memory was already clear on the host after the VM let go, with no D3 in between, so the reset on release clears it"
+    else
+      echo "WHERE: memory was already clear on the host after the VM let go, so it is cleared by the release (reset or power-down)"
+    fi
+  fi
+fi
 if [ "$C" -eq 0 ]; then
   echo "INCONCLUSIVE: the pattern was not visible through PRAMIN while it was held, so this method cannot see leftovers"; exit 2
 elif [ "$A" -eq 0 ]; then

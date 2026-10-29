@@ -74,6 +74,13 @@ def main():
         except OSError as e:
             print(f"PRAMIN_FAIL {bdf} cannot map BAR0: {e}", flush=True)
             continue
+        boot0 = ctypes.c_uint32.from_buffer(mm, 0).value
+        if boot0 == 0xFFFFFFFF:
+            # Asleep or gone: every read would fail, slowly.
+            print(f"PRAMIN_FAIL {bdf} BAR0 reads 0xffffffff (in D3, or not responding)", flush=True)
+            mm.close()
+            os.close(fd)
+            continue
         r = ctypes.c_uint32.from_buffer(mm, WINDOW_REG)
         saved, found, seen, values = r.value, 0, 0, collections.Counter()
         if mode == "probe":

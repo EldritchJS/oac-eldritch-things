@@ -34,7 +34,13 @@ loaded. Every sampled word on every GPU read zero, every time:
   sampled words per GPU while held, none in the new VM, and 80,896 of
   80,896 written words read back on each GPU.
 
-README.md, "Is GPU memory cleared between tenants?", has the detail.
+- 2026-10-28, `HANDOFF=host`: read from the host while no VM held the
+  GPUs, memory was already zero, with written values reading back. With
+  `HOST_AWAKE=1` the GPUs stayed in D0 throughout, so it is the reset on
+  release, not the suspend to D3hot, that clears it.
+
+README.md, "Is GPU memory cleared between tenants?" and "What clears
+it?", has the detail.
 
 ## Where each value comes from
 
@@ -55,9 +61,9 @@ README.md, "Is GPU memory cleared between tenants?", has the detail.
 
 ## What this does not show
 
-One node, one firmware, two kernels. Sampled 256 KiB per GiB, not every byte. Which
-component clears the memory is not known, only that it is clear before
-the next guest can read it.
+One node, one firmware, two kernels. Sampled 256 KiB per GiB, not every byte. It is the
+reset vfio does on release (`flr`, then `bus`); whether the GPU's
+firmware clears memory on every such reset, and why, is not known.
 
 The 2026-10-20 restart run and the first 2026-10-26 run had no positive
 control after the handback; the second 2026-10-26 run and the 2026-10-28
