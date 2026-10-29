@@ -170,8 +170,11 @@ In order of what each one unblocks:
   "What can pods sharing a GPU at once see of, or do to, each other?").
 - **The GPU Operator's toolkit needs
   `ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED=false` on any
-  cluster with more than one tenant.** Without it, a pod can use GPUs it
-  never requested. Set on jetty 2026-10-29; not yet in oac-apps' chart.
+  cluster with more than one tenant,** plus an admission policy keeping the
+  `nvidia*` RuntimeClasses to the GPU Operator. Without the setting, a pod
+  can use GPUs it never requested; shown on jetty and on oac-dev-workload0,
+  which runs oac-apps' chart. Set on jetty 2026-10-29; both are in oac-apps
+  PR #208.
 - **vGPU is set aside (2026-10-28).** It only pays for VMs smaller than
   one GPU, and costs a per-GPU licence each year, a licence server, a
   private image, an unverified FIPS question and billing by fraction of
