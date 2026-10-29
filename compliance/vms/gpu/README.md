@@ -53,6 +53,7 @@ hardware.
 | NVIDIA GPU Operator | 26.7.2, `ClusterPolicy` state `ready`, `sandboxWorkloads` on with `defaultWorkload: container` |
 | `HyperConverged.permittedHostDevices` | (under `spec.virtualization` in HyperConverged v1) `10DE:2330` → `nvidia.com/GH100_H100_SXM5_80GB`, set by `setup-passthrough.sh` |
 | `nvidia.com/gpu.workload.config` | **u16 = `vm-passthrough`** (`GH100_H100_SXM5_80GB=4`); u15 = `container` (`nvidia.com/gpu=4`) |
+| CPU manager | `static` on u16 only (pool `gpu-pinned`, cores 0-7 reserved), for VMs with dedicated CPUs; u15 has the default `none` |
 | `vfio_iommu_type1` | Loaded at boot on both workers (`vfio-iommu-type1-machineconfig.yaml`) |
 | **Storage** | `pure-fb-nfsv4` (default) — Portworx CSI → Pure FlashBlade NFSv4.1, cleartext. Installed by hand from oac-apps' `nmstate` and `portworx` charts (below) |
 | Control plane | 3 masters, standalone, MachineConfig API present |
@@ -132,7 +133,7 @@ Untested options, recorded so nobody re-derives them:
 | `vfio-iommu-type1-machineconfig.yaml` | admin, once | Loads `vfio_iommu_type1` at boot. Reboots the pool's nodes. Standalone OpenShift only |
 | `iommu-machineconfig.yaml` | admin, once, **if needed** | Dedicated MachineConfigPool + IOMMU kernel arguments. Costs reboots. Standalone OpenShift only — not usable on a hosted control plane, and expected to be unnecessary on AMD. |
 | `setup-passthrough.sh` | admin | Reports, and with `APPLY=1` configures, one node for passthrough; teaches KubeVirt the device |
-| `test-gpu-vm.sh` | project user | Boots a VM with a GPU and verifies it in three tiers. `NODE=` pins it to a node, `BW_RUNS=` repeats the bandwidth measurement |
+| `test-gpu-vm.sh` | project user | Boots a VM with a GPU and verifies it in three tiers. `NODE=` pins it to a node, `BW_RUNS=` repeats the bandwidth measurement, `DEDICATED_CPUS=1` gives each vCPU its own host core (needs the static CPU manager, below) |
 | `test-gpu-vm-pair.sh` | project user | Two VMs with `GPUS_PER_VM` GPUs each (default 2), side by side on one node, all three tiers; checks no GPU is shared. About 20 minutes of 4 GPUs |
 | `test-gpu-memclear.sh` | project user | Whether GPU memory is cleared when a VM hands its GPUs back. `HANDOFF=restart` (default) restarts the same VM; `HANDOFF=new-vm` deletes it and scans from a new VM in a second project with no GPU driver. `HANDOFF=host` also reads the GPUs from the host while no VM holds them (privileged debug pod), and `HOST_AWAKE=1` keeps them out of D3 for it. Then writes through the same window and reads back, to show the scan reached memory. Holds every passthrough GPU on a node for 30 to 40 minutes |
 | `test-gpu-nvlink.sh` | project user | One VM with `GPU_COUNT` GPUs (default 4): topology and link state from the guest, then 1 GiB copies between every pair with peer access on and off. Passes if every pair gets NVLink-speed peer access. About 20 minutes of 4 GPUs |
@@ -244,6 +245,38 @@ NODE=moc-r4pcc02u16 APPLY=1 TARGET_WORKLOAD=container ./setup-passthrough.sh
 | `PCI_ID` | discovered | e.g. `10DE:2330`; set it if `oc debug` is blocked |
 | `GPU_OPERATOR_NS` | `nvidia-gpu-operator` | |
 | `AS_ADMIN` | `--as=system:admin` | set empty if you are cluster-admin without impersonate rights |
+
+**Turn on the static CPU manager whenever a node goes to `vm-passthrough`.** GPU VMs should get dedicated CPUs (KubeVirt `dedicatedCpuPlacement`): with shared ones, time to first token was 9-11% higher than on bare metal; with dedicated ones it matched (2026-10-29, below). A VM asking for dedicated CPUs never schedules on a node without the kubelet's static CPU manager. Put the node in its own pool so no other node reboots, then apply a `KubeletConfig` (the Machine Config Operator reboots the node once):
+
+```bash
+oc label node <node> node-role.kubernetes.io/gpu-pinned=
+oc apply -f - <<'YAML'
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfigPool
+metadata:
+  name: gpu-pinned
+  labels: {pools.operator.machineconfiguration.openshift.io/gpu-pinned: ""}
+spec:
+  machineConfigSelector:
+    matchExpressions:
+      - {key: machineconfiguration.openshift.io/role, operator: In, values: [worker, gpu-pinned]}
+  nodeSelector:
+    matchLabels: {node-role.kubernetes.io/gpu-pinned: ""}
+---
+apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata: {name: gpu-pinned-cpumanager}
+spec:
+  machineConfigPoolSelector:
+    matchLabels: {pools.operator.machineconfiguration.openshift.io/gpu-pinned: ""}
+  kubeletConfig:
+    cpuManagerPolicy: static
+    cpuManagerReconcilePeriod: 5s
+    reservedSystemCPUs: "0-7"
+YAML
+```
+
+It can stay when the node goes back to `container`; pods that are not Guaranteed QoS run on the shared cores as before.
 
 ---
 
@@ -400,6 +433,7 @@ Written down because they are the reason to run this at all, not afterthoughts.
 - **Does a tenant see another tenant's NVLink traffic?** **Not with the stock driver (2026-10-29).** `test-gpu-nvlink-tenants.sh` on u16: tenant A, a 2-GPU VM, copied about 8 TiB between its GPUs in 60 s; its own NVLink counters rose by 9.3 billion KiB. Tenant B, a 1-GPU VM in another project on the same board, saw its counters stay at 0 and its error counters unchanged, and `nvidia-smi nvlink -R` showed B no far ends at all (A saw its own peer's). The links between the tenants' GPUs were still up: each guest showed 12 of 18 links up, six to each GPU with a driver loaded, none to the idle fourth. What a guest running its own driver could do over those links is NVIDIA's to answer (OPTIONS.md, next steps 1).
 - **Can each tenant be kept on its own GPU node?** **Yes, with a project node selector, for projects that have one (2026-10-29).** `test-gpu-tenant-pinning.sh` with u15 and u16 both in VM mode, A's project pinned to u15 and B's to u16, each tenant `admin` in its own project: A could not change its project's selector; A's 4-GPU VM ran on u15 and its next GPU VM waited, although u16 had 4 free GPUs; B's pod with a node selector for u15, and B's GPU VM with one, were rejected (`pod node label selector conflicts with its project node label selector`); B's pod with required affinity for u15 stayed Pending, and B's pod tolerating every taint ran on u16. **The gap is projects without a selector:** an unpinned project's pod ran on u15 next to A's VM, and ordinary users can create projects (`projectrequests`), which start unpinned. A compliant spoke needs a cluster default (`Scheduler` `defaultNodeSelector` pointing at non-GPU nodes) or a project template that sets one, and the selector set by the platform when a tenant gets a GPU node.
 - **Can a tenant run pods on a GPU inside its own VM?** **Yes (2026-10-29).** `test-gpu-vm-pods.sh` on u16: a VM holding one passthrough H100 ran k3s v1.36.5 with NVIDIA's container toolkit and device plugin v0.17.1; the k3s node advertised `nvidia.com/gpu=1`, and a pod requesting it listed the H100 and passed CUDA vectorAdd. This is the shape of a tenant's own cluster on GPU VMs (a HyperShift KubeVirt NodePool would look the same inside the guest; not tested). The VM is the isolation boundary, so the VM clearing results below apply between tenants.
+- **Do pods in a GPU VM get bare-metal NVLink performance?** **Yes, with dedicated CPUs (2026-10-29).** The ai-uat-harness `chunked-prefill` (vLLM, tensor parallel over 4 GPUs, NCCL over NVLink) and `llm-d-local` (prefill/decode split, KV cache moved by NIXL over NVLink), 3 runs each, on u16 bare metal and in k3s inside a 4-GPU, 64-vCPU VM on u16. NVLink itself costs nothing in the VM: NCCL all-reduce 317-322 GB/s against 317, NIXL KV transfer 105-113 GB/s against 110-113, and GPU-to-GPU copies 130-133 GB/s on every path. Time between tokens was the same (4.1 and 6.0 ms means). Time to first token was 9-11% higher with shared vCPUs (221 against 203 ms, 446 against 400 ms) and matched with `dedicatedCpuPlacement` (204 and 407 ms). p90 tails varied as much between bare-metal runs as between paths. u15's all-reduce was 6% higher than u16's on bare metal, a difference between the nodes. Not yet explained: 1 MiB all-reduces took about 117 us in the dedicated-CPU VM against 48 us on bare metal, without affecting token speed.
 - **Do images built for a host's pods work in a tenant's VM?** **Not always (2026-10-29).** In k3s in an Ubuntu 24.04 guest with NVIDIA's container toolkit, vLLM in `ghcr.io/llm-d/llm-d-cuda` (a RHEL image) failed at startup with `ld: cannot find -l:libcuda.so.1`: the toolkit mounts the driver libraries at Ubuntu's `/usr/lib/x86_64-linux-gnu`, where the image's runtime linker finds them but its compiler, which builds kernels at startup, does not. Setting `LIBRARY_PATH=/usr/lib/x86_64-linux-gnu` in the pod fixed it. A tenant's guest OS is part of what its images must work with; an RHCOS guest, as in a HyperShift KubeVirt NodePool, would likely avoid this (not tested).
 - **Does llm-d run on FIPS nodes?** **Not as shipped (2026-10-29).** On jetty (FIPS on), vLLM in `ghcr.io/llm-d/llm-d-cuda` v0.8.0 and v0.9.0 aborts at startup with `FATAL FIPS SELFTEST FAILURE`. The image's own OpenSSL is fine; the abort comes from the OpenSSL 1.1.1k bundled in the `opencv-python-headless` wheel (opencv/opencv-python#1191), loaded when vLLM imports `cv2`. Blocking `cv2` with a `sitecustomize.py` (`sys.modules["cv2"] = None`, from a ConfigMap on `PYTHONPATH`) lets it serve text models. Reported to llm-d. Any AI image on a compliant cluster should be checked for bundled crypto libraries, not only its system OpenSSL.
 - **Can containers share a GPU without a licence?** **Yes (2026-10-28), with MIG.** u15 (container mode) labelled `nvidia.com/mig.config=all-1g.10gb`: the MIG manager split its 4 H100s into 28 slices of 10 GB and 16 SMs, and eight CUDA pods ran at once, each on its own slice (8 distinct MIG UUIDs over all four GPUs), all passing NVIDIA's `vectorAdd`. Reverted with `all-disabled`. With the ClusterPolicy's default `mig.strategy: single` a slice is advertised as plain `nvidia.com/gpu`, the same name as a whole GPU; only the node label (`NVIDIA-H100-80GB-HBM3-MIG-1g.10gb`) says otherwise. Billing per slice needs `mixed` (`nvidia.com/mig-1g.10gb`) or a collector that reads the label. `mixed` was not tried: it is a cluster-wide ClusterPolicy change.
