@@ -136,7 +136,9 @@ In order of what each one unblocks:
    turned off from the host. On jetty's boards each GPU is wired to the
    other three by NVLink, and with 1-GPU VMs the links between different
    tenants' GPUs stay physically up. A guest with the stock driver sees no
-   peers, so has no path to them. Whether a guest running its own driver
+   peers, so has no path to them: tenant B saw none of tenant A's 8 TiB
+   of NVLink traffic in its counters, and no far ends
+   (`test-gpu-nvlink-tenants.sh`, 2026-10-29). Whether a guest running its own driver
    can send NVLink traffic to a peer without the peer's cooperation is
    unknown, and cannot be tested without writing such a driver. Until
    NVIDIA answers, compliant spokes give one tenant whole nodes (or 4-GPU
@@ -193,4 +195,6 @@ In order of what each one unblocks:
   six bonded links between every pair and copied between any two GPUs at
   133.1 GB/s, against about 23 GB/s through host memory
   (`test-gpu-nvlink.sh`). So a whole-node VM is a full NVLink machine.
-  Between GPUs of different VMs, next steps 1 still stands.
+  Between GPUs of different VMs, a stock guest sees none of a
+  neighbour's NVLink traffic (`test-gpu-nvlink-tenants.sh`); next steps 1
+  still stands for a guest with its own driver.
