@@ -142,7 +142,10 @@ In order of what each one unblocks:
    can send NVLink traffic to a peer without the peer's cooperation is
    unknown, and cannot be tested without writing such a driver. Until
    NVIDIA answers, compliant spokes give one tenant whole nodes (or 4-GPU
-   VMs), so linked GPUs never belong to different tenants.
+   VMs), so linked GPUs never belong to different tenants. A project
+   node selector enforces that for pinned projects
+   (`test-gpu-tenant-pinning.sh`, 2026-10-29); unpinned projects, which
+   any user can create, need a cluster default as well.
 2. **On a spoke:** passthrough on a hosted cluster, with a GPU-VM NodePool.
    A hosted cluster of the next compliant hub, or `oac-dev-workload0`.
    (`nist-dev-workload0` went with its hub on 2026-10-28.)
