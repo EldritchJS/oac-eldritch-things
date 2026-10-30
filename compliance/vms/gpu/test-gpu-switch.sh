@@ -115,7 +115,9 @@ alloc_container_gpu() {
 
 # Passthrough-mode capacity as "name=count", empty if none. The resource name
 # is device-specific (nvidia.com/GH100_H100_SXM5_80GB and so on), so it is
-# discovered rather than assumed.
+# discovered rather than assumed. A node that has been in vm-passthrough mode
+# before keeps the resource at 0 for good, so 0 counts as none (jetty u15,
+# 2026-10-29: the check passed at once and the withdrawal wait never ended).
 alloc_vfio_gpu() {
   oc get node "${NODE}" -o jsonpath='{.status.allocatable}' 2>/dev/null \
     | python3 -c '
@@ -125,7 +127,8 @@ try:
 except Exception:
     sys.exit(0)
 for key in sorted(alloc):
-    if key.startswith("nvidia.com/") and key != "nvidia.com/gpu" and "mig-" not in key:
+    if (key.startswith("nvidia.com/") and key != "nvidia.com/gpu" and "mig-" not in key
+            and int(alloc[key]) > 0):
         print(key + "=" + str(alloc[key]))
         break
 ' 2>/dev/null || true
