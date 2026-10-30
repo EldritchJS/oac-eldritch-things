@@ -55,6 +55,7 @@ hardware.
 | Unrequested-GPU protections (oac-apps #208) | `toolkit.env` `ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED=false` and admission policy `nvidia-runtimeclass-operator-only`, both applied by hand |
 | `nvidia.com/gpu.workload.config` | **u16 = `vm-passthrough`** (`GH100_H100_SXM5_80GB=4`); u15 = `container` (`nvidia.com/gpu=4`) |
 | CPU manager | `static` on u16 only (pool `gpu-pinned`, cores 0-7 reserved), for VMs with dedicated CPUs; u15 has the default `none` |
+| Default IngressController | `routeAdmission.wildcardPolicy: WildcardsAllowed` (2026-10-30, by hand), so KubeVirt hosted clusters with worker VMs on jetty can serve `*.apps.<cluster>.apps.<jetty's domain>` through jetty's router, with no MetalLB (proposed in EldritchJS/oac-apps, branch `kubevirt-gpu-nodepool`) |
 | `vfio_iommu_type1` | Loaded at boot on both workers (`vfio-iommu-type1-machineconfig.yaml`) |
 | **Storage** | `pure-fb-nfsv4` (default) — Portworx CSI → Pure FlashBlade NFSv4.1, cleartext. Installed by hand from oac-apps' `nmstate` and `portworx` charts (below) |
 | Control plane | 3 masters, standalone, MachineConfig API present |
