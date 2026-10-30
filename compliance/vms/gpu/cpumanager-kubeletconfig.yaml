@@ -1,0 +1,66 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: gpu-passthrough-cpumanager
+  annotations:
+    description: >-
+      The kubelet's static CPU manager, for nodes that host GPU VMs. A VM with
+      dedicatedCpuPlacement (test-gpu-vm.sh DEDICATED_CPUS=1) never schedules
+      on a node without it. GPU VMs should have dedicated CPUs: on jetty
+      (2026-10-29) pods in a VM with shared vCPUs waited 9-11% longer for the
+      first token than on bare metal, and with dedicated ones they matched.
+      Pods that are not Guaranteed QoS keep running on the shared CPUs, so it
+      can stay when the node goes back to container mode.
+
+      APPLIES TO STANDALONE OPENSHIFT ONLY, like iommu-machineconfig.yaml. On a
+      hosted control plane the kubelet config comes from the NodePool in the
+      management cluster.
+
+      Uses the same pool as iommu-machineconfig.yaml (MCP_NAME, default
+      gpu-virt): a node can be in only one custom pool. Joining the pool is a
+      reboot, and so is applying this; both can happen in one reboot if the
+      KubeletConfig exists before the node is labelled.
+parameters:
+  - name: MCP_NAME
+    description: Name of the MachineConfigPool and of the node role it selects
+    value: gpu-virt
+  - name: RESERVED_CPUS
+    description: >-
+      Host CPUs kept for the system and kubelet, never given to a VM. jetty
+      reserves 0-7 out of 512.
+    value: "0-7"
+objects:
+  # Nodes join this pool by being labelled:
+  #   oc label node <node> node-role.kubernetes.io/${MCP_NAME}=
+  # The same pool as iommu-machineconfig.yaml, with a label for the
+  # KubeletConfig to select it by.
+  - apiVersion: machineconfiguration.openshift.io/v1
+    kind: MachineConfigPool
+    metadata:
+      name: ${MCP_NAME}
+      labels:
+        pools.operator.machineconfiguration.openshift.io/${MCP_NAME}: ""
+    spec:
+      machineConfigSelector:
+        matchExpressions:
+          - key: machineconfiguration.openshift.io/role
+            operator: In
+            values:
+              - worker
+              - ${MCP_NAME}
+      nodeSelector:
+        matchLabels:
+          node-role.kubernetes.io/${MCP_NAME}: ""
+
+  - apiVersion: machineconfiguration.openshift.io/v1
+    kind: KubeletConfig
+    metadata:
+      name: ${MCP_NAME}-cpumanager
+    spec:
+      machineConfigPoolSelector:
+        matchLabels:
+          pools.operator.machineconfiguration.openshift.io/${MCP_NAME}: ""
+      kubeletConfig:
+        cpuManagerPolicy: static
+        cpuManagerReconcilePeriod: 5s
+        reservedSystemCPUs: ${RESERVED_CPUS}

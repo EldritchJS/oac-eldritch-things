@@ -52,6 +52,7 @@ hardware.
 | OpenShift Virtualization | 4.22.12, from `install-operators.sh` |
 | NVIDIA GPU Operator | 26.7.2, `ClusterPolicy` state `ready`, `sandboxWorkloads` on with `defaultWorkload: container` |
 | `HyperConverged.permittedHostDevices` | (under `spec.virtualization` in HyperConverged v1) `10DE:2330` → `nvidia.com/GH100_H100_SXM5_80GB`, set by `setup-passthrough.sh` |
+| Unrequested-GPU protections (oac-apps #208) | `toolkit.env` `ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED=false` and admission policy `nvidia-runtimeclass-operator-only`, both applied by hand |
 | `nvidia.com/gpu.workload.config` | **u16 = `vm-passthrough`** (`GH100_H100_SXM5_80GB=4`); u15 = `container` (`nvidia.com/gpu=4`) |
 | CPU manager | `static` on u16 only (pool `gpu-pinned`, cores 0-7 reserved), for VMs with dedicated CPUs; u15 has the default `none` |
 | `vfio_iommu_type1` | Loaded at boot on both workers (`vfio-iommu-type1-machineconfig.yaml`) |
@@ -132,6 +133,7 @@ Untested options, recorded so nobody re-derives them:
 | `install-operators.sh` | admin, once | Installs NFD, the NVIDIA GPU Operator and OpenShift Virtualization on a cluster that has the hardware but none of the software. Report-only until `APPLY=1`. |
 | `vfio-iommu-type1-machineconfig.yaml` | admin, once | Loads `vfio_iommu_type1` at boot. Reboots the pool's nodes. Standalone OpenShift only |
 | `iommu-machineconfig.yaml` | admin, once, **if needed** | Dedicated MachineConfigPool + IOMMU kernel arguments. Costs reboots. Standalone OpenShift only — not usable on a hosted control plane, and expected to be unnecessary on AMD. |
+| `cpumanager-kubeletconfig.yaml` | admin, once per VM node | The kubelet's static CPU manager, so GPU VMs can have dedicated CPUs. Same pool as `iommu-machineconfig.yaml`; reboots the node once. `setup-passthrough.sh` says when it is missing |
 | `setup-passthrough.sh` | admin | Reports, and with `APPLY=1` configures, one node for passthrough; teaches KubeVirt the device |
 | `test-gpu-vm.sh` | project user | Boots a VM with a GPU and verifies it in three tiers. `NODE=` pins it to a node, `BW_RUNS=` repeats the bandwidth measurement, `DEDICATED_CPUS=1` gives each vCPU a host CPU of its own (needs the static CPU manager, below), `CPU_THREADS=2` tells the guest those CPUs are hyperthread pairs, so SMT can be turned off inside it |
 | `test-gpu-vm-pair.sh` | project user | Two VMs with `GPUS_PER_VM` GPUs each (default 2), side by side on one node, all three tiers; checks no GPU is shared. About 20 minutes of 4 GPUs |
@@ -246,37 +248,14 @@ NODE=moc-r4pcc02u16 APPLY=1 TARGET_WORKLOAD=container ./setup-passthrough.sh
 | `GPU_OPERATOR_NS` | `nvidia-gpu-operator` | |
 | `AS_ADMIN` | `--as=system:admin` | set empty if you are cluster-admin without impersonate rights |
 
-**Turn on the static CPU manager whenever a node goes to `vm-passthrough`.** GPU VMs should get dedicated CPUs (KubeVirt `dedicatedCpuPlacement`): with shared ones, time to first token was 9-11% higher than on bare metal; with dedicated ones it matched (2026-10-29, below). A VM asking for dedicated CPUs never schedules on a node without the kubelet's static CPU manager. Put the node in its own pool so no other node reboots, then apply a `KubeletConfig` (the Machine Config Operator reboots the node once):
+**Turn on the static CPU manager whenever a node goes to `vm-passthrough`.** GPU VMs should get dedicated CPUs (KubeVirt `dedicatedCpuPlacement`): with shared ones, time to first token was 9-11% higher than on bare metal; with dedicated ones it matched (2026-10-29, below). A VM asking for dedicated CPUs never schedules on a node without the kubelet's static CPU manager. `setup-passthrough.sh` checks for it (section 6) and prints the commands if it is missing. They apply `cpumanager-kubeletconfig.yaml` through the node's own MachineConfigPool, the same one as `iommu-machineconfig.yaml`, so no other node reboots; the node reboots once:
 
 ```bash
-oc label node <node> node-role.kubernetes.io/gpu-pinned=
-oc apply -f - <<'YAML'
-apiVersion: machineconfiguration.openshift.io/v1
-kind: MachineConfigPool
-metadata:
-  name: gpu-pinned
-  labels: {pools.operator.machineconfiguration.openshift.io/gpu-pinned: ""}
-spec:
-  machineConfigSelector:
-    matchExpressions:
-      - {key: machineconfiguration.openshift.io/role, operator: In, values: [worker, gpu-pinned]}
-  nodeSelector:
-    matchLabels: {node-role.kubernetes.io/gpu-pinned: ""}
----
-apiVersion: machineconfiguration.openshift.io/v1
-kind: KubeletConfig
-metadata: {name: gpu-pinned-cpumanager}
-spec:
-  machineConfigPoolSelector:
-    matchLabels: {pools.operator.machineconfiguration.openshift.io/gpu-pinned: ""}
-  kubeletConfig:
-    cpuManagerPolicy: static
-    cpuManagerReconcilePeriod: 5s
-    reservedSystemCPUs: "0-7"
-YAML
+oc process --local -f cpumanager-kubeletconfig.yaml -p MCP_NAME=gpu-virt | oc apply -f -
+oc label node <node> node-role.kubernetes.io/gpu-virt=
 ```
 
-It can stay when the node goes back to `container`; pods that are not Guaranteed QoS run on the shared cores as before.
+jetty's u16 uses a pool named `gpu-pinned`. The setting can stay when the node goes back to `container`; pods that are not Guaranteed QoS run on the shared CPUs as before.
 
 ---
 
@@ -452,4 +431,4 @@ Written down because they are the reason to run this at all, not afterthoughts.
   | MPS ×4 (3 holders) | No | Yes: 59,004 MiB in use | **Yes: all 3 died** with the neighbour's `cudaErrorIllegalAddress` | Memory and compute caps |
 
   Memory never leaks: every allocation is zeroed by the driver. The differences are side channels and availability. MPS runs every pod on a GPU through one server, so a fatal fault in one kills them all, as NVIDIA documents. Pods on other GPUs were unaffected in every case. So between tenants: MIG slices or whole GPUs; time-slicing and MPS only within one tenant.
-- **Can a pod use a GPU it did not request?** **On a default GPU Operator install, yes; jetty's is now set so it cannot (2026-10-29).** With the container toolkit's defaults, an unprivileged pod could use GPUs it never requested, outside the device plugin, quotas and billing, including GPUs and MIG slices other pods held. Setting `ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED=false` in the ClusterPolicy's `toolkit.env`, as NVIDIA advises for multi-tenant clusters, closed it on jetty; pods requesting GPUs still got them (through CDI). **Not specific to jetty's hand install:** on oac-dev-workload0, whose GPU Operator is deployed by Argo CD from the oac-apps chart, a tenant with only `edit` in its own project listed all four of a node's H100s, with none requested. As a backstop, an admission policy now rejects pods using the GPU Operator's `nvidia*` RuntimeClasses outside its namespace (only the operator's own pods use them; on jetty, server dry-runs denied tenants and admitted the operator and normal GPU pods). Both are in oac-apps PR #208, merged 2026-10-29. Once Argo CD synced it to oac-dev-workload0, the same tenant's pod was rejected at creation by the policy. `test-gpu-unrequested.sh` checks a cluster still has both: on jetty it passes, with a warning that jetty, installed by hand, has only the toolkit setting. Every GPU cluster with more than one tenant needs them.
+- **Can a pod use a GPU it did not request?** **On a default GPU Operator install, yes; jetty's is now set so it cannot (2026-10-29).** With the container toolkit's defaults, an unprivileged pod could use GPUs it never requested, outside the device plugin, quotas and billing, including GPUs and MIG slices other pods held. Setting `ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED=false` in the ClusterPolicy's `toolkit.env`, as NVIDIA advises for multi-tenant clusters, closed it on jetty; pods requesting GPUs still got them (through CDI). **Not specific to jetty's hand install:** on oac-dev-workload0, whose GPU Operator is deployed by Argo CD from the oac-apps chart, a tenant with only `edit` in its own project listed all four of a node's H100s, with none requested. As a backstop, an admission policy now rejects pods using the GPU Operator's `nvidia*` RuntimeClasses outside its namespace (only the operator's own pods use them; on jetty, server dry-runs denied tenants and admitted the operator and normal GPU pods). Both are in oac-apps PR #208, merged 2026-10-29. Once Argo CD synced it to oac-dev-workload0, the same tenant's pod was rejected at creation by the policy. `test-gpu-unrequested.sh` checks a cluster still has both. jetty, installed by hand, had only the toolkit setting until the chart's policy was applied there too (2026-10-29); the test now passes there with every `nvidia*` RuntimeClass rejected. Every GPU cluster with more than one tenant needs them.

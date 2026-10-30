@@ -349,6 +349,37 @@ else
   PHD_NEEDED=1
 fi
 
+echo ""
+echo "=== 6. Static CPU manager ==="
+
+# GPU VMs should get dedicated CPUs, and a VM asking for them never schedules
+# on a node whose kubelet runs the default CPU manager. Checked, not applied:
+# turning it on is a reboot, like the IOMMU arguments above.
+CPU_POLICY="$(oc get --raw "/api/v1/nodes/${NODE}/proxy/configz" 2>/dev/null \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["kubeletconfig"].get("cpuManagerPolicy") or "none")' 2>/dev/null || echo "")"
+echo "  cpuManagerPolicy: ${CPU_POLICY:-<unknown>}"
+if [ "${TARGET_WORKLOAD}" != "vm-passthrough" ]; then
+  info "Not needed for container mode; it can stay on if it is already there"
+elif [ "${CPU_POLICY}" = "static" ]; then
+  pass "kubelet on ${NODE} runs the static CPU manager (VMs can have dedicated CPUs)"
+elif [ -z "${CPU_POLICY}" ]; then
+  warn "Could not read the kubelet config of ${NODE}; check cpuManagerPolicy by hand"
+else
+  fail "kubelet on ${NODE} runs the static CPU manager"
+  if oc get machineconfigpools >/dev/null 2>&1; then
+    POOL="$(oc get node "${NODE}" -o json | python3 -c '
+import json,sys
+roles=[k.split("/",1)[1] for k in json.load(sys.stdin)["metadata"]["labels"] if k.startswith("node-role.kubernetes.io/")]
+print(next((r for r in roles if r not in ("worker","master","control-plane")), ""))')"
+    info "Apply it through the node's own pool (${POOL:-none yet; gpu-virt is the default}). This reboots ${NODE}:"
+    info "  oc process --local -f cpumanager-kubeletconfig.yaml -p MCP_NAME=${POOL:-gpu-virt} | oc apply ${AS_ADMIN} -f -"
+    [ -n "${POOL}" ] || info "  oc label node ${NODE} node-role.kubernetes.io/gpu-virt= ${AS_ADMIN}"
+  else
+    info "Hosted control plane: the kubelet config comes from the NodePool in the"
+    info "management cluster. That is a platform-team request."
+  fi
+fi
+
 if [ "${APPLY}" != "1" ]; then
   echo ""
   echo "========================================="
@@ -368,7 +399,7 @@ if [ "${APPLY}" != "1" ]; then
 fi
 
 echo ""
-echo "=== 6. Applying ==="
+echo "=== 7. Applying ==="
 
 if [ "${SANDBOX_ENABLED}" != "true" ]; then
   echo "Enabling sandboxWorkloads on clusterpolicy/${CP_NAME} ..."
