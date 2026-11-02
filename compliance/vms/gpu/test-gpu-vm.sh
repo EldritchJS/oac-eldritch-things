@@ -89,6 +89,43 @@ if [ "${DEDICATED_CPUS}" = "1" ]; then
   CPU_PLACEMENT="${CPU_PLACEMENT}
           dedicatedCpuPlacement: true"
 fi
+# 1 builds the VM as HyperShift does for a NodePool with qosClass
+# Guaranteed: CPU and memory requests equal limits, so the launcher pod is
+# Guaranteed QoS and the static CPU manager gives it host CPUs of its own,
+# but no cores are set and KubeVirt does not pin vCPUs. Leave
+# DEDICATED_CPUS and CPU_THREADS unset with it. KubeVirt then makes each
+# vCPU a socket and allows hotplug to 4 times as many; past 255 QEMU needs a
+# virtual IOMMU that refuses passthrough devices, and the VM never starts.
+# maxSockets keeps the ceiling at the vCPU count. Set MAX_SOCKETS empty to
+# leave it to the cluster (HyperConverged liveUpdateConfiguration).
+GUARANTEED="${GUARANTEED:-0}"
+MAX_SOCKETS="${MAX_SOCKETS-${CPU_CORES}}"
+if [ "${GUARANTEED}" = "1" ]; then
+  CPU_SIZE=""
+  if [ -n "${MAX_SOCKETS}" ]; then
+    CPU_SIZE="
+        cpu:
+          maxSockets: ${MAX_SOCKETS}"
+  fi
+  MEMORY_SIZE=""
+  RESOURCES="
+          requests:
+            cpu: \"${CPU_CORES}\"
+            memory: ${MEMORY}
+          limits:
+            cpu: \"${CPU_CORES}\"
+            memory: ${MEMORY}"
+else
+  CPU_SIZE="
+        cpu:
+          cores: ${CPU_CORES}${CPU_PLACEMENT}"
+  MEMORY_SIZE="
+        memory:
+          guest: ${MEMORY}"
+  RESOURCES="
+          requests:
+            memory: ${MEMORY}"
+fi
 
 MAX_TIER="${MAX_TIER:-3}"      # stop after this tier; 2 skips the CUDA toolkit
 DV_TIMEOUT="${DV_TIMEOUT:-900}"
@@ -125,7 +162,7 @@ cleanup() {
   echo "=== Cleaning up resources ==="
   if [ "${KEEP_VM}" = "1" ]; then
     echo "KEEP_VM=1, leaving vm/${VM_NAME} and dv/${DV_NAME} in place. Delete with:"
-    echo "  oc delete vm ${VM_NAME} dv ${DV_NAME} -n ${NAMESPACE}"
+    echo "  oc delete vm/${VM_NAME} dv/${DV_NAME} -n ${NAMESPACE}"
     echo ""
     echo "A VM holding a GPU keeps that GPU out of every other pool until it is"
     echo "deleted — the device is bound to this guest, not time-shared."
@@ -253,7 +290,7 @@ for kind in vm dv; do
   if oc get "${kind}" "${VM_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1 \
      || oc get "${kind}" "${DV_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; then
     echo "❌ Leftover ${kind} from a previous run exists in ${NAMESPACE}. Remove it first:"
-    echo "   oc delete vm ${VM_NAME} dv ${DV_NAME} -n ${NAMESPACE} --ignore-not-found"
+    echo "   oc delete vm/${VM_NAME} dv/${DV_NAME} -n ${NAMESPACE} --ignore-not-found"
     exit 1
   fi
 done
@@ -436,11 +473,7 @@ $([ -n "${NODE}" ] && printf '      nodeSelector:\n        kubernetes.io/hostnam
         # q35 gives the guest a PCIe root complex. The i440fx default is
         # legacy PCI only, which a passed-through PCIe device cannot use.
         machine:
-          type: q35
-        cpu:
-          cores: ${CPU_CORES}${CPU_PLACEMENT}
-        memory:
-          guest: ${MEMORY}
+          type: q35${CPU_SIZE}${MEMORY_SIZE}
         devices:
           gpus:
 ${GPU_BLOCK}          disks:
@@ -454,9 +487,7 @@ ${GPU_BLOCK}          disks:
           - name: default
             masquerade: {}
           rng: {}
-        resources:
-          requests:
-            memory: ${MEMORY}
+        resources:${RESOURCES}
       networks:
       - name: default
         pod: {}

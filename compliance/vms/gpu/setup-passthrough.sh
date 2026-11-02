@@ -130,6 +130,20 @@ print(json.dumps(phd.get("pciHostDevices", [])))
 ' 2>/dev/null || echo "[]"
 }
 
+# Reads liveUpdateConfiguration.maxHotplugRatio the same way; empty when unset.
+hco_hotplug_ratio() {
+  hco_json | python3 -c '
+import json, sys
+try:
+    spec = json.load(sys.stdin).get("spec", {})
+except Exception:
+    sys.exit(0)
+luc = spec.get("virtualization", {}).get("liveUpdateConfiguration") \
+      or spec.get("liveUpdateConfiguration") or {}
+print(luc.get("maxHotplugRatio", ""))
+' 2>/dev/null || true
+}
+
 echo "========================================="
 echo "  GPU Passthrough Setup"
 echo "  Node:          ${NODE:-<unset>}"
@@ -349,6 +363,24 @@ else
   PHD_NEEDED=1
 fi
 
+# A VM with no cores set, as HyperShift builds one for a Guaranteed NodePool,
+# gets a socket per vCPU and CPU hotplug up to maxHotplugRatio (default 4)
+# times that. Past 255 possible vCPUs QEMU needs a virtual IOMMU, which
+# refuses passthrough devices, so a 64-vCPU GPU VM never starts. A ratio of 1
+# keeps every VM at the size it asks for; GPU VMs cannot live-migrate, so
+# hotplug buys them little.
+CURRENT_RATIO="$(hco_hotplug_ratio)"
+echo "  maxHotplugRatio: ${CURRENT_RATIO:-<unset, 4>}"
+RATIO_NEEDED=0
+if [ "${TARGET_WORKLOAD}" != "vm-passthrough" ]; then
+  :
+elif [ "${CURRENT_RATIO}" = "1" ]; then
+  pass "CPU hotplug is off (maxHotplugRatio 1), so large GPU VMs can start"
+else
+  warn "maxHotplugRatio is ${CURRENT_RATIO:-4}: GPU VMs over 63 vCPUs with no cores set will not start"
+  RATIO_NEEDED=1
+fi
+
 echo ""
 echo "=== 6. Static CPU manager ==="
 
@@ -391,6 +423,7 @@ if [ "${APPLY}" != "1" ]; then
   echo "  - set ${WORKLOAD_LABEL}=${TARGET_WORKLOAD} on ${NODE}"
   echo "  - wait for the sandbox device plugin to advertise the GPU"
   [ "${PHD_NEEDED}" = "1" ] && echo "  - add ${PCI_ID:-<pci id>} to HyperConverged permittedHostDevices"
+  [ "${RATIO_NEEDED}" = "1" ] && echo "  - set HyperConverged maxHotplugRatio to 1 (applies to every VM on the cluster)"
   echo ""
   echo "Flipping the label TEARS DOWN the container GPU stack on ${NODE}."
   echo "Drain GPU pods off it first, or use test-gpu-switch.sh, which does the"
@@ -496,6 +529,26 @@ print(json.dumps({"spec": {"virtualization": body} if nested else body}))
     info "The apiserver likely pruned it as an unknown field. Current value:"
     info "  $(hco_pci_devices)"
     info "HyperConverged apiVersion: ${HCO_APIVERSION:-<unknown>}"
+    exit 1
+  fi
+fi
+
+if [ "${RATIO_NEEDED}" = "1" ]; then
+  echo ""
+  echo "Setting HyperConverged maxHotplugRatio to 1 ..."
+  if [ "${HCO_APIVERSION##*/}" = "v1" ]; then
+    RATIO_PATCH='{"spec":{"virtualization":{"liveUpdateConfiguration":{"maxHotplugRatio":1}}}}'
+  else
+    RATIO_PATCH='{"spec":{"liveUpdateConfiguration":{"maxHotplugRatio":1}}}'
+  fi
+  oc patch hyperconverged "${HCO_NAME}" -n "${CNV_NAMESPACE}" ${AS_ADMIN} \
+    --type=merge -p "${RATIO_PATCH}"
+  # Read back, for the same reason as permittedHostDevices above.
+  NEW_RATIO="$(hco_hotplug_ratio)"
+  if [ "${NEW_RATIO}" = "1" ]; then
+    pass "maxHotplugRatio is 1"
+  else
+    fail "Patch was accepted but maxHotplugRatio is ${NEW_RATIO:-unset}"
     exit 1
   fi
 fi
