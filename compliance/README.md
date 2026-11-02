@@ -1,6 +1,6 @@
 # Compliant OAC clusters: FIPS, HIPAA and NIST 800-171
 
-*Start here. Last updated 2026-10-27.*
+*Start here. Last updated 2026-11-02.*
 
 The goal is OAC hubs and workload clusters that are compliant from first
 boot, and kept that way by GitOps from
@@ -15,19 +15,19 @@ because of the hub-wide settings, not its own files
 |---|---|---|---|
 | 1. jetty | Can this stack be made compliant, with GPUs in containers and VMs? | **Yes.** Hardened by hand: node failures 377 → 0, `ocp4-moderate` 25 → 8, both GPU modalities intact | [JETTY.md](JETTY.md), [PLAYBOOK.md](PLAYBOOK.md) |
 | 2. Charts | Can that work ship as oac-apps charts? | **Yes.** Nine charts reproduce jetty: an empty `oc diff` against the live cluster | [oac-apps/README.md](oac-apps/README.md) |
-| 3. nist-dev-infra | Do the charts work on a FIPS hub built the OAC way? | **Yes, in stages.** RHCOS failures 191 → 1 on the masters, storage TLS-only, ACS, etcd backups, NetworkPolicies | [nist-dev-infra/README.md](nist-dev-infra/README.md) |
-| 4. nist-dev-workload0 | Can a compliant hub build a compliant workload cluster? | **Mostly yes.** Two FIPS workers, hardened from first boot (`rhcos4-moderate` 1 failure). With tailoring for the hidden control plane, `hosted-ocp4-moderate` is at 1 failure (the cluster-wide proxy, a recorded gap) and CIS at 0. MOC SSO, audit to the hub's Loki. AIDE does not run on hosted workers (RFE-8168) | [nist-dev-infra/README.md](nist-dev-infra/README.md), stage D |
+| 3. nist-dev-infra (retired 2026-10-28) | Do the charts work on a FIPS hub built the OAC way? | **Yes, in stages.** RHCOS failures 191 → 1 on the masters, storage TLS-only, ACS, etcd backups, NetworkPolicies | [nist-dev-infra/README.md](nist-dev-infra/README.md) |
+| 4. nist-dev-workload0 (retired with the hub) | Can a compliant hub build a compliant workload cluster? | **Mostly yes.** Two FIPS workers, hardened from first boot (`rhcos4-moderate` 1 failure). With tailoring for the hidden control plane, `hosted-ocp4-moderate` is at 1 failure (the cluster-wide proxy, a recorded gap) and CIS at 0. MOC SSO, audit to the hub's Loki. AIDE does not run on hosted workers (RFE-8168) | [nist-dev-infra/README.md](nist-dev-infra/README.md), stage D |
 
-## Where things stand (2026-10-27)
+## Where things stand (2026-11-02)
 
 | | Status |
 |---|---|
-| Design and runbooks | [HUB-SPOKE.md](HUB-SPOKE.md) (design), [BUILD.md](BUILD.md) (method), [NEW-HUB-RUNBOOK.md](NEW-HUB-RUNBOOK.md) (draft) and [nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) (final for this hub). Neither has been run end to end; the next step is a walk-through by someone else on the hub's replacement masters |
-| Upstream in oac-apps | NodePool config, API server audit and image config for hosted clusters ([#153](https://github.com/CCI-MOC/oac-apps/pull/153)); NFS over TLS on Portworx ([#148](https://github.com/CCI-MOC/oac-apps/pull/148), [#179](https://github.com/CCI-MOC/oac-apps/pull/179)); FIPS agent discovery ([#158](https://github.com/CCI-MOC/oac-apps/pull/158)); hub-wide hosted-cluster values ([#157](https://github.com/CCI-MOC/oac-apps/pull/157)); nist-dev-workload0 ([#159](https://github.com/CCI-MOC/oac-apps/pull/159) to [#166](https://github.com/CCI-MOC/oac-apps/pull/166), SSO [#171](https://github.com/CCI-MOC/oac-apps/pull/171)); object storage proxy ([#168](https://github.com/CCI-MOC/oac-apps/pull/168) to [#174](https://github.com/CCI-MOC/oac-apps/pull/174)); hub-side audit alert for hosted clusters ([#167](https://github.com/CCI-MOC/oac-apps/pull/167)); COO on workload0 ([#170](https://github.com/CCI-MOC/oac-apps/pull/170)); token timeouts and image allowlists ([#172](https://github.com/CCI-MOC/oac-apps/pull/172)); workload0's ESO, cert-manager and ingress certificate ([#175](https://github.com/CCI-MOC/oac-apps/pull/175)); the ACS chart [#181](https://github.com/CCI-MOC/oac-apps/pull/181); the hub's Let's Encrypt ingress certificate ([#184](https://github.com/CCI-MOC/oac-apps/pull/184)); the hub's SSO and token timeouts ([#188](https://github.com/CCI-MOC/oac-apps/pull/188), after moc-keycloak [#55](https://github.com/CCI-MOC/moc-keycloak/pull/55)); COSI requests and limits on every cluster ([#185](https://github.com/CCI-MOC/oac-apps/pull/185), from [pure-cosi#11](https://github.com/CCI-MOC/pure-cosi/pull/11)) |
-| Compliance charts | On the fork's `nist-dev-infra-test` branch, applied to the test hub by hand. ACS's chart is on main ([#181](https://github.com/CCI-MOC/oac-apps/pull/181)), not yet used by an ApplicationSet; the rest follow (BUILD.md, P1 to P3) |
-| Test hub `nist-dev-infra` | Compact, FIPS, 4.22.14. Stages A, S, B, C, D and E done (E: audit logging to Loki on FlashBlade object storage). Masters capped at 40 CPUs since 2026-10-21. 4 failing rules (2026-10-27): three accepted gaps (2 POA&M items and kubeadmin) and NetworkPolicies, to be done for production, each with a fix and status ([nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) 2.9) |
-| First workload cluster | Installed 2026-10-22: 4.22.18, single-replica control plane, two workers. Compliance stages A to D delivered by the hub's Argo; MOC SSO; its own audit forwarded to the hub |
-| GPUs for VMs | Passthrough proven on both of jetty's GPU nodes: 1-, 2- and 4-GPU VMs, several per node, CUDA on every GPU, about 8% less host-to-device bandwidth than a container on the same node. GPU memory is cleared before a new VM in another project can read it (2026-10-26). jetty was reinstalled on 2026-10-28 and all of it passed again; a 4-GPU VM also gets full NVLink between its GPUs (133 GB/s per pair), and containers can share a GPU through MIG without a licence. Between tenants, containers get MIG slices or whole GPUs: time-slicing and MPS keep memory private but expose usage, and under MPS one pod can crash its neighbours. GPU memory is cleared between pods too, including across MIG repartitioning, and pods can run on a GPU inside a tenant's own VM. The GPU Operator needs one toolkit setting and an admission policy on any multi-tenant cluster, shown on oac-dev-workload0 as well as jetty (oac-apps PR #208, vms/gpu/OPTIONS.md). One tenant per GPU node until cross-tenant NVLink is answered. The acceptance suite checks placement and configuration. Sharing one GPU between VMs needs an NVIDIA vGPU licence ([vms/gpu/README.md](vms/gpu/README.md), [vms/gpu/OPTIONS.md](vms/gpu/OPTIONS.md)) |
+| Design and runbooks | [HUB-SPOKE.md](HUB-SPOKE.md) (design), [BUILD.md](BUILD.md) (method), [NEW-HUB-RUNBOOK.md](NEW-HUB-RUNBOOK.md) (draft) and [nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) (final for this hub). Neither has been run end to end; the next step is a walk-through by someone else, building the replacement hub on new nodes |
+| Upstream in oac-apps | NodePool config, API server audit and image config for hosted clusters ([#153](https://github.com/CCI-MOC/oac-apps/pull/153)); NFS over TLS on Portworx ([#148](https://github.com/CCI-MOC/oac-apps/pull/148), [#179](https://github.com/CCI-MOC/oac-apps/pull/179)); FIPS agent discovery ([#158](https://github.com/CCI-MOC/oac-apps/pull/158)); hub-wide hosted-cluster values ([#157](https://github.com/CCI-MOC/oac-apps/pull/157)); nist-dev-workload0 ([#159](https://github.com/CCI-MOC/oac-apps/pull/159) to [#166](https://github.com/CCI-MOC/oac-apps/pull/166), SSO [#171](https://github.com/CCI-MOC/oac-apps/pull/171)); object storage proxy ([#168](https://github.com/CCI-MOC/oac-apps/pull/168) to [#174](https://github.com/CCI-MOC/oac-apps/pull/174)); hub-side audit alert for hosted clusters ([#167](https://github.com/CCI-MOC/oac-apps/pull/167)); COO on workload0 ([#170](https://github.com/CCI-MOC/oac-apps/pull/170)); token timeouts and image allowlists ([#172](https://github.com/CCI-MOC/oac-apps/pull/172)); workload0's ESO, cert-manager and ingress certificate ([#175](https://github.com/CCI-MOC/oac-apps/pull/175)); the ACS chart [#181](https://github.com/CCI-MOC/oac-apps/pull/181); the hub's Let's Encrypt ingress certificate ([#184](https://github.com/CCI-MOC/oac-apps/pull/184)); the hub's SSO and token timeouts ([#188](https://github.com/CCI-MOC/oac-apps/pull/188), after moc-keycloak [#55](https://github.com/CCI-MOC/moc-keycloak/pull/55)); COSI requests and limits on every cluster ([#185](https://github.com/CCI-MOC/oac-apps/pull/185), from [pure-cosi#11](https://github.com/CCI-MOC/pure-cosi/pull/11)); no GPUs for pods that did not request them, on every GPU cluster ([#208](https://github.com/CCI-MOC/oac-apps/pull/208)); hosted-cluster compliance switched on per hub by `hosted-clusters/<hub>/compliance.yaml` ([#195](https://github.com/CCI-MOC/oac-apps/pull/195), 2026-11-02) |
+| Compliance charts | Built and tested on the fork's `nist-dev-infra-test` branch. Now in review for main, one PR per chart: Compliance Operator ([#196](https://github.com/CCI-MOC/oac-apps/pull/196), approved), compliant-hub admission policy ([#197](https://github.com/CCI-MOC/oac-apps/pull/197)), File Integrity ([#198](https://github.com/CCI-MOC/oac-apps/pull/198)), node hardening ([#214](https://github.com/CCI-MOC/oac-apps/pull/214)), platform hardening ([#215](https://github.com/CCI-MOC/oac-apps/pull/215)), namespace guardrails ([#216](https://github.com/CCI-MOC/oac-apps/pull/216), becoming a library chart), etcd backup ([#217](https://github.com/CCI-MOC/oac-apps/pull/217)) and the NFS over TLS handshake daemon ([#218](https://github.com/CCI-MOC/oac-apps/pull/218)). ACS's chart is on main ([#181](https://github.com/CCI-MOC/oac-apps/pull/181)). No ApplicationSet uses them yet; one PR will wire them to #195's hub marker. Audit logging waits for a log destination (BUILD.md P9) |
+| Test hub `nist-dev-infra` | **Retired 2026-10-28.** Compact, FIPS, 4.22.14. Stages A, S, B, C, D and E done (E: audit logging to Loki on FlashBlade object storage). Masters capped at 40 CPUs since 2026-10-21. 4 failing rules (2026-10-27): three accepted gaps (2 POA&M items and kubeadmin) and NetworkPolicies, to be done for production, each with a fix and status ([nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) 2.9). Its replacement, on new nodes, is to be built from the runbook |
+| First workload cluster | Installed 2026-10-22: 4.22.18, single-replica control plane, two workers. Compliance stages A to D delivered by the hub's Argo; MOC SSO; its own audit forwarded to the hub. Retired with the hub on 2026-10-28 |
+| GPUs for VMs | Passthrough proven on both of jetty's GPU nodes: 1-, 2- and 4-GPU VMs, several per node, CUDA on every GPU, about 8% less host-to-device bandwidth than a container on the same node. GPU memory is cleared before a new VM in another project can read it (2026-10-26). jetty was reinstalled on 2026-10-28 and all of it passed again; a 4-GPU VM also gets full NVLink between its GPUs (133 GB/s per pair), and containers can share a GPU through MIG without a licence. Between tenants, containers get MIG slices or whole GPUs: time-slicing and MPS keep memory private but expose usage, and under MPS one pod can crash its neighbours. GPU memory is cleared between pods too, including across MIG repartitioning, and pods can run on a GPU inside a tenant's own VM. The GPU Operator needs one toolkit setting and an admission policy on any multi-tenant cluster, shown on oac-dev-workload0 as well as jetty (oac-apps PR #208, vms/gpu/OPTIONS.md). One tenant per GPU node until cross-tenant NVLink is answered. The acceptance suite checks placement and configuration. Sharing one GPU between VMs needs an NVIDIA vGPU licence. Pods in a 4-GPU VM matched bare metal in the AI UAT Harness inference tests, given dedicated CPUs and SMT off in the guest (2026-10-29). jetty is now a hypervisor candidate for oac-dev-infra's KubeVirt clusters: GPU NodePools are proposed in oac-apps [#212](https://github.com/CCI-MOC/oac-apps/pull/212), [#213](https://github.com/CCI-MOC/oac-apps/pull/213) and [#219](https://github.com/CCI-MOC/oac-apps/pull/219) ([vms/gpu/README.md](vms/gpu/README.md), [vms/gpu/OPTIONS.md](vms/gpu/OPTIONS.md)) |
 
 ## What the hub taught that jetty did not
 
@@ -35,7 +35,7 @@ because of the hub-wide settings, not its own files
   NFS mount to the FlashBlade reuses that session, and later TLS mounts
   fail. The TLS StorageClass goes in with Portworx, before anything else
   ([nist-dev-infra/STORAGE-BRINGUP.md](nist-dev-infra/STORAGE-BRINGUP.md)).
-- **Under FIPS, large control-plane nodes flapped.** The 176-CPU masters
+- **Under FIPS, large control-plane nodes kept dropping out.** The 176-CPU masters
   went NotReady about once an hour, with etcd and kubelet thread pile-ups,
   with or without a hosted control plane. Capped at 40 CPUs, like jetty's,
   they stall less often, but still do, a few times a day. Cap with
@@ -58,14 +58,18 @@ because of the hub-wide settings, not its own files
 
 ## Still open
 
-- The compliance charts upstream, with branch protection on the repo the
-  hubs read (BUILD.md, P1 to P3).
-- Storage for the first workload cluster: Portworx and NFS over TLS, as
-  on the hub. The cluster-wide proxy is a recorded POA&M gap.
+- The compliance charts merged upstream (in review, above) and wired to
+  the hub marker, with branch protection on the repo the hubs read
+  (BUILD.md, P1 to P3).
+- An audit and alert destination (BUILD.md P9): audit records on a node
+  last hours, and nothing alerts on a new scan failure.
+- Storage for workload clusters: Portworx and NFS over TLS, as on the
+  hub. The cluster-wide proxy is a recorded POA&M gap.
 - Hosted etcd on FlashBlade NFS, accepted for the test only; a later hub
   gives it local disks.
-- Replacement masters for nist-dev-infra, and NetworkPolicies for the
-  hub's namespaces for production ([nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) §7).
+- The replacement hub, with etcd encryption from install (a POA&M item on
+  the old one); disk encryption still needs a tested method (BUILD.md P10).
+- NetworkPolicies for the hub's namespaces for production ([nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) §7).
 
 ## Where the detail lives
 
