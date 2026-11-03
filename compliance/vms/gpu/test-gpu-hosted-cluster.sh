@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Is a KubeVirt hosted cluster's GPU NodePool set up the way GPU VMs on jetty
-# need (oac-apps #212)? Pods in a GPU VM matched bare metal only with
-# dedicated CPUs, and small all-reduces only with SMT off in the guest
-# (README: "Do pods in a GPU VM get bare-metal NVLink performance?").
+# need (oac-apps #212)? Pods in a GPU VM matched bare metal on time to first
+# token only with host CPUs of the VM's own, which the pool's qosClass
+# Guaranteed gives it (README: "Do pods in a GPU VM get bare-metal NVLink
+# performance?").
 #
 #   1. Hub: the HostedCluster is available and the NodePool has all its nodes.
-#   2. Hypervisor: each of the pool's VMs runs, holds its GPUs, and has the
-#      dedicated CPUs and threads the NodePool's VM patch asked for.
+#   2. Hypervisor: each of the pool's VMs runs and holds its GPUs, and with
+#      qosClass Guaranteed its launcher pod is Guaranteed.
 #   3. Guest: every node is Ready; each GPU node sees its GPUs on the PCI bus,
 #      and has SMT off if the pool boots it with nosmt.
 #   4. Guest ingress: the canary route answers through the hypervisor's
@@ -50,48 +51,46 @@ NP_JSON="$(hub get nodepool "$NODEPOOL" -n "$HUB_NS" -o json 2>/dev/null)" || { 
 avail="$(hub get hostedcluster "$CLUSTER" -n "$HUB_NS" -o jsonpath='{.status.conditions[?(@.type=="Available")].status}')"
 [ "$avail" = True ] && pass "HostedCluster available" || fail "HostedCluster Available=$avail"
 
-# What the pool asks for: replicas, GPUs per VM, and the VM patch's settings.
-read -r WANT HAVE GPUS DEDICATED THREADS <<EOF
+# What the pool asks for: replicas, GPUs per VM, and the QoS class.
+read -r WANT HAVE GPUS QOS <<EOF
 $(printf '%s' "$NP_JSON" | python3 -I -c '
 import json,sys
 p=json.load(sys.stdin)
 kv=p["spec"].get("platform",{}).get("kubevirt",{})
 gpus=sum(d.get("count",1) for d in kv.get("hostDevices",[]))
-patch=json.loads(p["metadata"].get("annotations",{}).get("hypershift.openshift.io/kubevirt-vm-jsonpatch","[]"))
-ops={o["path"].rsplit("/",1)[1]: o.get("value") for o in patch}
 print(p["spec"].get("replicas",0), p.get("status",{}).get("replicas",0), gpus,
-      "true" if ops.get("dedicatedCpuPlacement") else "false", ops.get("threads",1))')
+      kv.get("compute",{}).get("qosClass") or "Burstable")')
 EOF
 [ "$HAVE" = "$WANT" ] && pass "NodePool has $HAVE of $WANT nodes" || fail "NodePool has $HAVE of $WANT nodes"
 [ "$GPUS" -gt 0 ] || warn "NodePool passes no hostDevices: not a GPU pool"
-echo "  asks for: $GPUS GPU(s) per VM, dedicated CPUs $DEDICATED, $THREADS thread(s) per core"
+[ "$QOS" = Guaranteed ] || warn "NodePool qosClass is $QOS: VMs share host CPUs, and time to first token was slower than bare metal"
+echo "  asks for: $GPUS GPU(s) per VM, qosClass $QOS"
 
 echo "=== 2. hypervisor: VMs in $CP_NS ==="
 VMIS="$(oc get vmi -n "$CP_NS" -o json 2>/dev/null)" || { echo "cannot list VMIs in $CP_NS: is KUBECONFIG the hypervisor?" >&2; exit 2; }
 VM_NAMES="$(printf '%s' "$VMIS" | python3 -I -c '
 import json,sys
-pool=sys.argv[1]; want=dict(gpus=int(sys.argv[2]), ded=sys.argv[3]=="true", thr=int(sys.argv[4]))
+pool=sys.argv[1]; want=int(sys.argv[2])
 for v in json.load(sys.stdin)["items"]:
     n=v["metadata"]["name"]
     if not n.startswith(pool+"-"): continue
-    d=v["spec"]["domain"]; cpu=d.get("cpu",{})
+    d=v["spec"]["domain"]
     gpus=len(d.get("devices",{}).get("hostDevices",[]))
     bad=[]
     if v.get("status",{}).get("phase")!="Running": bad.append("phase "+str(v.get("status",{}).get("phase")))
-    if gpus!=want["gpus"]: bad.append("%d GPU(s), want %d" % (gpus,want["gpus"]))
-    if bool(cpu.get("dedicatedCpuPlacement"))!=want["ded"]: bad.append("dedicatedCpuPlacement %s" % cpu.get("dedicatedCpuPlacement"))
-    if cpu.get("threads",1)!=want["thr"]: bad.append("threads %s, want %d" % (cpu.get("threads",1),want["thr"]))
-    print(n, v.get("status",{}).get("nodeName","-"), "ok" if not bad else "; ".join(bad).replace(" ","_"))
-' "$NODEPOOL" "$GPUS" "$DEDICATED" "$THREADS")"
+    if gpus!=want: bad.append("%d GPU(s), want %d" % (gpus,want))
+    print(n, v.get("status",{}).get("nodeName","-"), d.get("cpu",{}).get("threads",1),
+          "ok" if not bad else "; ".join(bad).replace(" ","_"))
+' "$NODEPOOL" "$GPUS")"
 [ -n "$VM_NAMES" ] || fail "no VMs named $NODEPOOL-* in $CP_NS"
-while read -r vm node status; do
+while read -r vm node _ status; do
   [ -n "$vm" ] || continue
   if [ "$status" = ok ]; then
-    pass "$vm on $node: running, $GPUS GPU(s), CPUs as asked"
+    pass "$vm on $node: running, $GPUS GPU(s)"
   else
     fail "$vm on $node: $(printf '%s' "$status" | tr _ ' ')"
   fi
-  if [ "$DEDICATED" = true ]; then
+  if [ "$QOS" = Guaranteed ]; then
     qos="$(oc get pod -n "$CP_NS" -l "vm.kubevirt.io/name=$vm" -o jsonpath='{.items[0].status.qosClass}' 2>/dev/null)"
     [ "$qos" = Guaranteed ] && pass "$vm's launcher pod is Guaranteed" || fail "$vm's launcher pod QoS is ${qos:-unknown}, not Guaranteed"
   fi
@@ -106,7 +105,7 @@ guest get nodes >/dev/null 2>&1 || { echo "cannot reach the guest API with its a
 notready="$(guest get nodes --no-headers 2>/dev/null | awk '$2 !~ /^Ready/ {print $1}')"
 [ -z "$notready" ] && pass "all guest nodes Ready" || fail "guest nodes not Ready: $notready"
 
-while read -r vm _ _; do
+while read -r vm _ threads _; do
   [ -n "$vm" ] || continue
   # The guest node is named after its VM. Count NVIDIA 3D controllers in sysfs
   # (lspci is not in RHCOS), and read the SMT state and the boot arguments.
@@ -122,8 +121,8 @@ while read -r vm _ _; do
   if [ "${nosmt:-0}" -gt 0 ]; then
     case "$smt" in off|forceoff) pass "$vm boots with nosmt; SMT $smt, $cpus CPUs online" ;;
                    *) fail "$vm boots with nosmt but SMT is ${smt:-unknown}" ;; esac
-  elif [ "$THREADS" -gt 1 ]; then
-    warn "$vm has $THREADS threads per core but SMT is ${smt:-unknown}: small all-reduces may be slow (add kernelArguments: [nosmt])"
+  elif [ "${threads:-1}" -gt 1 ]; then
+    warn "$vm has $threads threads per core but SMT is ${smt:-unknown}: small all-reduces may be slow (add kernelArguments: [nosmt])"
   fi
   if allocatable="$(guest get node "$vm" -o jsonpath='{.status.allocatable.nvidia\.com/gpu}' 2>/dev/null)" && [ -n "$allocatable" ]; then
     [ "$allocatable" = "$GPUS" ] && pass "$vm advertises nvidia.com/gpu=$allocatable" || fail "$vm advertises nvidia.com/gpu=$allocatable, want $GPUS"
