@@ -91,6 +91,8 @@ because of the hub-wide settings, not its own files
 | [FEASIBILITY.md](FEASIBILITY.md) | Compliance against GPUs and VMs: where they collide |
 | [PLAN.md](PLAN.md) | jetty's decisions log |
 | [NFS-TLS.md](NFS-TLS.md) | Storage encryption in transit |
+| [GRAFANA.md](GRAFANA.md) | Grafana under FIPS, 800-171 and HIPAA: per-project dashboards and access control |
+| [GRAFANA-FIPS-IMAGE.md](GRAFANA-FIPS-IMAGE.md) | FIPS Grafana from RHEL's package in a UBI image, tested on jetty |
 | [STORAGE-ISSUE.md](STORAGE-ISSUE.md) | jetty's FlashBlade outage |
 | [PATCHING.md](PATCHING.md) | Patch cadence: draft SSP text |
 | [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md) | Exception register for privileged workloads |
