@@ -6,13 +6,16 @@ versions move with RHCOS, and T-02 WARNs when the running RHCOS differs from
 the one reviewed here.
 
 ```
-REVIEWED_RHCOS=Red Hat Enterprise Linux CoreOS 9.8.20260922-1 (Plow)
+REVIEWED_RHCOS=Red Hat Enterprise Linux CoreOS 9.8.20260908-0 (Plow)
 CERTIFIED_OPENSSL_PROVIDER_VERSION=3.0.7-395c1a240fbfffd8
 ```
 
-Reviewed 2026-10-09 against OpenShift 4.22.16. Sources: Red Hat's FIPS
-status page (access.redhat.com/compliance/fips), NIST CMVP certificate #4857,
-and the NIST Modules In Process list (all read 2026-10-09).
+Reviewed 2026-11-05 against OpenShift 4.22.14 (jetty, reinstalled
+2026-10-28). Sources: Red Hat's FIPS status page
+(access.redhat.com/compliance/fips), advisory RHSA-2026:27744, NIST CMVP
+certificate #4857, and the NIST Modules In Process list (all read
+2026-11-05). First reviewed 2026-10-09 against 4.22.16 (RHCOS
+9.8.20260922-1); the crypto modules below did not change between the two.
 
 ---
 
@@ -26,12 +29,12 @@ implied by "FIPS mode enabled".
 
 ---
 
-## Modules on the running nodes (all 5 identical, RHCOS 9.8.20260922-1)
+## Modules on the running nodes (all 5 identical, RHCOS 9.8.20260908-0)
 
 | Module | Running on jetty | Red Hat status for RHEL 9.8 (OCP 4.22) | Certificate |
 |---|---|---|---|
 | **OpenSSL FIPS Provider** | `openssl-fips-provider-3.0.7-11.el9_8`, module version **`3.0.7-cda111b5812c30d4`** | Active — but for module version **`3.0.7-395c1a240fbfffd8`** (package `-6.el9`) | **#4857** (140-3 L1, Active, sunset 2029-10-28) |
-| Kernel Cryptographic API | `kernel-5.14.0-687.50.1.el9_8`, `libkcapi-1.4.0-3.el9_8` | not listed for 9.8; "N/A" for 9.6 | none for 9.8 (9.4 had #5445; 9.2 #5034) |
+| Kernel Cryptographic API | `kernel-5.14.0-687.46.1.el9_8`, `libkcapi-1.4.0-2.el9` | not listed for 9.8; "N/A" for 9.6 | none for 9.8 (9.4 had #5445; 9.2 #5034) |
 | GnuTLS | host `gnutls-3.8.10-8.el9_8`; `tlshd` image `gnutls-3.8.10-9.el9_8` | not listed for 9.8; "N/A" for 9.6 | none for 9.8 (9.2 had #4846). A RHEL 9 gnutls submission is **in Review** at CMVP (2026-10-07) |
 | Libgcrypt | `libgcrypt-1.10.0-13.el9_8` | not listed for 9.8; 9.6 "Scenario 3A revalidation" | #5366 covers `1.10.0-10.el9_x` builds, not this one |
 | NSS | not installed on RHCOS | — | — |
@@ -43,21 +46,24 @@ is how T-02 checks it on every node.
 
 Red Hat ships the FIPS provider separately from `openssl-libs` precisely so
 the certified binary can stay fixed while the rest of OpenSSL moves (jetty's
-`openssl-libs` is 3.5.8). Red Hat's page lists 9.8 as carrying the certified
+`openssl-libs` is 3.5.5). Red Hat's page lists 9.8 as carrying the certified
 module `3.0.7-395c1a240fbfffd8` in `openssl-fips-provider-3.0.7-6.el9`,
 "repackaged for distribution but not modified".
 
 The nodes run **`-11.el9_8`**, which reports **`3.0.7-cda111b5812c30d4`** — a
-different module version, so a different binary. A later security update
-to the provider (an equivalent `openssl-fips-provider-3.0.7-11` appears in a
-rebuilder's security advisory) is the likely reason. Red Hat's page does
-not list this version, and a newer **RHEL 9 OpenSSL FIPS Provider** is in
-CMVP **Comment Resolution** (2026-09-03) — plausibly this build, unconfirmed.
+different module version, so a different binary. It comes from Red Hat's
+security update **RHSA-2026:27744** (2026-06-22, Moderate, CVE-2026-31790),
+which says the module "has been submitted to NIST for certification" and
+does not claim it is validated. Red Hat's FIPS page still lists only
+`3.0.7-395c1a240fbfffd8` for 9.8, and says it will ship CVE fixes to the
+validated module ahead of revalidation. A **RHEL 9 OpenSSL FIPS Provider**
+is in CMVP **Comment Resolution** (2026-09-03, unchanged on 2026-11-05) —
+most likely this build.
 
-**Ask Red Hat:** is module `3.0.7-cda111b5812c30d4`
-(`openssl-fips-provider-3.0.7-11.el9_8`, RHCOS 9.8.20260922-1) covered by
-#4857, or is it the submission in process? Until answered, the honest status
-is "FIPS 140-3 module, validation of this version in process".
+**Ask Red Hat to confirm** that module `3.0.7-cda111b5812c30d4` is the
+submission in Comment Resolution. The status to state meanwhile, now backed
+by RHSA-2026:27744: "FIPS 140-3 module (#4857); this security update's
+build is submitted for validation".
 
 This is the standing trade-off: a CVE fix to a certified module produces an
 unvalidated binary until revalidation completes. Running the patched,

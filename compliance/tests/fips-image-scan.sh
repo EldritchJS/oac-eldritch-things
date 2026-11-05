@@ -9,7 +9,11 @@
 # The pod runs under restricted-v2 in its own project, builds check-payload
 # and crane from source, unpacks each image with crane (no podman, no root),
 # runs `check-payload scan local`, prints the report, and the project is
-# deleted at the end. Only public images: no pull secret is mounted.
+# deleted at the end. By default only public images: no pull secret.
+#
+# FIPS_SCAN_PULL_SECRET=1 copies the cluster's global pull secret into the
+# throwaway project and mounts it read-only for crane, for images on
+# registry.redhat.io and the like. It goes when the project is deleted.
 #
 # --control builds one small Go program three ways and scans each, to show
 # the scanner tells them apart: Red Hat's Go (pass), upstream Go (fail),
@@ -21,7 +25,7 @@ set -uo pipefail
 NS="${FIPS_SCAN_NS:-fips-scan}"
 command -v oc >/dev/null || { echo "oc not found" >&2; exit 2; }
 oc whoami >/dev/null 2>&1 || { echo "not logged in (set KUBECONFIG)" >&2; exit 2; }
-[ $# -gt 0 ] || { sed -n '2,17p' "$0"; exit 2; }
+[ $# -gt 0 ] || { sed -n '2,21p' "$0"; exit 2; }
 
 MODE=images
 if [ "$1" = "--control" ]; then MODE=control; shift; fi
@@ -71,10 +75,26 @@ oc get ns "$NS" >/dev/null 2>&1 && { echo "project $NS already exists; set FIPS_
 oc new-project "$NS" >/dev/null || exit 2
 trap 'oc delete project "$NS" --wait=false >/dev/null 2>&1' EXIT
 
-python3 -I - "$NS" "$MODE" "$IMAGES" <<'PY' | oc create -f - >/dev/null || exit 2
+PULL="${FIPS_SCAN_PULL_SECRET:-0}"
+if [ "$PULL" = 1 ]; then
+  # Copied server-side through a pipe; never written to disk or printed.
+  oc get secret pull-secret -n openshift-config -o json \
+    | python3 -I -c 'import json,sys; s=json.load(sys.stdin); print(json.dumps({"apiVersion":"v1","kind":"Secret","type":s["type"],"metadata":{"name":"scan-pull","namespace":sys.argv[1]},"data":s["data"]}))' "$NS" \
+    | oc create -f - >/dev/null || exit 2
+fi
+
+python3 -I - "$NS" "$MODE" "$IMAGES" "$PULL" <<'PY' | oc create -f - >/dev/null || exit 2
 import json, os, sys
-ns, mode, images = sys.argv[1:4]
+ns, mode, images, pull = sys.argv[1:5]
 script = os.environ["SCRIPT"]
+mounts = [{"name": "work", "mountPath": "/work"}]
+volumes = [{"name": "work", "emptyDir": {"sizeLimit": "40Gi"}}]
+env = [{"name": "IMAGES", "value": images}, {"name": "MODE", "value": mode}]
+if pull == "1":
+    mounts.append({"name": "auth", "mountPath": "/auth", "readOnly": True})
+    volumes.append({"name": "auth", "secret": {"secretName": "scan-pull",
+        "items": [{"key": ".dockerconfigjson", "path": "config.json"}]}})
+    env.append({"name": "DOCKER_CONFIG", "value": "/auth"})
 print(json.dumps({"apiVersion": "v1", "kind": "Pod",
   # Pin the SCC: as cluster-admin, a pod otherwise gets the highest-priority
   # SCC that admits it, which on a Portworx cluster is Portworx's.
@@ -83,12 +103,12 @@ print(json.dumps({"apiVersion": "v1", "kind": "Pod",
   "spec": {"restartPolicy": "Never", "containers": [{
     "name": "scan", "image": "registry.access.redhat.com/ubi9/go-toolset:latest",
     "command": ["/bin/bash", "-c", script],
-    "env": [{"name": "IMAGES", "value": images}, {"name": "MODE", "value": mode}],
+    "env": env,
     "resources": {"requests": {"cpu": "2", "memory": "4Gi"}, "limits": {"memory": "8Gi"}},
-    "volumeMounts": [{"name": "work", "mountPath": "/work"}],
+    "volumeMounts": mounts,
     "securityContext": {"allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]},
                         "runAsNonRoot": True, "seccompProfile": {"type": "RuntimeDefault"}}}],
-    "volumes": [{"name": "work", "emptyDir": {"sizeLimit": "40Gi"}}]}}))
+    "volumes": volumes}}))
 PY
 
 echo "scanning in $NS on $(oc whoami --show-server) ..." >&2

@@ -97,7 +97,7 @@ Starting points, not yet decided:
 
 | Operator | Likely route |
 |---|---|
-| Cluster Observability Operator | Ask Red Hat for its FIPS status. Until then, leave it off compliant clusters, or keep it with a justification (dashboards, no tenant data store) |
+| Cluster Observability Operator | Its images pass check-payload, so keep it, citing the scan; ask Red Hat to correct the CSV flag |
 | Grafana operator | Remove on compliant clusters; Grafana from provisioning files ([GRAFANA-FIPS-IMAGE.md](../GRAFANA-FIPS-IMAGE.md)) |
 | Portworx operator | Ask the vendor. It is in the storage path, so it is the hardest to justify keeping and the hardest to remove |
 | NVIDIA GPU Operator | Ask NVIDIA. GPUs are why the clusters exist, so this is a justification, not a removal |
@@ -112,8 +112,9 @@ come, replace this.
 ### Cluster Observability Operator (Red Hat)
 
 - COO 1.5's release notes list a fix: the build "enables the strict FIPS
-  runtime and CGO compilation across all Operator components". The binaries
-  appear to be built for FIPS.
+  runtime and CGO compilation across all Operator components". check-payload
+  confirms it: the six COO 1.5.5 images running on jetty pass (see "What the
+  images contain").
 - The CSV still says `fips-compliant: false` on every channel (1.5.4 on
   `stable` and `fast`). Upstream's CSV (rhobs/observability-operator) has no
   FIPS annotation at all, so the `false` is set in Red Hat's build.
@@ -202,17 +203,28 @@ jetty and the hub. None passed:
 
 What follows:
 
-- The unflagged operators are not FIPS builds: evidence, not only a missing
-  flag.
+- The unflagged operators are not FIPS builds (except COO, below):
+  evidence, not only a missing flag.
 - `pure-cosi` is ours to fix: build it on a UBI base image with RHEL's
   OpenSSL.
 - For Pure, the question becomes concrete: build PX-CSI with Go's FIPS
   module (or Red Hat's Go), and use Red Hat's CSI sidecars.
 
-Not scanned, because they need credentials: COO's images
-(`registry.redhat.io`), the Portworx operator (`registry.connect.redhat.com`),
-and NVIDIA's driver and government-ready images (an NGC key). The first two
-could be scanned with a cluster's pull secret mounted in the pod.
+**Second scan, with jetty's pull secret** (`FIPS_SCAN_PULL_SECRET=1`,
+2026-11-05), of the images running on jetty:
+
+| Image | Result |
+|---|---|
+| OpenShift platform image (the DNS operator from jetty's release), as a positive control | Pass |
+| COO 1.5.5: `cluster-observability-rhel9-operator`, `obo-prometheus-rhel9-operator`, `obo-prometheus-operator-admission-webhook-rhel9`, `perses-rhel9-operator`, `perses-rhel9`, `monitoring-console-plugin-rhel9` | **All pass** |
+| Portworx `openstorage-operator` 26.4.0 (`/operator`, `/dryrun`, `/preflight`) | Fail: not CGO_ENABLED |
+
+So COO is a FIPS build, as its 1.5 release notes say, and the `false` flag
+is wrong metadata: the question for Red Hat becomes fixing the CSV. The
+Portworx operator is upstream Go like the rest of Portworx.
+
+Still not scanned: NVIDIA's driver and government-ready images (they need an
+NGC key).
 
 ## Checked by T-18
 
