@@ -230,6 +230,39 @@ registry's token service); they need an NGC organization with NVIDIA AI
 Enterprise. `FIPS_SCAN_NGC_KEY_FILE` scans them once a key from such an
 organization is available.
 
+### Object storage (COSI), on the hub
+
+COSI is three parts, each with its own crypto path. Scanned 2026-11-05:
+
+| Part | Image | Talks to | check-payload |
+|---|---|---|---|
+| COSI controller | `gcr.io/k8s-staging-sig-storage/objectstorage-controller` (upstream pre-release) | Kubernetes API (TLS) | Fail: not CGO_ENABLED |
+| Sidecar, in each driver pod | `registry.k8s.io/sig-storage/objectstorage-sidecar:v0.2.2` | Kubernetes API (TLS); writes the S3 keys to Secrets | Fail: not CGO_ENABLED |
+| Driver (MOC's own) | `ghcr.io/cci-moc/pure-cosi:v0.1.0` | FlashBlade management API (TLS) | Fail: no FIPS-certified OpenSSL |
+| Driver, rebuilt on UBI (branch `fips-ubi-base`) | built on jetty, not published | same | **Pass** |
+
+The rebuilt driver passed an end-to-end test on jetty (FIPS mode on), with
+the hub's driver config, from a pod on the storage network (the only path
+to the FlashBlade's management address): bucket create, grant, revoke and
+delete worked; Python's `ssl` and `cryptography` both ran RHEL's OpenSSL
+3.5.8 with FIPS on; every connection used TLS 1.3 with AES-256-GCM, and
+ChaCha20 was refused.
+
+Still open:
+
+- **The FlashBlade's identity is not checked.** py-pure-client defaults to
+  `verify_ssl=False` and pure-cosi does not set it; the FlashBlade's
+  management certificate is its factory self-signed one (CN Pure Storage, no
+  SANs). The traffic is encrypted, but the API token would go to anyone who
+  could impersonate the address. Fix: a management certificate from MOC's CA
+  with `10.3.11.50` in it, then pure-cosi verifies against that CA. Applies
+  to v0.1.0 too.
+- **The controller and sidecar are upstream Go without FIPS.** Red Hat does
+  not ship COSI. Either upstream builds them with Go's FIPS module, or we
+  build them (`GOFIPS140=v1.0.0`, as the scan controls show). The
+  controller is also a staging build from a registry that compliant
+  clusters' `allowedRegistries` would block.
+
 ## Checked by T-18
 
 `verify.sh -t t18` lists every operator without `fips-compliant: true`. An

@@ -21,6 +21,11 @@
 #
 # --tags REPO [REPO...] lists each repository's tags instead of scanning.
 #
+# Images in the cluster's own registry (image-registry.openshift-image-
+# registry.svc:5000/<project>/...) are pulled with the scan pod's token; first
+# grant: oc policy add-role-to-group system:image-puller \
+#   system:serviceaccounts:fips-scan -n <project>
+#
 # --control builds one small Go program three ways and scans each, to show
 # the scanner tells them apart: Red Hat's Go (pass), upstream Go (fail),
 # upstream Go with GOFIPS140=v1.0.0 (pass).
@@ -31,7 +36,7 @@ set -uo pipefail
 NS="${FIPS_SCAN_NS:-fips-scan}"
 command -v oc >/dev/null || { echo "oc not found" >&2; exit 2; }
 oc whoami >/dev/null 2>&1 || { echo "not logged in (set KUBECONFIG)" >&2; exit 2; }
-[ $# -gt 0 ] || { sed -n '2,28p' "$0"; exit 2; }
+[ $# -gt 0 ] || { sed -n '2,34p' "$0"; exit 2; }
 
 MODE=images
 if [ "$1" = "--control" ]; then MODE=control; shift; fi
@@ -70,7 +75,16 @@ else
   for img in $IMAGES; do
     n=$((n+1)); IMG=/work/img$n; mkdir -p $IMG
     echo "################ $img"
-    crane export --platform linux/amd64 "$img" - 2>/work/crane.err \
+    # The cluster's own registry: log in with the pod's token (its project
+    # needs system:image-puller on the image's project); the registry's
+    # certificate is from the service CA, so skip verification for it.
+    INSECURE=""
+    case "$img" in image-registry.openshift-image-registry.svc:5000/*)
+      crane auth login image-registry.openshift-image-registry.svc:5000 -u scan \
+        -p "$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" --insecure >/dev/null 2>&1
+      INSECURE=--insecure ;;
+    esac
+    crane export $INSECURE --platform linux/amd64 "$img" - 2>/work/crane.err \
       | tar --no-same-owner --no-same-permissions --warning=no-unknown-keyword -x -C $IMG 2>/dev/null
     if [ -z "$(ls -A $IMG)" ]; then echo "could not pull: $(tail -1 /work/crane.err)"; continue; fi
     check-payload scan local --path $IMG > /work/out.txt 2>&1; echo "exit=$?"; report
