@@ -33,7 +33,40 @@ oc get csv -A -o json | jq -r '.items[]
 Checked: jetty and the oac-dev-infra hub. Not checked: oac-prod-infra, the
 hosted clusters (oac-dev-workload0/1/2, andalusia). nist-dev-infra is gone.
 
-Not flagged `true`:
+**15 of the 21 operators installed on the two clusters are flagged
+`fips-compliant: true`**, all from Red Hat:
+
+| Operator | Version | jetty | oac-dev-infra | What it does |
+|---|---|---|---|---|
+| Advanced Cluster Management | 2.17.3 | - | true | Manages the hub's clusters and policies |
+| multicluster engine | 2.17.3 | - | true | Hosted clusters (HyperShift) |
+| OpenShift GitOps | 1.22.3 | - | true | Argo CD, which applies oac-apps |
+| OpenShift Virtualization | 4.22.12 | true | - | KubeVirt VMs, including GPU VMs |
+| cert-manager | 1.20.1 | true | true | Certificates |
+| External Secrets | 1.2.1 | true | true | Secrets from AWS Secrets Manager |
+| external-dns | 1.3.12 | - | true | DNS records |
+| MetalLB | 4.22.0 | - | true | Load balancer addresses |
+| NMState | 4.22.0 | true | true | Node networking |
+| LVM Storage | 4.21.1 | - | true | Local disks |
+| Node Feature Discovery | 4.22.0 | true | - | Node labels, including GPUs |
+| Connectivity Link (rhcl) | 1.4.3 | true | - | API gateway policies |
+| Authorino | 1.4.3 | true | - | Gateway authentication |
+| Limitador | 1.4.2 | true | - | Gateway rate limits |
+| DNS operator (Connectivity Link) | 1.4.2 | true | - | Gateway DNS |
+
+The compliance tooling itself is flagged too. These were not installed on
+either cluster on 2026-11-05 (they ran on nist-dev-infra), so this is the
+flag in jetty's catalog, not an installed CSV:
+
+| Operator | Version | Flag |
+|---|---|---|
+| Compliance Operator | 1.10.0 | true |
+| File Integrity Operator | 1.5.0 | true |
+| Advanced Cluster Security | 4.11.7 | true |
+| Logging (cluster-logging) | 6.7.0 | true |
+| Loki Operator (Red Hat's) | 6.7.0 | true |
+
+Not flagged `true` (6 of 21):
 
 | Operator | Vendor | jetty | oac-dev-infra | Installed by | What it touches |
 |---|---|---|---|---|---|
@@ -46,11 +79,6 @@ Not flagged `true`:
 
 `packageserver` also has no flag. It is part of OLM, shipped with OpenShift,
 and covered by the platform.
-
-Flagged `true`: ACM and multicluster engine, OpenShift GitOps, cert-manager,
-External Secrets, external-dns, MetalLB, NMState, LVM Storage, Node Feature
-Discovery, OpenShift Virtualization, and Connectivity Link (rhcl, Authorino,
-Limitador, DNS operator).
 
 Catalog matters: jetty's catalog also offers a community `loki-operator`
 (v0.12.0, flag false) beside Red Hat's (6.5 to 6.7, flag true).
