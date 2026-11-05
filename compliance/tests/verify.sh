@@ -698,13 +698,70 @@ run_t17() {
   done
 }
 
+# --------------------------------------------------------------- T-18 ------
+# Operators' FIPS claims. The scans in T-03 check node and cluster settings,
+# not which operators are installed. Every CSV must carry
+# features.operators.openshift.io/fips-compliant=true, or be listed in
+# operator-fips-accepted.txt (WARN, a recorded gap); anything else FAILs.
+# OLM's own packageserver ships with OpenShift and is skipped.
+# Record and decisions: operator-fips-inventory.md.
+OPERATOR_FIPS_ACCEPTED="${OPERATOR_FIPS_ACCEPTED:-./operator-fips-accepted.txt}"
+run_t18() {
+  hdr "T-18  Installed operators claim FIPS support"
+  local d out
+  d=$(mktemp -d)
+  oc get csv -A -o json > "$d/csv.json" 2>/dev/null || { bad "could not list CSVs"; rm -rf "$d"; return; }
+  out=$(python3 - "$d/csv.json" "$OPERATOR_FIPS_ACCEPTED" <<'EOF'
+import json, re, sys
+items = json.load(open(sys.argv[1]))["items"]
+accepted = {}
+try:
+    for line in open(sys.argv[2]):
+        line = line.strip()
+        if line and not line.startswith("#"):
+            name, _, why = line.partition(" ")
+            accepted[name] = why.strip()
+except FileNotFoundError:
+    pass
+seen = {}
+for c in items:
+    md = c["metadata"]
+    if md.get("labels", {}).get("olm.copiedFrom"):
+        continue
+    name = md["name"]
+    if name == "packageserver":
+        continue
+    pkg = re.split(r"\.v?\d", name, maxsplit=1)[0]
+    flag = md.get("annotations", {}).get("features.operators.openshift.io/fips-compliant", "none")
+    seen[name] = (pkg, flag)
+for name, (pkg, flag) in sorted(seen.items()):
+    if flag == "true":
+        print(f"OK\t{name}\t")
+    elif pkg in accepted:
+        print(f"WARN\t{name}\tflag {flag}; accepted: {accepted[pkg]}")
+    else:
+        print(f"FAIL\t{name}\tflag {flag}; not in the accepted list")
+EOF
+)
+  rm -rf "$d"
+  local nok=0
+  while IFS=$'\t' read -r lvl name detail; do
+    case "$lvl" in
+      OK)   nok=$((nok+1)) ;;
+      WARN) warn "$name: $detail" ;;
+      FAIL) bad "$name: $detail" ;;
+    esac
+  done <<< "$out"
+  ok "$nok operators flagged fips-compliant=true"
+}
+
 # ---------------------------------------------------------------- main -----
 command -v oc >/dev/null || { echo "oc not found" >&2; exit 2; }
 oc whoami >/dev/null 2>&1 || { echo "not logged in (set KUBECONFIG)" >&2; exit 2; }
 
 printf '%sverification%s  —  %s  —  %s\n' "$B" "$N" "$(oc whoami --show-server)" "$(date -u '+%Y-%m-%d %H:%M UTC')"
 
-ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12 t13 t14 t15 t16 t17"
+ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12 t13 t14 t15 t16 t17 t18"
 RUN="${ONLY:-$ALL}"
 for t in ${RUN//,/ }; do
   if declare -f "run_$t" >/dev/null; then "run_$t"; else echo "no such test: $t" >&2; fi

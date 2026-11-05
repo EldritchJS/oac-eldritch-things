@@ -1,0 +1,11 @@
+# Operators allowed without features.operators.openshift.io/fips-compliant=true.
+# One package name per line (the CSV name without its version), then a reason.
+# T-18 WARNs on these and FAILs on any other unflagged operator.
+# Each entry needs a decision and, if kept, a POA&M item:
+# see operator-fips-inventory.md.
+cluster-observability-operator  under review: ask Red Hat for FIPS status
+grafana-operator                under review: to be removed on compliant clusters
+portworx-operator               under review: ask Portworx; in the storage path
+gpu-operator-certified          under review: ask NVIDIA
+patch-operator                  under review: check what it patches
+group-sync-operator             under review: controls group membership (3.1.1)

@@ -76,8 +76,11 @@ Starting points, not yet decided:
 | patch-operator | Check what it patches on a compliant cluster; it may be replaceable by Argo CD or a chart |
 | group-sync-operator | Group sync controls access (800-171 3.1.1), so it needs either a FIPS answer or a replacement |
 
-## To make it checkable
+## Checked by T-18
 
-Add a test to the verification suite that lists every CSV without
-`fips-compliant: true` and fails unless the operator is on an accepted list,
-so a new unflagged operator is caught instead of slipping in.
+`verify.sh -t t18` lists every operator without `fips-compliant: true`. An
+operator listed in [operator-fips-accepted.txt](operator-fips-accepted.txt) is
+a WARN; any other FAILs, so a new unflagged operator is caught instead of
+slipping in. The six above are listed as "under review" until each has a
+decision. On 2026-11-05 it gave 5 WARNs on jetty and 4 on the oac-dev-infra
+hub, no FAILs; dropping Portworx from the list turned it into a FAIL.
