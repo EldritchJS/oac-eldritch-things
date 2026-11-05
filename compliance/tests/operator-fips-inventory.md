@@ -76,6 +76,70 @@ Starting points, not yet decided:
 | patch-operator | Check what it patches on a compliant cluster; it may be replaceable by Argo CD or a chart |
 | group-sync-operator | Group sync controls access (800-171 3.1.1), so it needs either a FIPS answer or a replacement |
 
+## What the vendors say (2026-11-05)
+
+From public documentation and the catalogs on jetty. Vendor answers, when they
+come, replace this.
+
+### Cluster Observability Operator (Red Hat)
+
+- COO 1.5's release notes list a fix: the build "enables the strict FIPS
+  runtime and CGO compilation across all Operator components". The binaries
+  appear to be built for FIPS.
+- The CSV still says `fips-compliant: false` on every channel (1.5.4 on
+  `stable` and `fast`). Upstream's CSV (rhobs/observability-operator) has no
+  FIPS annotation at all, so the `false` is set in Red Hat's build.
+- Other Red Hat operators have switched the flag to `true` after the same
+  build change, so it may lag. Unconfirmed.
+- **Ask Red Hat:** is COO supported on FIPS clusters, and when will the CSV
+  say so? Related: MOC-issues #684 (observability components and FIPS).
+
+### NVIDIA GPU Operator
+
+- NVIDIA ships "government ready" STIG and FIPS builds of the GPU Operator's
+  images, selected in the ClusterPolicy (for example the driver image
+  `gpu-driver-stig-fips`, with an RHCOS variant). Validated on OpenShift 4.19
+  in FIPS mode. The images use FIPS-enabled OpenSSL; NVIDIA calls them
+  suitable for FedRAMP High.
+- It is the same operator, so the CSV stays `fips-compliant: false` on every
+  channel (v25.3 to v26.7).
+- Needs an **NVIDIA AI Enterprise** subscription and an NGC API key. It is
+  licensed per GPU: list price $4,500 per GPU per year, education rate $1,125.
+  The same subscription is the only way to license compute vGPU (C-Series),
+  which is licensed per vGPU. H100 PCIe and NVL cards include five years;
+  our H100 SXM5 cards do not.
+- Not every component has a government-ready image (NVIDIA names GDS,
+  Confidential Computing Manager and GDRCopy as missing). No CMVP certificate
+  is named.
+- **Ask NVIDIA:** are the VM passthrough components (`vfio-manager`, sandbox
+  device plugin) covered; which FIPS module and certificate the images use;
+  does MOC have AI Enterprise, and how do GPU and vGPU licenses combine.
+
+### Portworx (Pure Storage, Everpure)
+
+- What we run is **PX-CSI 26.2.0**, installed by the Portworx operator
+  26.4.0 (CSV `fips-compliant: false`). Images: the operator from
+  `registry.connect.redhat.com`; driver and attacher from
+  `docker.io/portworx`; CSI sidecars from `registry.k8s.io` (upstream builds,
+  not FIPS).
+- No public FIPS statement, image or certificate for PX-CSI or its operator.
+- The FlashBlade has CMVP certificate **#5000**, "FlashBlade Data Encryption
+  Module", FIPS 140-3, active, validated 2025-04-17, sunset 2027-04-16,
+  level 1. It names hardware and firmware versions, so it most likely covers
+  data at rest, not the network protocols. The 140-2 certificate #3345 is
+  historical. FlashArray's module is #4937.
+- **Also a registry problem:** with `platform-hardening`'s allowed registries
+  on, the `docker.io` and `registry.k8s.io` images would be refused, so PX-CSI
+  would not install on a compliant cluster as it stands.
+- **Ask Pure:** are PX-CSI and its operator built with validated crypto and
+  supported on FIPS OpenShift, and will the CSV say so; can it use Red Hat's
+  FIPS-built CSI sidecars and pull everything from
+  `registry.connect.redhat.com`; which module does the FlashBlade use for NFS
+  over TLS and for its management API, and is that #5000. The NFS question
+  is the FlashBlade's end of the encryption-in-transit path
+  ([fips-cmvp-certificates.md](fips-cmvp-certificates.md) covers the nodes'
+  end).
+
 ## Checked by T-18
 
 `verify.sh -t t18` lists every operator without `fips-compliant: true`. An
