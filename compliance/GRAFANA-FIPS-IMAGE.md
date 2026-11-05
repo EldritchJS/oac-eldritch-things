@@ -83,10 +83,23 @@ ENTRYPOINT ["/usr/sbin/grafana", "server", "--homepath=/usr/share/grafana", "--c
 
 ## Fitting it to oac-apps
 
-- Set the image (and, if needed, the command) in the `user-projects` chart's
-  Grafana deployment override, alongside the OAuth proxy it already sets.
-- Check on a test cluster that the Grafana operator can still configure it:
-  data source, dashboards, OAuth proxy. This is the main unknown.
+**Decision (2026-11-05): drop the Grafana operator.** The operator is a
+community build, not flagged FIPS-compliant, and it pushes each project's
+data source, including its token, into Grafana's admin API (most likely
+plain HTTP on port 3000; to confirm). Grafana can load data sources and
+dashboards from files at startup instead (provisioning), so the operator is
+not needed:
+
+- The `user-projects` chart deploys Grafana itself (Deployment, Service,
+  Route), with the image above and the OAuth proxy it already sets.
+- The data source goes in a provisioning file whose token comes from the
+  project's existing secret through an environment variable, so no
+  credential crosses the network.
+- Dashboards go in ConfigMaps from git, mounted as dashboard provisioning
+  files, which also fits "dashboards belong in git".
+- The `grafana-operator` chart and its ApplicationSet entry go once no
+  project uses them, and the `restrict-tenant-networks` rule that lets the
+  operator reach port 3000 goes with them.
 - **Version:** RHEL ships 10.2; we run 11.3.0. Read-only projects store
   nothing and are unaffected. Editable projects keep a Grafana 11 database,
   which 10.2 cannot read, so they start fresh. Dashboards in git should be
@@ -118,7 +131,6 @@ ENTRYPOINT ["/usr/sbin/grafana", "server", "--homepath=/usr/share/grafana", "--c
 - Registry: which private quay.io organization, and who holds the robot account.
 - Where the build runs (the hub is suggested).
 - Whether editable projects starting fresh on 10.2 is acceptable.
-- The Grafana operator itself is still the community build. Decide whether a
-  component that only manages Grafana, and holds no tenant data, is in scope.
+- Rework `user-projects` to deploy Grafana without the operator (above).
 - Ask Red Hat about COO/Perses FIPS status; if it is close, Perses may be the
   better long-term route.
