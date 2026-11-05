@@ -83,12 +83,18 @@ ENTRYPOINT ["/usr/sbin/grafana", "server", "--homepath=/usr/share/grafana", "--c
 
 ## Fitting it to oac-apps
 
-**Decision (2026-11-05): drop the Grafana operator.** The operator is a
-community build, not flagged FIPS-compliant, and it pushes each project's
-data source, including its token, into Grafana's admin API (most likely
-plain HTTP on port 3000; to confirm). Grafana can load data sources and
+**Decision (2026-11-05): no Grafana operator on compliant clusters.** The
+operator is a community build, not flagged FIPS-compliant, and it pushes each
+project's data source, including its token, into Grafana's admin API over
+plain HTTP (confirmed on oac-dev-workload0: `adminUrl`
+`http://grafana-service.<project>.svc:3000`, token from `valuesFrom` into
+`secureJsonData.httpHeaderValue1`). Grafana can load data sources and
 dashboards from files at startup instead (provisioning), so the operator is
-not needed:
+not needed there.
+
+This is for compliant clusters only, not an oac-apps-wide change: the
+operator and today's Grafana stay as they are on every other cluster.
+On a compliant cluster:
 
 - The `user-projects` chart deploys Grafana itself (Deployment, Service,
   Route), with the image above and the OAuth proxy it already sets.
@@ -97,9 +103,9 @@ not needed:
   credential crosses the network.
 - Dashboards go in ConfigMaps from git, mounted as dashboard provisioning
   files, which also fits "dashboards belong in git".
-- The `grafana-operator` chart and its ApplicationSet entry go once no
-  project uses them, and the `restrict-tenant-networks` rule that lets the
-  operator reach port 3000 goes with them.
+- The `grafana-operator` chart is not deployed to that cluster, and the
+  `restrict-tenant-networks` rule that lets the operator reach port 3000 is
+  not needed there.
 - **Version:** RHEL ships 10.2; we run 11.3.0. Read-only projects store
   nothing and are unaffected. Editable projects keep a Grafana 11 database,
   which 10.2 cannot read, so they start fresh. Dashboards in git should be
@@ -131,6 +137,7 @@ not needed:
 - Registry: which private quay.io organization, and who holds the robot account.
 - Where the build runs (the hub is suggested).
 - Whether editable projects starting fresh on 10.2 is acceptable.
-- Rework `user-projects` to deploy Grafana without the operator (above).
+- How compliant clusters get operator-free Grafana without changing it
+  for everyone else (an off-by-default option, or a separate chart).
 - Ask Red Hat about COO/Perses FIPS status; if it is close, Perses may be the
   better long-term route.
