@@ -168,6 +168,52 @@ come, replace this.
   ([fips-cmvp-certificates.md](fips-cmvp-certificates.md) covers the nodes'
   end).
 
+## What the images contain (2026-11-05)
+
+The flag is a claim; Red Hat's [check-payload](https://github.com/openshift/check-payload)
+checks the binaries themselves: whether each Go binary is built to use a FIPS
+module, and whether the image's OpenSSL is the certified one. Red Hat runs it
+on OpenShift's own release images.
+
+Rerun with [fips-image-scan.sh](fips-image-scan.sh), which scans in a
+throwaway pod (restricted-v2, no pull secret) and deletes its project after.
+
+**Control first** (`./fips-image-scan.sh --control`): one small Go program
+built three ways.
+
+| Build | Result |
+|---|---|
+| Red Hat's Go | Pass |
+| Upstream Go | Fail: not CGO_ENABLED |
+| Upstream Go with Go's FIPS module on (`GOFIPS140=v1.0.0`) | Pass |
+
+So the scanner tells the builds apart, and for an upstream Go project the fix
+is one build setting.
+
+**Results** for the public images of the unflagged operators, as running on
+jetty and the hub. None passed:
+
+| Scanner's reason | What it means | Images |
+|---|---|---|
+| Not CGO_ENABLED | Upstream Go, no FIPS crypto | Portworx `px-pure-csi-driver` and `px-pure-csi-attacher` 26.2.0; `registry.k8s.io` csi-provisioner and csi-node-driver-registrar; NVIDIA `gpu-operator` v26.7.2 (also its validator and tools); `grafana-operator` |
+| Does not set `GODEBUG fips140` | Newer Go; the FIPS module is there but not turned on | NVIDIA `container-toolkit`, `k8s-device-plugin`, `dcgm-exporter`, `k8s-mig-manager`; `group-sync-operator` |
+| Missing required symbols | Older Go, no FIPS support | Grafana 11.3.0; NVIDIA `kubevirt-gpu-device-plugin` (GPUs to VMs); `patch-operator` |
+| No FIPS-certified OpenSSL in the image | The Go binary passes; the base image's OpenSSL is not the certified one | `ghcr.io/cci-moc/pure-cosi` v0.1.0 (MOC's own, on the hub) |
+
+What follows:
+
+- The unflagged operators are not FIPS builds: evidence, not only a missing
+  flag.
+- `pure-cosi` is ours to fix: build it on a UBI base image with RHEL's
+  OpenSSL.
+- For Pure, the question becomes concrete: build PX-CSI with Go's FIPS
+  module (or Red Hat's Go), and use Red Hat's CSI sidecars.
+
+Not scanned, because they need credentials: COO's images
+(`registry.redhat.io`), the Portworx operator (`registry.connect.redhat.com`),
+and NVIDIA's driver and government-ready images (an NGC key). The first two
+could be scanned with a cluster's pull secret mounted in the pod.
+
 ## Checked by T-18
 
 `verify.sh -t t18` lists every operator without `fips-compliant: true`. An
