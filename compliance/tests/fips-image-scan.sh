@@ -15,6 +15,12 @@
 # throwaway project and mounts it read-only for crane, for images on
 # registry.redhat.io and the like. It goes when the project is deleted.
 #
+# FIPS_SCAN_NGC_KEY_FILE=<file> does the same for nvcr.io with an NGC API key
+# (user `$oauthtoken`). The key is read here and sent only into the project's
+# Secret; it is never printed. Overrides FIPS_SCAN_PULL_SECRET.
+#
+# --tags REPO [REPO...] lists each repository's tags instead of scanning.
+#
 # --control builds one small Go program three ways and scans each, to show
 # the scanner tells them apart: Red Hat's Go (pass), upstream Go (fail),
 # upstream Go with GOFIPS140=v1.0.0 (pass).
@@ -25,10 +31,11 @@ set -uo pipefail
 NS="${FIPS_SCAN_NS:-fips-scan}"
 command -v oc >/dev/null || { echo "oc not found" >&2; exit 2; }
 oc whoami >/dev/null 2>&1 || { echo "not logged in (set KUBECONFIG)" >&2; exit 2; }
-[ $# -gt 0 ] || { sed -n '2,21p' "$0"; exit 2; }
+[ $# -gt 0 ] || { sed -n '2,28p' "$0"; exit 2; }
 
 MODE=images
 if [ "$1" = "--control" ]; then MODE=control; shift; fi
+if [ "$1" = "--tags" ]; then MODE=tags; shift; fi
 IMAGES="$*"
 
 read -r -d "" SCRIPT <<'EOF'
@@ -54,6 +61,9 @@ if [ "$MODE" = control ]; then
     echo "################ control-$kind"
     check-payload scan local --path $R > /work/out.txt 2>&1; echo "exit=$?"; report
   done
+elif [ "$MODE" = tags ]; then
+  go install github.com/google/go-containerregistry/cmd/crane@latest >>/work/build.log 2>&1 || { tail -5 /work/build.log; exit 1; }
+  for r in $IMAGES; do echo "################ $r"; crane ls "$r" 2>&1 | tail -n 15; done
 else
   go install github.com/google/go-containerregistry/cmd/crane@latest >>/work/build.log 2>&1 || { tail -5 /work/build.log; exit 1; }
   n=0
@@ -76,7 +86,17 @@ oc new-project "$NS" >/dev/null || exit 2
 trap 'oc delete project "$NS" --wait=false >/dev/null 2>&1' EXIT
 
 PULL="${FIPS_SCAN_PULL_SECRET:-0}"
-if [ "$PULL" = 1 ]; then
+if [ -n "${FIPS_SCAN_NGC_KEY_FILE:-}" ]; then
+  PULL=1
+  python3 -I -c '
+import base64, json, sys
+key = open(sys.argv[2]).read().strip()
+cfg = {"auths": {"nvcr.io": {"auth": base64.b64encode(("$oauthtoken:" + key).encode()).decode()}}}
+print(json.dumps({"apiVersion": "v1", "kind": "Secret", "type": "kubernetes.io/dockerconfigjson",
+  "metadata": {"name": "scan-pull", "namespace": sys.argv[1]},
+  "data": {".dockerconfigjson": base64.b64encode(json.dumps(cfg).encode()).decode()}}))' "$NS" "$FIPS_SCAN_NGC_KEY_FILE" \
+    | oc create -f - >/dev/null || exit 2
+elif [ "$PULL" = 1 ]; then
   # Copied server-side through a pipe; never written to disk or printed.
   oc get secret pull-secret -n openshift-config -o json \
     | python3 -I -c 'import json,sys; s=json.load(sys.stdin); print(json.dumps({"apiVersion":"v1","kind":"Secret","type":s["type"],"metadata":{"name":"scan-pull","namespace":sys.argv[1]},"data":s["data"]}))' "$NS" \

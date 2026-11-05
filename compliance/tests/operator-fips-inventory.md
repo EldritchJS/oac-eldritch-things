@@ -223,8 +223,12 @@ So COO is a FIPS build, as its 1.5 release notes say, and the `false` flag
 is wrong metadata: the question for Red Hat becomes fixing the CSV. The
 Portworx operator is upstream Go like the rest of Portworx.
 
-Still not scanned: NVIDIA's driver and government-ready images (they need an
-NGC key).
+Still not scanned: NVIDIA's government-ready images (for example
+`nvcr.io/nvidia/gpu-driver-stig-fips`). A free NGC key is accepted by
+nvcr.io but granted no pull on them (checked 2026-11-05 through the
+registry's token service); they need an NGC organization with NVIDIA AI
+Enterprise. `FIPS_SCAN_NGC_KEY_FILE` scans them once a key from such an
+organization is available.
 
 ## Checked by T-18
 
