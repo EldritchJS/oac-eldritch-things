@@ -258,10 +258,57 @@ Still open:
   with `10.3.11.50` in it, then pure-cosi verifies against that CA. Applies
   to v0.1.0 too.
 - **The controller and sidecar are upstream Go without FIPS.** Red Hat does
-  not ship COSI. Either upstream builds them with Go's FIPS module, or we
-  build them (`GOFIPS140=v1.0.0`, as the scan controls show). The
-  controller is also a staging build from a registry that compliant
-  clusters' `allowedRegistries` would block.
+  not ship COSI, and the controller is a staging build from a registry that
+  compliant clusters' `allowedRegistries` would block. We now build both
+  from upstream v0.2.2 with Red Hat's Go (`CGO_ENABLED=1`,
+  `strictfipsruntime`) in the pure-cosi repo (CCI-MOC/pure-cosi#14). Both
+  pass check-payload. On 2026-11-05, on jetty, all three FIPS builds ran a
+  full bucket lifecycle against the FlashBlade (BucketClaim, BucketAccess,
+  key Secret, then revoke and bucket deletion), each with RHEL's OpenSSL
+  FIPS provider loaded. Left: publish the images and point pure-cosi's
+  manifests at them.
+
+### Gateways: Service Mesh 3.5 beside the built-in Istio, on jetty
+
+OpenShift's built-in Gateway API istiod (1.28.5, run by the ingress
+operator, `COMPLIANCE_POLICY=fips-140-2`) refuses TLS 1.3, and its version
+cannot be changed. Tested 2026-11-05 on jetty (FIPS mode on): Service Mesh
+3.5 (`servicemeshoperator3`, flagged fips-compliant) running a second
+istiod, Istio 1.31.1 with `fips-140-3`, in its own namespace and
+GatewayClass (`istio`). Everything was removed afterwards.
+
+TLS offered by a non-FIPS client (OpenSSL 3.5.9), so only the gateway's
+policy decides:
+
+| Client offered | Service Mesh 3.5 gateway (`fips-140-3`) | Built-in gateway (`fips-140-2`) |
+|---|---|---|
+| TLS 1.3, AES-256-GCM or AES-128-GCM | Accepted | **Refused** |
+| TLS 1.2, ECDHE AES-128-GCM | Accepted | Accepted |
+| ChaCha20 (1.3 or 1.2) | Refused | Refused |
+| X25519 key exchange | Refused | Refused |
+| P-256 key exchange (TLS 1.3) | Refused; only P-384 | n/a |
+| TLS 1.1 | Refused | Refused |
+
+- Both gateways' proxies (`istio-proxyv2-rhel9`) load RHEL's OpenSSL FIPS
+  provider.
+- Connectivity Link works on the new class: a RateLimitPolicy on the test
+  Gateway was Accepted and Enforced (3 requests 200, then 429).
+- The ingress operator, its istiod and Kuadrant stayed healthy; Gateway
+  API v1.4.1 (owned by the ingress operator) caused no problems.
+
+Open:
+
+- **istiod crashes on FIPS nodes with `fips-140-3`** (Red Hat to fix).
+  Service Mesh sets `GODEBUG=fips140=only`, and Red Hat's Go panics at
+  start: "GOLANG_FIPS and GODEBUG=fips140 are mutually exclusive". The
+  operator reapplies `GODEBUG` if overridden. Setting `GOLANG_FIPS=0` lets
+  it start, but istiod then uses Go's own FIPS module instead of RHEL's
+  OpenSSL (libcrypto not loaded); that module's CMVP status is not
+  checked. istiod signs the mesh's certificates, so this matters.
+- **P-384 only.** Clients that offer just X25519 and P-256 cannot connect.
+  Browsers and curl offer P-384; check the clients that will use it.
+- **Support.** No Red Hat statement found that Service Mesh 3 beside the
+  ingress operator's istiod is supported; ask.
 
 ## Checked by T-18
 
