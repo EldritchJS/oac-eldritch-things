@@ -36,18 +36,20 @@ none should be.
 
 | PR | What | State (2026-11-06) | Next step |
 |---|---|---|---|
-| [oac-apps #197](https://github.com/CCI-MOC/oac-apps/pull/197) | Policy chart to keep a compliant hub compliant | Review required | Reviews |
+| [oac-apps #197](https://github.com/CCI-MOC/oac-apps/pull/197) | Policy chart to keep a compliant hub compliant | Approved by larsks; review still required | tzumainn |
 | [oac-apps #198](https://github.com/CCI-MOC/oac-apps/pull/198) | File Integrity Operator chart | Review required | Reviews |
 | [oac-apps #214](https://github.com/CCI-MOC/oac-apps/pull/214) | RHCOS hardening from git | Review required | Reviews |
-| [oac-apps #216](https://github.com/CCI-MOC/oac-apps/pull/216) | Namespace NetworkPolicies and quotas | Changes requested; reworked as a library chart, as asked (2026-11-02) | Re-review; open question in the PR about namespaces no chart owns |
-| [oac-apps #217](https://github.com/CCI-MOC/oac-apps/pull/217) | Nightly etcd backups of a hub | Review required | Reviews |
-| [oac-apps #230](https://github.com/CCI-MOC/oac-apps/pull/230) | Project Grafana without the operator | Review required, checks pass | Reviews; then the follow-ups under Grafana below |
-| [pure-cosi #13](https://github.com/CCI-MOC/pure-cosi/pull/13) | COSI driver on UBI, so TLS uses RHEL's FIPS OpenSSL | No reviews yet | Ask the pure-cosi maintainers |
-| [pure-cosi #14](https://github.com/CCI-MOC/pure-cosi/pull/14) | FIPS builds of the COSI controller and sidecar | No reviews yet | As above |
+| [oac-apps #217](https://github.com/CCI-MOC/oac-apps/pull/217) | Nightly etcd backups of a hub | Approved by larsks; review still required | tzumainn |
+| [oac-apps #230](https://github.com/CCI-MOC/oac-apps/pull/230) | Project Grafana without the operator | Changes requested by larsks: the mode should not be configurable. Retested on jetty after the route rename | Decide whether all Grafana moves off the operator, then drop the option; then the follow-ups under Grafana below |
+| [oac-apps #231](https://github.com/CCI-MOC/oac-apps/pull/231) | Lets the `acm` chart set guardrails for ACM's namespaces (uses #216) | Review required | larsks, tzumainn. The chart deploys to hubs only, so where the add-on namespace's guardrails go on managed clusters is still open |
+| [pure-cosi #15](https://github.com/CCI-MOC/pure-cosi/pull/15) | Integration tests against a real FlashBlade | No reviews yet | naved001 |
+| [pure-cosi #16](https://github.com/CCI-MOC/pure-cosi/pull/16) | Deploy the FIPS images of all three COSI parts, at `v0.1.3` | No reviews yet | naved001; then tag `v0.1.3` from the merge commit (see Object storage below) |
 
 Merged and in effect: #195 (the hub compliance marker), #196, #215, #218,
-#208 (no GPUs for pods that did not ask), #212, #213, #219, #229 and the
-others listed in [README.md](README.md). No ApplicationSet deploys the
+#208 (no GPUs for pods that did not ask), #212, #213, #216 (the
+`namespace-guardrails` library chart; no cluster sets guardrails yet), #219,
+#229 and the others listed in [README.md](README.md). Merged in pure-cosi
+but not yet deployed: #13 and #14 (the FIPS builds). No ApplicationSet deploys the
 compliance charts yet: once they merge, one PR wires them to #195's marker
 (BUILD.md P1).
 
@@ -101,8 +103,14 @@ upgrade.
 All three parts now have FIPS builds, and on jetty (FIPS on) they ran a
 full bucket lifecycle against the FlashBlade (inventory, "Object storage").
 
-- Merge pure-cosi #13 and #14; then publish the images and point pure-cosi's
-  manifests at the FIPS controller and sidecar.
+- pure-cosi #13 and #14 are merged. Left, in order: merge #16 (the manifests
+  still deploy the old driver and the upstream controller and sidecar); tag
+  `v0.1.3` from that commit, which publishes the images; run the published
+  images on jetty; then bump `kustomize/pure-cosi/base` in oac-apps from
+  `v0.1.2`. That base is shared, so the bump reaches every cluster using it,
+  including production.
+- `tests/integration` (pure-cosi #15) reruns the driver's FlashBlade and FIPS
+  checks in any image.
 - **The FlashBlade's identity is not checked**: its management certificate
   is the factory self-signed one. A FlashBlade admin installs one from MOC's
   CA with `10.3.11.50` in it; then pure-cosi verifies it (`verify_ssl`).
