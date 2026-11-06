@@ -111,6 +111,38 @@ On a compliant cluster:
   which 10.2 cannot read, so they start fresh. Dashboards in git should be
   checked on 10.2.
 
+### Built: oac-apps #230 (2026-11-06)
+
+[oac-apps #230](https://github.com/CCI-MOC/oac-apps/pull/230) adds
+`defaultGrafana.operator: false` to `user-projects`, with the image in
+`defaultGrafana.image`. The default stays `true`, and with it every cluster
+renders exactly as before. With it off, each project gets a Deployment
+(Grafana and the oauth-proxy), a Service with only the proxy port, a Route,
+and ConfigMaps for `grafana.ini`, the provisioning files and the dashboard.
+Grafana listens on `127.0.0.1`, so nothing outside its pod reaches port
+3000.
+
+Tested on jetty (FIPS on) with RHEL's `grafana-10.2.6` in UBI 9, the chart
+applied as rendered:
+
+| Check | Result |
+|---|---|
+| Startup | Datasource and dashboard provisioned, no errors logged |
+| FIPS | RHEL's OpenSSL and its FIPS provider loaded in the Grafana process |
+| No login; a token with no access to the project | 403 at the route |
+| A project member's token | Dashboard listed; both panels return data |
+| Tenancy | A query across all namespaces returned only the project's; one naming another namespace was rejected by prom-label-proxy |
+| Port 3000 from another pod | Unreachable |
+| Secrets in ConfigMaps | None; token and CA come from the environment |
+
+Two things only the run showed, both fixed in the chart:
+
+- Grafana 10 sends Prometheus queries as POST, and the tenancy port
+  (9092) checks a POST as `create` on pod metrics, which `view` does not
+  give. Every query was refused until the datasource used GET.
+- Grafana logs an error for each provisioning folder that is missing, so
+  all five are mounted (three empty).
+
 ## Keeping it current
 
 - A scheduled rebuild (weekly) that pushes only when the `grafana` package or
@@ -137,7 +169,8 @@ On a compliant cluster:
 - Registry: which private quay.io organization, and who holds the robot account.
 - Where the build runs (the hub is suggested).
 - Whether editable projects starting fresh on 10.2 is acceptable.
-- How compliant clusters get operator-free Grafana without changing it
-  for everyone else (an off-by-default option, or a separate chart).
+- Switching compliant clusters to `operator: false` (#230 is the
+  off-by-default option), and not deploying the `grafana-operator` chart
+  there: `all-managed-clusters` sends it to every cluster today.
 - Check COO/Perses FIPS status with the COO team; if it is close, Perses may be the
   better long-term route.

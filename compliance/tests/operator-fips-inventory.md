@@ -98,7 +98,7 @@ Starting points, not yet decided:
 | Operator | Likely route |
 |---|---|
 | Cluster Observability Operator | Its images pass check-payload, so keep it, citing the scan; get the CSV flag corrected with the COO team |
-| Grafana operator | Remove on compliant clusters; Grafana from provisioning files ([GRAFANA-FIPS-IMAGE.md](../GRAFANA-FIPS-IMAGE.md)) |
+| Grafana operator | Remove on compliant clusters; Grafana from provisioning files, built and tested in oac-apps #230 ([GRAFANA-FIPS-IMAGE.md](../GRAFANA-FIPS-IMAGE.md)) |
 | Portworx operator | Ask the vendor. It is in the storage path, so it is the hardest to justify keeping and the hardest to remove |
 | NVIDIA GPU Operator | Ask NVIDIA. GPUs are why the clusters exist, so this is a justification, not a removal |
 | patch-operator | Check what it patches on a compliant cluster; it may be replaceable by Argo CD or a chart |

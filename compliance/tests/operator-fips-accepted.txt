@@ -4,7 +4,7 @@
 # Each entry needs a decision and, if kept, a POA&M item:
 # see operator-fips-inventory.md.
 cluster-observability-operator  images pass check-payload; CSV flag wrong, to correct with the COO team
-grafana-operator                under review: to be removed on compliant clusters
+grafana-operator                to be removed on compliant clusters; replacement is oac-apps #230
 portworx-operator               under review: ask Portworx; in the storage path
 gpu-operator-certified          under review: ask NVIDIA
 patch-operator                  under review: check what it patches

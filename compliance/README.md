@@ -1,6 +1,7 @@
 # Compliant OAC clusters: FIPS, HIPAA and NIST 800-171
 
-*Start here. Last updated 2026-11-02.*
+*Start here. Last updated 2026-11-06. What is still open, with next steps
+and who to ask: [HANDOFF.md](HANDOFF.md).*
 
 The goal is OAC hubs and workload clusters that are compliant from first
 boot, and kept that way by GitOps from
@@ -58,6 +59,8 @@ because of the hub-wide settings, not its own files
 
 ## Still open
 
+The full list, with next steps, is in [HANDOFF.md](HANDOFF.md). In short:
+
 - The compliance charts merged upstream (in review, above) and wired to
   the hub marker, with branch protection on the repo the hubs read
   (BUILD.md, P1 to P3).
@@ -75,6 +78,7 @@ because of the hub-wide settings, not its own files
 
 | File | What |
 |---|---|
+| [HANDOFF.md](HANDOFF.md) | **Open work:** every open item, next step and who to ask |
 | [HUB-SPOKE.md](HUB-SPOKE.md) | **Design:** compliant hubs and hosted clusters under GitOps; where each jetty control goes |
 | [BUILD.md](BUILD.md) | **Method:** a compliant hub, then a compliant workload cluster on it |
 | [NEW-HUB-RUNBOOK.md](NEW-HUB-RUNBOOK.md) | **Runbook:** a new hub and workload cluster from nothing, with example PRs |
@@ -93,7 +97,7 @@ because of the hub-wide settings, not its own files
 | [NFS-TLS.md](NFS-TLS.md) | Storage encryption in transit |
 | [tests/operator-fips-inventory.md](tests/operator-fips-inventory.md) | Which installed operators claim FIPS support, and the six that don't |
 | [GRAFANA.md](GRAFANA.md) | Grafana under FIPS, 800-171 and HIPAA: per-project dashboards and access control |
-| [GRAFANA-FIPS-IMAGE.md](GRAFANA-FIPS-IMAGE.md) | FIPS Grafana from RHEL's package in a UBI image, tested on jetty |
+| [GRAFANA-FIPS-IMAGE.md](GRAFANA-FIPS-IMAGE.md) | FIPS Grafana from RHEL's package in a UBI image, and running it without the operator (oac-apps #230), tested on jetty |
 | [STORAGE-ISSUE.md](STORAGE-ISSUE.md) | jetty's FlashBlade outage |
 | [PATCHING.md](PATCHING.md) | Patch cadence: draft SSP text |
 | [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md) | Exception register for privileged workloads |
