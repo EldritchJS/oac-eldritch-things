@@ -10,6 +10,10 @@ compliant workload cluster from oac-apps charts, and was retired on
 a time. The next milestone is a replacement compliant hub, built from the
 runbook by someone other than its author.
 
+Node hardening does not cover add-on operators: six installed operators are
+not flagged FIPS-compliant, and none has a recorded decision yet
+([§3](#3-operators-without-a-fips-claim)).
+
 Older decision and prerequisite lists are still current and are not
 repeated here: [BUILD.md](BUILD.md) P1 to P11 (what a compliant hub needs,
 and from whom) and [PLAN.md](PLAN.md#open--what-remains-what-it-needs-and-from-whom)

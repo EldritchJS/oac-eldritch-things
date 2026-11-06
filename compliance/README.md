@@ -30,6 +30,31 @@ because of the hub-wide settings, not its own files
 | First workload cluster | Installed 2026-10-22: 4.22.18, single-replica control plane, two workers. Compliance stages A to D delivered by the hub's Argo; MOC SSO; its own audit forwarded to the hub. Retired with the hub on 2026-10-28 |
 | GPUs for VMs | Passthrough proven on both of jetty's GPU nodes: 1-, 2- and 4-GPU VMs, several per node, CUDA on every GPU, about 8% less host-to-device bandwidth than a container on the same node. GPU memory is cleared before a new VM in another project can read it (2026-10-26). jetty was reinstalled on 2026-10-28 and all of it passed again; a 4-GPU VM also gets full NVLink between its GPUs (133 GB/s per pair), and containers can share a GPU through MIG without a licence. Between tenants, containers get MIG slices or whole GPUs: time-slicing and MPS keep memory private but expose usage, and under MPS one pod can crash its neighbours. GPU memory is cleared between pods too, including across MIG repartitioning, and pods can run on a GPU inside a tenant's own VM. The GPU Operator needs one toolkit setting and an admission policy on any multi-tenant cluster, shown on oac-dev-workload0 as well as jetty (oac-apps PR #208, vms/gpu/OPTIONS.md). One tenant per GPU node until cross-tenant NVLink is answered. The acceptance suite checks placement and configuration. Sharing one GPU between VMs needs an NVIDIA vGPU licence. Pods in a 4-GPU VM matched bare metal in the AI UAT Harness inference tests, given dedicated CPUs and SMT off in the guest (2026-10-29). jetty is now a hypervisor candidate for oac-dev-infra's KubeVirt clusters: GPU NodePools are proposed in oac-apps [#212](https://github.com/CCI-MOC/oac-apps/pull/212), [#213](https://github.com/CCI-MOC/oac-apps/pull/213) and [#219](https://github.com/CCI-MOC/oac-apps/pull/219) ([vms/gpu/README.md](vms/gpu/README.md), [vms/gpu/OPTIONS.md](vms/gpu/OPTIONS.md)) |
 
+## Operators without a FIPS claim
+
+FIPS mode on the nodes and clean compliance scans do not cover add-on
+operators, and the scans do not look at them. **6 of the 21 operators
+installed on jetty and oac-dev-infra are not flagged `fips-compliant: true`
+(checked 2026-11-05; oac-prod-infra and the hosted clusters are not checked).
+Each one needs a recorded decision, and none has one yet.** No flag means the vendor makes no claim. It
+does not prove the operator uses unapproved crypto, but an assessor goes by
+the claim. The scan column is a separate check of the images with
+`check-payload`.
+
+| Operator | Flag | Image scan | What it touches |
+|---|---|---|---|
+| Cluster Observability Operator | false | Pass (the flag looks wrong) | Perses dashboards in the console; reads metrics |
+| Grafana operator | none | Fail | Per-project Grafana; sends each project's data source token over plain HTTP |
+| Portworx operator | false | Fail | Storage driver for FlashBlade volumes; holds the FlashBlade API token |
+| NVIDIA GPU Operator | false | Fail | GPU drivers and device plugins; privileged on GPU nodes |
+| patch-operator | none | Fail | Patches cluster resources; broad API write access |
+| group-sync-operator | none | Fail | Syncs the groups that decide who can access what |
+
+Full record, including vendor statements and each operator's likely route:
+[tests/operator-fips-inventory.md](tests/operator-fips-inventory.md). Next
+steps and who to ask: [HANDOFF.md](HANDOFF.md) §3. `tests/verify.sh -t t18`
+fails on any new operator without the flag.
+
 ## What the hub taught that jetty did not
 
 - **Storage is TLS-only from its first volume.** A node with a cleartext
@@ -66,6 +91,8 @@ The full list, with next steps, is in [HANDOFF.md](HANDOFF.md). In short:
   (BUILD.md, P1 to P3).
 - An audit and alert destination (BUILD.md P9): audit records on a node
   last hours, and nothing alerts on a new scan failure.
+- A decision on each of the six [operators without a FIPS
+  claim](#operators-without-a-fips-claim).
 - Storage for workload clusters: Portworx and NFS over TLS, as on the
   hub. The cluster-wide proxy is a recorded POA&M gap.
 - Hosted etcd on FlashBlade NFS, accepted for the test only; a later hub
@@ -79,6 +106,7 @@ The full list, with next steps, is in [HANDOFF.md](HANDOFF.md). In short:
 | File | What |
 |---|---|
 | [HANDOFF.md](HANDOFF.md) | **Open work:** every open item, next step and who to ask |
+| [tests/operator-fips-inventory.md](tests/operator-fips-inventory.md) | **Operators:** which installed operators claim FIPS support, the six that don't, and what their images contain |
 | [HUB-SPOKE.md](HUB-SPOKE.md) | **Design:** compliant hubs and hosted clusters under GitOps; where each jetty control goes |
 | [BUILD.md](BUILD.md) | **Method:** a compliant hub, then a compliant workload cluster on it |
 | [NEW-HUB-RUNBOOK.md](NEW-HUB-RUNBOOK.md) | **Runbook:** a new hub and workload cluster from nothing, with example PRs |
@@ -95,7 +123,6 @@ The full list, with next steps, is in [HANDOFF.md](HANDOFF.md). In short:
 | [FEASIBILITY.md](FEASIBILITY.md) | Compliance against GPUs and VMs: where they collide |
 | [PLAN.md](PLAN.md) | jetty's decisions log |
 | [NFS-TLS.md](NFS-TLS.md) | Storage encryption in transit |
-| [tests/operator-fips-inventory.md](tests/operator-fips-inventory.md) | Which installed operators claim FIPS support, and the six that don't |
 | [GRAFANA.md](GRAFANA.md) | Grafana under FIPS, 800-171 and HIPAA: per-project dashboards and access control |
 | [GRAFANA-FIPS-IMAGE.md](GRAFANA-FIPS-IMAGE.md) | FIPS Grafana from RHEL's package in a UBI image, and running it without the operator (oac-apps #230), tested on jetty |
 | [STORAGE-ISSUE.md](STORAGE-ISSUE.md) | jetty's FlashBlade outage |

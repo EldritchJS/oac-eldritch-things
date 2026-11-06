@@ -4,6 +4,13 @@ Which installed operators claim FIPS support, and what to do about the ones
 that don't. Companion to [fips-cmvp-certificates.md](fips-cmvp-certificates.md),
 which covers the crypto modules themselves.
 
+**In short (2026-11-05):** 6 of the 21 operators installed on jetty and
+oac-dev-infra are not flagged `fips-compliant: true`: Cluster Observability,
+Grafana, Portworx, NVIDIA GPU, patch-operator and group-sync-operator ([the
+table](#results-2026-11-05)). Only Cluster Observability's images pass
+`check-payload` ([the scans](#what-the-images-contain-2026-11-05)). None has
+a recorded decision yet ([the options](#deciding-each-one)).
+
 ## Why this exists
 
 The hardening work covers node and platform settings: FIPS mode on the nodes

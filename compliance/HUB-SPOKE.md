@@ -345,6 +345,8 @@ opt-in, see §2)
 - Whether compliance components live in `oac-apps` or a separate repo the hub
   also reads. That is the `oac-apps` maintainers' call.
 - ACS topology (one Central on the hub vs. one per environment).
+- What happens to the six operators without a FIPS claim: remove, replace or
+  justify each ([tests/operator-fips-inventory.md](tests/operator-fips-inventory.md)).
 - Which workload clusters hold CUI/ePHI at all. One that never does goes on
   a non-compliant hub (§2); it cannot share a compliant hub with a lighter
   baseline.

@@ -346,7 +346,9 @@ from jetty, so the hub should start close to clean. The platform checks
    - T-05: Central.
    - Remove the GPU tests.
 2. Archive the first clean scan results (raw ARF) and the exceptions list.
-   That is the hub's baseline evidence.
+   That is the hub's baseline evidence. Record a decision for each operator
+   that T-18 reports without a FIPS claim; the compliance scans do not look
+   at operators ([tests/operator-fips-inventory.md](tests/operator-fips-inventory.md)).
 3. Check the admission policies are in place:
 
 ```

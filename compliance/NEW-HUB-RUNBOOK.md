@@ -261,6 +261,8 @@ applies to any new pair.
 - **TODO:** hosted etcd on FlashBlade NFS is test-only, and it failed on
   2026-10-23 (a stale NFS lock); a supported home for it.
 - **TODO:** a central audit and alert destination (P9).
+- **TODO:** a decision on each operator without a FIPS claim; a hub runs
+  several of them ([tests/operator-fips-inventory.md](tests/operator-fips-inventory.md)).
 - **TODO:** NetworkPolicies for the hub's namespaces, for production; the
   rest of the hub's failures are accepted gaps (etcd encryption, the
   proxy, kubeadmin): [nist-dev-infra/RUNBOOK.md 2.9](nist-dev-infra/RUNBOOK.md#29-what-the-hub-does-not-pass-yet).

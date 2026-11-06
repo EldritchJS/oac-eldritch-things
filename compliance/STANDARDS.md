@@ -129,6 +129,11 @@ for bulk encryption — the two modules with no certificate for this
 release. FIPS mode restricts them to approved algorithms; it does not make
 them validated.
 
+Add-on operators are a separate gap. Six installed operators are not flagged
+FIPS-compliant, and five of them fail an image scan, including the Portworx
+operator in the storage path:
+[tests/operator-fips-inventory.md](tests/operator-fips-inventory.md).
+
 ### Where FIPS binds in each framework
 
 - **800-171 3.13.11** — employ FIPS-validated cryptography to protect CUI.
