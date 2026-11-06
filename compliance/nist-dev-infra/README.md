@@ -411,7 +411,7 @@ What this shows:
 
 What would reduce the thread count, instead of raising the limit:
 etcd with a lower `GOMAXPROCS` (the static pod is the etcd operator's, so
-this is a question for Red Hat), fewer etcd connections (fewer resource
+this is a question for the etcd team), fewer etcd connections (fewer resource
 types), and smaller nodes for the control plane (the standard layout).
 
 **Where the CPU goes (profiled the same day).** Same harness, with `perf`

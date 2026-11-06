@@ -60,7 +60,7 @@ validated module ahead of revalidation. A **RHEL 9 OpenSSL FIPS Provider**
 is in CMVP **Comment Resolution** (2026-09-03, unchanged on 2026-11-05) —
 most likely this build.
 
-**Ask Red Hat to confirm** that module `3.0.7-cda111b5812c30d4` is the
+**Confirm with the RHEL crypto team** that module `3.0.7-cda111b5812c30d4` is the
 submission in Comment Resolution. The status to state meanwhile, now backed
 by RHSA-2026:27744: "FIPS 140-3 module (#4857); this security update's
 build is submitted for validation".

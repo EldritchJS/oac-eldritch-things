@@ -20,7 +20,7 @@ Alternatives considered:
 | Option | Status |
 |---|---|
 | Grafana Labs FIPS build | None found for self-hosted Grafana; their FedRAMP authorization covers Grafana Cloud only |
-| Perses in the console (Cluster Observability Operator) | COO 1.5.4 is flagged `fips-compliant: false`; ask Red Hat when that changes |
+| Perses in the console (Cluster Observability Operator) | COO 1.5.4 is flagged `fips-compliant: false`; check with the COO team when that changes |
 | Build Grafana with Go's FIPS module (CMVP #5247) | Works, but we would maintain the whole Grafana build |
 | Chainguard `grafana-fips` and `grafana-operator-fips` | Paid, private registry; FIPS module not named on their pages |
 | **RHEL's Grafana RPM in a UBI image** | **Tested, works; this document** |
@@ -139,5 +139,5 @@ On a compliant cluster:
 - Whether editable projects starting fresh on 10.2 is acceptable.
 - How compliant clusters get operator-free Grafana without changing it
   for everyone else (an off-by-default option, or a separate chart).
-- Ask Red Hat about COO/Perses FIPS status; if it is close, Perses may be the
+- Check COO/Perses FIPS status with the COO team; if it is close, Perses may be the
   better long-term route.

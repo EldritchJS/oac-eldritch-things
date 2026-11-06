@@ -118,7 +118,7 @@ which `verify.sh` T-02 now checks against every node.
 
 | Module (RHEL 9.8 / RHCOS 9.8.20260922-1) | Status |
 |---|---|
-| OpenSSL FIPS Provider | Certificate **#4857** (140-3 L1, Active to 2029-10-28) for module `3.0.7-395c1a240fbfffd8`. **jetty runs `3.0.7-cda111b5812c30d4`** (`-11.el9_8`), a later security build; a new RHEL 9 provider is in CMVP Comment Resolution. Ask Red Hat whether it is this build. |
+| OpenSSL FIPS Provider | Certificate **#4857** (140-3 L1, Active to 2029-10-28) for module `3.0.7-395c1a240fbfffd8`. **jetty runs `3.0.7-cda111b5812c30d4`** (`-11.el9_8`), a later security build; a new RHEL 9 provider is in CMVP Comment Resolution. Confirm with the RHEL crypto team whether it is this build. |
 | Kernel Crypto API | No 9.8 certificate; no RHEL 9 submission in process |
 | GnuTLS | No 9.8 certificate; RHEL 9 gnutls in CMVP Review (2026-10-07) |
 | libgcrypt | No certificate for this build |

@@ -97,7 +97,7 @@ Starting points, not yet decided:
 
 | Operator | Likely route |
 |---|---|
-| Cluster Observability Operator | Its images pass check-payload, so keep it, citing the scan; ask Red Hat to correct the CSV flag |
+| Cluster Observability Operator | Its images pass check-payload, so keep it, citing the scan; get the CSV flag corrected with the COO team |
 | Grafana operator | Remove on compliant clusters; Grafana from provisioning files ([GRAFANA-FIPS-IMAGE.md](../GRAFANA-FIPS-IMAGE.md)) |
 | Portworx operator | Ask the vendor. It is in the storage path, so it is the hardest to justify keeping and the hardest to remove |
 | NVIDIA GPU Operator | Ask NVIDIA. GPUs are why the clusters exist, so this is a justification, not a removal |
@@ -120,8 +120,8 @@ come, replace this.
   FIPS annotation at all, so the `false` is set in Red Hat's build.
 - Other Red Hat operators have switched the flag to `true` after the same
   build change, so it may lag. Unconfirmed.
-- **Ask Red Hat:** is COO supported on FIPS clusters, and when will the CSV
-  say so? Related: MOC-issues #684 (observability components and FIPS).
+- **Ask the COO team:** is COO supported on FIPS clusters, and when will
+  the CSV say so? Related: MOC-issues #684 (observability components and FIPS).
 
 ### NVIDIA GPU Operator
 
@@ -220,7 +220,7 @@ What follows:
 | Portworx `openstorage-operator` 26.4.0 (`/operator`, `/dryrun`, `/preflight`) | Fail: not CGO_ENABLED |
 
 So COO is a FIPS build, as its 1.5 release notes say, and the `false` flag
-is wrong metadata: the question for Red Hat becomes fixing the CSV. The
+is wrong metadata: what is left is correcting the CSV. The
 Portworx operator is upstream Go like the rest of Portworx.
 
 Still not scanned: NVIDIA's government-ready images (for example
@@ -298,7 +298,8 @@ policy decides:
 
 Open:
 
-- **istiod crashes on FIPS nodes with `fips-140-3`** (Red Hat to fix).
+- **istiod crashes on FIPS nodes with `fips-140-3`** (to raise with the
+  Service Mesh team).
   Service Mesh sets `GODEBUG=fips140=only`, and Red Hat's Go panics at
   start: "GOLANG_FIPS and GODEBUG=fips140 are mutually exclusive". The
   operator reapplies `GODEBUG` if overridden. Setting `GOLANG_FIPS=0` lets
