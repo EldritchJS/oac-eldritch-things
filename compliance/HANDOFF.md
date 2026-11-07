@@ -128,21 +128,29 @@ full bucket lifecycle against the FlashBlade (inventory, "Object storage").
   pods on the storage network (NetworkAttachmentDefinition), not from the
   nodes or the default pod network.
 
-### 6. Gateway TLS 1.3 (Connectivity Link)
+### 6. Gateway TLS 1.3 (Connectivity Link): optional, not needed
 
-OpenShift's built-in Gateway API istiod refuses TLS 1.3 under FIPS. A
-second gateway from Service Mesh 3.5 (Istio 1.31, `fips-140-3`) does TLS 1.3
-with FIPS ciphers only, and Connectivity Link policies work on it (tested
-on jetty, inventory "Gateways").
+**Nothing is blocked, and no operator needs this.** Connectivity Link
+(oac-apps #227) uses the Istio that OpenShift's ingress operator installs,
+with no Service Mesh subscription. Under FIPS that Istio's gateways do TLS
+1.2 with FIPS ciphers (ECDHE, AES-GCM). In #227's design clients never
+reach a gateway directly: they connect to the cluster's router with TLS
+1.3, and the router reencrypts to the gateway. TLS 1.2 is used only on
+that internal router-to-gateway hop.
 
-- **Blocker:** its istiod does not start on FIPS nodes as shipped
-  (`GODEBUG=fips140=only` conflicts with Red Hat Go's OpenSSL mode). The
-  `GOLANG_FIPS=0` workaround uses Go's own FIPS module instead of RHEL's
-  OpenSSL. Raise with the Service Mesh team, and ask whether running it
-  beside the ingress operator's istiod is supported.
-- It accepts only P-384 for key exchange; check the clients that will use
-  it.
-- Connectivity Link on jetty is deferred until the KubeVirt work settles.
+TLS 1.3 on that hop would be an optional extra. It would matter only if a
+gateway were exposed to clients directly, or if a requirement named TLS 1.3
+for internal hops. Neither applies now.
+
+For the record, if it is ever wanted (tested on jetty, inventory
+"Gateways"): a second Istio from Service Mesh 3.5 (Istio 1.31,
+`fips-140-3`) does TLS 1.3, and Connectivity Link policies work on it. As
+shipped, its istiod does not start on FIPS nodes (`GODEBUG=fips140=only`
+conflicts with Red Hat Go's OpenSSL mode), it accepts only P-384 for key
+exchange, and running it beside the ingress operator's istiod has no
+support statement. Not worth pursuing unless the need changes.
+
+Connectivity Link on jetty is deferred until the KubeVirt work settles.
 
 ### 7. Grafana without the operator
 
@@ -189,7 +197,7 @@ New since PLAN.md's vendor table:
 |---|---|
 | Correct COO's `fips-compliant` flag; is COO supported on FIPS clusters? | COO team |
 | Is provider `3.0.7-cda111b5812c30d4` the CMVP submission in Comment Resolution? | RHEL crypto team |
-| Fix istiod with `fips-140-3` on FIPS nodes; is a second Service Mesh beside the ingress operator's supported? | Service Mesh team |
+| Low priority, only if gateway TLS 1.3 is ever needed (§6): fix istiod with `fips-140-3` on FIPS nodes; is a second Service Mesh beside the ingress operator's supported? | Service Mesh team |
 | FIPS builds of PX-CSI and the Portworx operator | Pure |
 | NVIDIA AI Enterprise access for the FIPS driver images | NVIDIA |
 | A FlashBlade management certificate from MOC's CA | FlashBlade admins |

@@ -334,6 +334,12 @@ Still open:
 
 ### Gateways: Service Mesh 3.5 beside the built-in Istio, on jetty
 
+**Optional; nothing needs it.** Connectivity Link works on the built-in
+Istio, which under FIPS gives its gateways TLS 1.2 with FIPS ciphers. In
+oac-apps #227 clients reach the router with TLS 1.3, and only the router's
+reencrypt hop to the gateway uses TLS 1.2. This section records a test of
+TLS 1.3 on that hop, in case it is ever wanted.
+
 OpenShift's built-in Gateway API istiod (1.28.5, run by the ingress
 operator, `COMPLIANCE_POLICY=fips-140-2`) refuses TLS 1.3, and its version
 cannot be changed. Tested 2026-11-05 on jetty (FIPS mode on): Service Mesh
