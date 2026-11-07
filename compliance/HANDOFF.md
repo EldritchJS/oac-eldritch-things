@@ -25,12 +25,88 @@ and from whom) and [PLAN.md](PLAN.md#open--what-remains-what-it-needs-and-from-w
 |---|---|---|
 | jetty | Bare metal, FIPS on, OCP 4.22.14 | The test bed for everything below, and a KubeVirt hypervisor for oac-dev-infra (andalusia). Its internal registry is normally `Removed`; turn it on only to build a test image, then back off. No test leftovers as of 2026-11-06 |
 | oac-dev-infra | OAC dev hub, FIPS **off** | Hosts andalusia. jetty is its hive spoke |
-| andalusia | Hosted cluster on oac-dev-infra, one GPU VM worker on jetty | FIPS on: rebuilt 2026-11-04 with `fips: true` (the live HostedCluster has `spec.fips: true`). No cluster labels, so no oac-apps components, including COSI. Its hub is not compliant, so it is a FIPS test cluster, not a compliant one |
+| andalusia | Hosted cluster on oac-dev-infra, one GPU VM worker on jetty | FIPS on: rebuilt 2026-11-04 with `fips: true` (the live HostedCluster has `spec.fips: true`). No feature labels, so it gets only the baseline every managed cluster gets, with no COSI or Portworx. Its hub is not compliant, so it is a FIPS test cluster, not a compliant one |
 | oac-dev-workload0 | Shared dev cluster, FIPS **off**, RHOAI 3.5 | Not ours; has the Service Mesh 3.5 operator for RHOAI |
 | nist-dev-infra, nist-dev-workload0 | The FIPS test hub and its workload cluster | **Gone** (2026-10-28). Rebuild from [nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) |
 
 Admin kubeconfigs are in AWS Secrets Manager. None is in this repo, and
 none should be.
+
+### How the clusters relate
+
+Checked live on 2026-11-07, except oac-prod-infra, which is from oac-apps
+only. A hosted cluster's control plane runs as pods on its hub; only its
+workers run elsewhere. Solid arrows: the hub creates and manages the
+cluster. Dotted arrows: where a hosted cluster's worker VMs run.
+
+```mermaid
+flowchart TB
+  subgraph DEVHUB["oac-dev-infra hub, FIPS off"]
+    HUB["ACM, HyperShift, hive, Argo CD<br/>hosted control planes run here"]
+  end
+
+  JETTY["jetty<br/>bare metal, FIPS on<br/>installed by the hub with hive<br/>KubeVirt hypervisor"]
+  W0["oac-dev-workload0<br/>bare-metal workers, FIPS off<br/>GPUs, RHOAI"]
+  W1["oac-dev-workload1<br/>bare-metal workers, FIPS off<br/>KubeVirt hypervisor"]
+  W2["oac-dev-workload2<br/>FIPS off<br/>2 worker VMs"]
+  AND["andalusia<br/>FIPS on<br/>1 worker VM with 4 H100s"]
+
+  HUB --> JETTY
+  HUB --> W0
+  HUB --> W1
+  HUB --> W2
+  HUB --> AND
+  W1 -.-> W2
+  JETTY -.-> AND
+
+  subgraph PRODHUB["oac-prod-infra hub, not checked live"]
+    PHUB["Hosted control planes"]
+  end
+  PW0["oac-prod-workload0"]
+  PHUB --> PW0
+
+  subgraph NISTHUB["nist-dev-infra: compliant FIPS hub, gone since 2026-10-28"]
+    NHUB["Hosted control planes"]
+  end
+  NW0["nist-dev-workload0<br/>gone"]
+  NHUB --> NW0
+```
+
+### How a cluster gets its components
+
+Everything comes from CCI-MOC/oac-apps (`main`) through Argo CD on each
+hub. The hub's own components come from `hub-components`. Every managed
+cluster gets the `all-managed-clusters` baseline. Anything more depends on
+the cluster's feature labels (`massopen.cloud/feature-<name>: "true"`): an
+ACM placement matches each label, and its ApplicationSet deploys that
+feature's charts.
+
+```mermaid
+flowchart LR
+  GIT["CCI-MOC/oac-apps<br/>main branch"] --> ARGO["Argo CD<br/>on each hub"]
+  ARGO --> HUBC["hub-components<br/>the hub itself"]
+  ARGO --> HC["hosted-clusters<br/>one HostedCluster per<br/>hosted-clusters/HUB/CLUSTER"]
+  HC -->|"clusterLabels in its values"| LBL["Feature labels on<br/>the ManagedCluster"]
+  SPOKE["Hub values for a hive spoke<br/>(jetty)"] --> LBL
+  ARGO --> BASE["all-managed-clusters<br/>baseline for every<br/>managed cluster"]
+  LBL --> PLACE["ACM placements<br/>one per feature label"]
+  PLACE --> FEAT["Feature ApplicationSets<br/>portworx, gpu, hypervisor,<br/>connectivity-link, and others"]
+```
+
+What that gives each cluster on oac-dev-infra today (2026-11-07):
+
+| Cluster | Feature labels | Components beyond the baseline |
+|---|---|---|
+| andalusia | none | none |
+| oac-dev-workload2 | none | none |
+| jetty | `connectivity-link`, `hypervisor` | Connectivity Link; `hypervisor-cluster` and patch-operator |
+| oac-dev-workload1 | `hypervisor`, `metallb`, `portworx`, `rossoctl`, `user-workloads`, `virtualization` | Portworx and pure-cosi, MetalLB, OpenShift Virtualization, `hypervisor-cluster`, and others |
+| oac-dev-workload0 | `gpu`, `metallb`, `portworx`, `rossoctl`, `user-workloads`, `virtualization` | The GPU operators, RHOAI, Portworx and pure-cosi, and others |
+
+The baseline is 12 components, including cert-manager, external-secrets,
+`cluster-certificates`, `user-projects` and the monitoring settings.
+Compliance charts will come from a separate route, the hub's compliance
+marker (`hosted-clusters/<hub>/compliance.yaml`), not from feature labels.
 
 ## Open pull requests
 
@@ -103,6 +179,23 @@ upgrade.
 All three parts now have FIPS builds, and on jetty (FIPS on) they ran a
 full bucket lifecycle against the FlashBlade (inventory, "Object storage").
 
+How a bucket request flows. The controller and sidecar act through the
+Kubernetes API; only the driver talks to the FlashBlade, over the storage
+network.
+
+```mermaid
+flowchart LR
+  REQ["BucketClaim and BucketAccess<br/>in a user's project"] --> CTRL["COSI controller<br/>creates the Bucket object"]
+  CTRL --> SC
+  subgraph POD["pure-cosi-driver pod, portworx namespace"]
+    SC["COSI sidecar"] -->|"local socket"| DRV["pure-cosi driver"]
+  end
+  DRV -->|"TLS, storage network only"| FBM["FlashBlade<br/>management API"]
+  SC -->|"writes the S3 keys"| SEC["Secret in the<br/>user's project"]
+  SEC --> APP["The user's workload"]
+  APP -->|"S3"| FBS["FlashBlade<br/>S3 endpoint"]
+```
+
 - pure-cosi #13 and #14 are merged and released as `v0.2.0`, which publishes
   all three images. The manifests in that tag still name the old driver and
   the upstream controller and sidecar, so oac-apps has to set the images.
@@ -153,6 +246,17 @@ full bucket lifecycle against the FlashBlade (inventory, "Object storage").
   should be checked the same way.
 - **Not on any compliant hub:** nist-dev-infra has the placement but no
   labelled cluster, and it is gone anyway.
+
+How a request reaches an API behind Connectivity Link. A NetworkPolicy
+lets only the router reach the gateway.
+
+```mermaid
+flowchart LR
+  CLIENT["Client"] -->|"TLS 1.3"| ROUTER["Cluster router<br/>reencrypt Route"]
+  ROUTER -->|"TLS 1.2, FIPS ciphers<br/>inside the cluster"| GW["Gateway<br/>ClusterIP Service"]
+  GW -->|"auth and rate-limit checks"| POL["Authorino and Limitador"]
+  GW --> SVC["The API's own Service"]
+```
 
 **Gateway TLS 1.3: optional, not needed.** No operator needs it, and
 nothing is blocked. Under FIPS, the built-in Istio's gateways do TLS 1.2
