@@ -85,15 +85,50 @@ There may be both. The rules (decided 2026-10-13):
   that will never hold CUI or ePHI goes on a non-compliant hub.
 
 So compliance is a property of the **hub**, and everything is switched per
-hub, never per workload cluster. In `oac-apps` terms (built on the fork's
-`compliance-charts` branch; example in
-[oac-apps/examples/compliant-hub/](oac-apps/examples/compliant-hub/)):
+hub, never per workload cluster. In CCI-MOC/oac-apps terms (first built on
+the fork's `compliance-charts` branch, whose example in
+[oac-apps/examples/compliant-hub/](oac-apps/examples/compliant-hub/) used
+the older `apps/<hub>/compliance.yaml` marker):
 
 | Per hub | Compliant hub | Non-compliant hub |
 |---|---|---|
-| Drop-in `apps/<hub>/compliance.yaml` | Compliance charts on the hub, and the in-cluster ones on **every** managed cluster (existing `all-managed-clusters` placement) | absent |
+| Marker `hosted-clusters/<hub>/compliance.yaml` (oac-apps #195) | Hub-side compliance resources for **every** hosted cluster on the hub. Planned: the compliance charts on the hub, and the in-cluster ones on every hosted cluster | absent |
 | `hosted-clusters/<hub>/values.yaml` | FIPS, node hardening ConfigMap, audit profile, registry allowlist, inherited by every hosted cluster | as today |
 | Admission policy (`compliance-hub-policy`) | Hub refuses a HostedCluster without FIPS, the audit profile or secret encryption, and a NodePool without the hardening ConfigMap | absent |
+
+How that looks in CCI-MOC/oac-apps `main` today (2026-11-07). No compliant
+hub is running now, so this is the design, not a running system. Solid
+lines are wired up on `main`. Dashed lines are planned: the charts are
+merged or in review, but no ApplicationSet deploys them yet (one PR will
+wire them to the marker; BUILD.md P1).
+
+```mermaid
+flowchart TB
+  MARK["hosted-clusters/HUB/compliance.yaml<br/>marks the hub compliant"]
+  VALS["hosted-clusters/HUB/values.yaml<br/>FIPS, audit profile, secret encryption,<br/>inherited by every hosted cluster"]
+
+  subgraph HUB["Compliant hub"]
+    APPSET["hosted-cluster-compliance<br/>ApplicationSet"]
+    ALERT["Per hosted cluster:<br/>an alert when its API server<br/>cannot write audit logs"]
+    POLICY["compliance-hub-policy<br/>admission policy"]
+    HCS["HostedClusters and NodePools<br/>control planes, etcd and audit logs"]
+    HUBCHARTS["Compliance charts for the hub itself<br/>Compliance Operator, platform hardening,<br/>etcd backups"]
+  end
+
+  WORKERS["Each hosted cluster's workers"]
+  INCLUSTER["In-cluster compliance charts<br/>Compliance Operator, File Integrity,<br/>node hardening at first boot"]
+
+  MARK --> APPSET
+  APPSET --> ALERT
+  VALS --> HCS
+  HCS --> WORKERS
+
+  MARK -.-> POLICY
+  POLICY -.->|"refuses a cluster without FIPS,<br/>the audit profile, secret encryption<br/>or the node hardening config"| HCS
+  MARK -.-> HUBCHARTS
+  MARK -.-> INCLUSTER
+  INCLUSTER -.-> WORKERS
+```
 
 There is no per-cluster label to set, so none to forget on a compliant hub
 or to set by mistake on a non-compliant one. The second would be worse than

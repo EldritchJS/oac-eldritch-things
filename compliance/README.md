@@ -105,9 +105,9 @@ The full list, with next steps, is in [HANDOFF.md](HANDOFF.md). In short:
 
 | File | What |
 |---|---|
-| [HANDOFF.md](HANDOFF.md) | **Open work:** every open item, next step and who to ask |
+| [HANDOFF.md](HANDOFF.md) | **Open work:** every open item, next step and who to ask. Diagrams of the clusters, how a cluster gets its components, COSI and Connectivity Link |
 | [tests/operator-fips-inventory.md](tests/operator-fips-inventory.md) | **Operators:** which installed operators claim FIPS support, the six that don't, and what their images contain |
-| [HUB-SPOKE.md](HUB-SPOKE.md) | **Design:** compliant hubs and hosted clusters under GitOps; where each jetty control goes |
+| [HUB-SPOKE.md](HUB-SPOKE.md) | **Design:** compliant hubs and hosted clusters under GitOps; where each jetty control goes. Diagram of a compliant hub (§2) |
 | [BUILD.md](BUILD.md) | **Method:** a compliant hub, then a compliant workload cluster on it |
 | [NEW-HUB-RUNBOOK.md](NEW-HUB-RUNBOOK.md) | **Runbook:** a new hub and workload cluster from nothing, with example PRs |
 | [nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) | **Runbook:** rebuild nist-dev-infra and workload0 |
