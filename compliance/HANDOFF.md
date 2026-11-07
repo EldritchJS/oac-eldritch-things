@@ -34,18 +34,18 @@ none should be.
 
 ## Open pull requests
 
-| PR | What | State (2026-11-06) | Next step |
+| PR | What | State (2026-11-07) | Next step |
 |---|---|---|---|
-| [oac-apps #197](https://github.com/CCI-MOC/oac-apps/pull/197) | Policy chart to keep a compliant hub compliant | Approved by larsks; review still required | tzumainn |
 | [oac-apps #198](https://github.com/CCI-MOC/oac-apps/pull/198) | File Integrity Operator chart | Review required | Reviews |
-| [oac-apps #214](https://github.com/CCI-MOC/oac-apps/pull/214) | RHCOS hardening from git | Review required | Reviews |
+| [oac-apps #214](https://github.com/CCI-MOC/oac-apps/pull/214) | RHCOS hardening from git | Review required. tzumainn's question on how the rules are regenerated is answered | Reviews |
 | [oac-apps #217](https://github.com/CCI-MOC/oac-apps/pull/217) | Nightly etcd backups of a hub | Approved by larsks; review still required | tzumainn |
 | [oac-apps #230](https://github.com/CCI-MOC/oac-apps/pull/230) | Project Grafana without the operator | Changes requested by larsks: the mode should not be configurable. Retested on jetty after the route rename | Decide whether all Grafana moves off the operator, then drop the option; then the follow-ups under Grafana below |
-| [oac-apps #231](https://github.com/CCI-MOC/oac-apps/pull/231) | Lets the `acm` chart set guardrails for ACM's namespaces (uses #216) | Review required | larsks, tzumainn. The chart deploys to hubs only, so where the add-on namespace's guardrails go on managed clusters is still open |
+| [oac-apps #231](https://github.com/CCI-MOC/oac-apps/pull/231) | Lets the `acm` chart set guardrails for ACM's namespaces (uses #216) | Approved by tzumainn; review still required | larsks. The chart deploys to hubs only, so where the add-on namespace's guardrails go on managed clusters is still open |
 | [pure-cosi #15](https://github.com/CCI-MOC/pure-cosi/pull/15) | Integration tests against a real FlashBlade | No reviews yet | naved001 |
 | [oac-apps #232](https://github.com/CCI-MOC/oac-apps/pull/232) | FIPS COSI images on `nist-dev-infra` only | Review required | naved001, tzumainn. Changes nothing until that hub is rebuilt (see Object storage below) |
 
 Merged and in effect: #195 (the hub compliance marker), #196, #215, #218,
+#197 (the compliant-hub admission policy chart; no cluster deploys it yet),
 #208 (no GPUs for pods that did not ask), #212, #213, #216 (the
 `namespace-guardrails` library chart; no cluster sets guardrails yet), #219,
 #229 and the others listed in [README.md](README.md). Merged in pure-cosi
