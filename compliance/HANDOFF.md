@@ -11,8 +11,10 @@ a time. The next milestone is a replacement compliant hub, built from the
 runbook by someone other than its author.
 
 Node hardening does not cover add-on operators: six installed operators are
-not flagged FIPS-compliant, and none has a recorded decision yet
-([§3](#3-operators-without-a-fips-claim)).
+not flagged FIPS-compliant (scan of 2026-11-05). Each has a recorded route
+forward, and two are settled (group-sync is not needed on compliant hubs;
+COO's images pass, and only its flag is wrong), but none has a final team
+decision yet ([§3](#3-operators-without-a-fips-claim)).
 
 Older decision and prerequisite lists are still current and are not
 repeated here: [BUILD.md](BUILD.md) P1 to P11 (what a compliant hub needs,
@@ -119,6 +121,7 @@ marker (`hosted-clusters/<hub>/compliance.yaml`), not from feature labels.
 | [oac-apps #231](https://github.com/CCI-MOC/oac-apps/pull/231) | Lets the `acm` chart set guardrails for ACM's namespaces (uses #216) | Approved by tzumainn; review still required | larsks. The chart deploys to hubs only, so where the add-on namespace's guardrails go on managed clusters is still open |
 | [pure-cosi #15](https://github.com/CCI-MOC/pure-cosi/pull/15) | Integration tests against a real FlashBlade | No reviews yet | naved001 |
 | [oac-apps #232](https://github.com/CCI-MOC/oac-apps/pull/232) | FIPS COSI images on `nist-dev-infra` only | Review required | naved001, tzumainn. Changes nothing until that hub is rebuilt (see Object storage below) |
+| [oac-apps #234](https://github.com/CCI-MOC/oac-apps/pull/234) | Draft: `node-labels` as ACM ConfigurationPolicies instead of patch-operator Patches | Draft, an idea for the team; CI passes | larsks, tzumainn |
 
 Merged and in effect: #195 (the hub compliance marker), #196, #215, #218,
 #197 (the compliant-hub admission policy chart; no cluster deploys it yet),
@@ -163,7 +166,7 @@ full record, including check-payload scans of each one's images. `verify.sh
 | Portworx | Images are not FIPS builds. Ask for FIPS builds of PX-CSI and the operator | Pure |
 | NVIDIA GPU Operator | NVIDIA's FIPS driver images need NVIDIA AI Enterprise; a free NGC key cannot pull them | NVIDIA |
 | Grafana operator | Replaced on compliant clusters by #230 (see Grafana below) | - |
-| patch-operator | Its four Patches can become ACM ConfigurationPolicies (tested on jetty) or server-side apply ([inventory](tests/operator-fips-inventory.md#patch-operator-checked-2026-11-07)). Draft PR for `node-labels` first, as an idea for the team | larsks, tzumainn |
+| patch-operator | Its four Patches can become ACM ConfigurationPolicies (tested on jetty) or server-side apply ([inventory](tests/operator-fips-inventory.md#patch-operator-checked-2026-11-07)). Draft [oac-apps #234](https://github.com/CCI-MOC/oac-apps/pull/234) converts `node-labels` first, as an idea for the team | larsks, tzumainn |
 | group-sync-operator | Not needed on compliant hubs, which take groups from Keycloak's `groups` claim. It runs only on `oac-dev-infra`. On the rebuilt `nist-dev-infra`, test that an SSO group grants access ([inventory](tests/operator-fips-inventory.md#group-sync-operator-checked-2026-11-07)) | - |
 
 ### 4. FIPS module validation

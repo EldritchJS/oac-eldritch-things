@@ -7,5 +7,5 @@ cluster-observability-operator  images pass check-payload; CSV flag wrong, to co
 grafana-operator                to be removed on compliant clusters; replacement is oac-apps #230
 portworx-operator               under review: ask Portworx; in the storage path
 gpu-operator-certified          under review: ask NVIDIA
-patch-operator                  under review: check what it patches
-group-sync-operator             under review: controls group membership (3.1.1)
+patch-operator                  under review: its Patches can become ACM ConfigurationPolicies (tested on jetty; draft oac-apps #234 for node-labels)
+group-sync-operator             not needed on compliant hubs (Keycloak groups claim); runs only on oac-dev-infra
