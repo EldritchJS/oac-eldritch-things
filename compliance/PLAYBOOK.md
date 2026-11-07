@@ -10,6 +10,9 @@ other people on jetty, and will be written up when they happen.
 Where jetty ended (2026-10-09): `ocp4-moderate` 25 → 8, `ocp4-cis` 10 → 3,
 node scans 377 → 0 failures; every remaining failure is blocked on another
 team or is a documented gap. Both GPU modalities intact throughout.
+jetty was reinstalled on 2026-10-28 without this hardening; the method
+stands. What keeps a hub compliant after it is built:
+[OPERATIONS.md](OPERATIONS.md).
 
 How this relates to the other documents:
 

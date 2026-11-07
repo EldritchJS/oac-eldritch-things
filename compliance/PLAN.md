@@ -6,6 +6,9 @@
 > "initial" are the **pre-remediation** baseline, kept as a historical record.
 > For current numbers see §7 "Done", `tests/baseline-fail-counts.txt`, or run
 > `./remediate.sh status`. Current state of record: [JETTY.md](JETTY.md).
+>
+> jetty was reinstalled on 2026-10-28 with FIPS on but without this
+> hardening. This log describes the first install.
 
 Cluster: `jetty` / `https://<cluster-api-fqdn>:6443`
 OpenShift 4.22.16 (from 4.22.14, 2026-10-08), baremetal (Assisted

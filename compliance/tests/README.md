@@ -38,7 +38,10 @@ generic checks the acceptance suite reuses.
 
 ## jetty: `verify.sh`
 
-*Current result (2026-10-26): 67 PASS / 0 FAIL / 2 WARN, the two below.*
+*Last result (2026-10-26): 67 PASS / 0 FAIL / 2 WARN, the two below, on
+jetty's first install. jetty was reinstalled on 2026-10-28 without the
+hardening these tests check, so most of them fail there now. A hub
+version is still to write ([BUILD.md](../BUILD.md) Part 1 §7).*
 
 A regression net for `jetty`, covering compliance posture, FIPS, RHACS, and
 **both GPU modalities**.

@@ -6,6 +6,10 @@ compliant with GPUs working. The work has since moved to OAC hubs and
 hosted clusters built from oac-apps; for that, start at
 [README.md](README.md).*
 
+*jetty was reinstalled on 2026-10-28 with FIPS on but without this
+hardening: no Compliance Operator, ACS, File Integrity or etcd backups.
+Everything below describes the first install.*
+
 Last updated 2026-10-08.
 
 ---

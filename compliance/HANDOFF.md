@@ -25,7 +25,7 @@ and from whom) and [PLAN.md](PLAN.md#open--what-remains-what-it-needs-and-from-w
 
 | Cluster | What it is | State |
 |---|---|---|
-| jetty | Bare metal, FIPS on, OCP 4.22.14 | The test bed for everything below, and a KubeVirt hypervisor for oac-dev-infra (andalusia). Its internal registry is normally `Removed`; turn it on only to build a test image, then back off. No test leftovers as of 2026-11-06 |
+| jetty | Bare metal, FIPS on, OCP 4.22.14 | Reinstalled 2026-10-28 without the first install's hardening (no Compliance Operator, ACS, File Integrity or etcd backups); JETTY.md, PLAN.md and `verify.sh` describe the first install. The test bed for everything below, and a KubeVirt hypervisor for oac-dev-infra (andalusia). Its internal registry is normally `Removed`; turn it on only to build a test image, then back off. No test leftovers as of 2026-11-06 |
 | oac-dev-infra | OAC dev hub, FIPS **off** | Hosts andalusia. jetty is its hive spoke |
 | andalusia | Hosted cluster on oac-dev-infra, one GPU VM worker on jetty | FIPS on: rebuilt 2026-11-04 with `fips: true` (the live HostedCluster has `spec.fips: true`). No feature labels, so it gets only the baseline every managed cluster gets, with no COSI or Portworx. Its hub is not compliant, so it is a FIPS test cluster, not a compliant one |
 | oac-dev-workload0 | Shared dev cluster, FIPS **off**, RHOAI 3.5 | Not ours; has the Service Mesh 3.5 operator for RHOAI |
@@ -331,13 +331,9 @@ New since PLAN.md's vendor table:
 
 ## Recurring work
 
-- Run `tests/verify.sh` before and after every change
-  ([tests/README.md](tests/README.md)).
-- At every upgrade: re-review the FIPS certificate record and
-  [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md); re-check disabled or
-  exempted rules after operator upgrades.
-- Rescan operator images with `tests/fips-image-scan.sh` when an operator
-  changes. Run it on a cluster, never on a laptop.
+[OPERATIONS.md](OPERATIONS.md) has all of it: what runs by itself, what a
+person does and when, which scripts are for it, and what is not in place
+yet.
 
 ## Things that will catch you
 

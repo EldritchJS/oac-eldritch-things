@@ -1,7 +1,8 @@
 # Compliant OAC clusters: FIPS, HIPAA and NIST 800-171
 
-*Start here. Last updated 2026-11-06. What is still open, with next steps
-and who to ask: [HANDOFF.md](HANDOFF.md).*
+*Start here. Last updated 2026-11-07. What is still open, with next steps
+and who to ask: [HANDOFF.md](HANDOFF.md). What keeps a cluster compliant
+after it is built: [OPERATIONS.md](OPERATIONS.md).*
 
 The goal is OAC hubs and workload clusters that are compliant from first
 boot, and kept that way by GitOps from
@@ -14,7 +15,7 @@ because of the hub-wide settings, not its own files
 
 | Step | Question | Answer | Record |
 |---|---|---|---|
-| 1. jetty | Can this stack be made compliant, with GPUs in containers and VMs? | **Yes.** Hardened by hand: node failures 377 → 0, `ocp4-moderate` 25 → 8, both GPU modalities intact | [JETTY.md](JETTY.md), [PLAYBOOK.md](PLAYBOOK.md) |
+| 1. jetty | Can this stack be made compliant, with GPUs in containers and VMs? | **Yes.** Hardened by hand: node failures 377 → 0, `ocp4-moderate` 25 → 8, both GPU modalities intact. Reinstalled 2026-10-28 with FIPS on, without this hardening | [JETTY.md](JETTY.md), [PLAYBOOK.md](PLAYBOOK.md) |
 | 2. Charts | Can that work ship as oac-apps charts? | **Yes.** Nine charts reproduce jetty: an empty `oc diff` against the live cluster | [oac-apps/README.md](oac-apps/README.md) |
 | 3. nist-dev-infra (retired 2026-10-28) | Do the charts work on a FIPS hub built the OAC way? | **Yes, in stages.** RHCOS failures 191 → 1 on the masters, storage TLS-only, ACS, etcd backups, NetworkPolicies | [nist-dev-infra/README.md](nist-dev-infra/README.md) |
 | 4. nist-dev-workload0 (retired with the hub) | Can a compliant hub build a compliant workload cluster? | **Mostly yes.** Two FIPS workers, hardened from first boot (`rhcos4-moderate` 1 failure). With tailoring for the hidden control plane, `hosted-ocp4-moderate` is at 1 failure (the cluster-wide proxy, a recorded gap) and CIS at 0. MOC SSO, audit to the hub's Loki. AIDE does not run on hosted workers (RFE-8168) | [nist-dev-infra/README.md](nist-dev-infra/README.md), stage D |
@@ -36,7 +37,8 @@ FIPS mode on the nodes and clean compliance scans do not cover add-on
 operators, and the scans do not look at them. **6 of the 21 operators
 installed on jetty and oac-dev-infra are not flagged `fips-compliant: true`
 (checked 2026-11-05; oac-prod-infra and the hosted clusters are not checked).
-Each one needs a recorded decision, and none has one yet.** No flag means the vendor makes no claim. It
+Each has a recorded route forward, and two are settled, but none has a
+final team decision yet.** No flag means the vendor makes no claim. It
 does not prove the operator uses unapproved crypto, but an assessor goes by
 the claim. The scan column is a separate check of the images with
 `check-payload`.
@@ -105,6 +107,7 @@ The full list, with next steps, is in [HANDOFF.md](HANDOFF.md). In short:
 
 | File | What |
 |---|---|
+| [OPERATIONS.md](OPERATIONS.md) | **Day to day:** what runs by itself, what a person does and when, which scripts are for it, and what is not in place yet |
 | [HANDOFF.md](HANDOFF.md) | **Open work:** every open item, next step and who to ask. Diagrams of the clusters, how a cluster gets its components, COSI and Connectivity Link |
 | [tests/operator-fips-inventory.md](tests/operator-fips-inventory.md) | **Operators:** which installed operators claim FIPS support, the six that don't, and what their images contain |
 | [HUB-SPOKE.md](HUB-SPOKE.md) | **Design:** compliant hubs and hosted clusters under GitOps; where each jetty control goes. Diagram of a compliant hub (§2) |
@@ -129,7 +132,7 @@ The full list, with next steps, is in [HANDOFF.md](HANDOFF.md). In short:
 | [PATCHING.md](PATCHING.md) | Patch cadence: draft SSP text |
 | [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md) | Exception register for privileged workloads |
 | [tests/README.md](tests/README.md) | Verification suite and hub preflight |
-| `manifests/`, `remediate.sh` | jetty's manifests and staged hardening script |
+| `manifests/`, `remediate.sh` | jetty's manifests and staged hardening script (first install; not for GitOps hubs) |
 | `vms/`, `vms/gpu/` | VM and GPU test suites |
 
 ## Before you run anything
