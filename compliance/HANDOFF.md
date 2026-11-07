@@ -128,19 +128,39 @@ full bucket lifecycle against the FlashBlade (inventory, "Object storage").
   pods on the storage network (NetworkAttachmentDefinition), not from the
   nodes or the default pod network.
 
-### 6. Gateway TLS 1.3 (Connectivity Link): optional, not needed
+### 6. Connectivity Link
 
-**Nothing is blocked, and no operator needs this.** Connectivity Link
-(oac-apps #227) uses the Istio that OpenShift's ingress operator installs,
-with no Service Mesh subscription. Under FIPS that Istio's gateways do TLS
-1.2 with FIPS ciphers (ECDHE, AES-GCM). In #227's design clients never
-reach a gateway directly: they connect to the cluster's router with TLS
-1.3, and the router reencrypts to the gateway. TLS 1.2 is used only on
-that internal router-to-gateway hop.
+**Status (checked 2026-11-07): installed on jetty, not used yet.**
 
-TLS 1.3 on that hop would be an optional extra. It would matter only if a
-gateway were exposed to clients directly, or if a requirement named TLS 1.3
-for internal hops. Neither applies now.
+- **How it's deployed:** the `connectivity-link` chart (oac-apps #227,
+  merged 2026-11-05). On each hub, the `connectivity-link-clusters`
+  ApplicationSet selects clusters labelled
+  `massopen.cloud/feature-connectivity-link`. Only jetty has the label, on
+  oac-dev-infra. Its Application, `jetty-connectivity-link`, is Synced and
+  Healthy.
+- **What runs on jetty:** the Connectivity Link operator 1.4.3, Authorino
+  1.4.3, Limitador 1.4.2 and the DNS operator 1.4.2, all from
+  redhat-operators and all flagged FIPS-compliant. The Kuadrant instance is
+  Ready. The `openshift-default` GatewayClass is accepted, and the ingress
+  operator's istiod is running in `openshift-ingress`.
+- **Not used yet:** the chart's `gateways` list is empty, so there are no
+  Gateways or policies. Putting a real API behind it is deferred until the
+  KubeVirt work settles.
+- **Tested by hand before #227, not yet through Argo:** a Gateway behind
+  the router (ClusterIP Service, reencrypt Route, a NetworkPolicy that
+  admits only the router), and a RateLimitPolicy that limited one client
+  while another still got through. The first gateway added to `gateways`
+  should be checked the same way.
+- **Not on any compliant hub:** nist-dev-infra has the placement but no
+  labelled cluster, and it is gone anyway.
+
+**Gateway TLS 1.3: optional, not needed.** No operator needs it, and
+nothing is blocked. Under FIPS, the built-in Istio's gateways do TLS 1.2
+with FIPS ciphers (ECDHE, AES-GCM). Clients never reach a gateway directly:
+they connect to the router with TLS 1.3, and the router reencrypts to the
+gateway, so TLS 1.2 is used only on that internal hop. TLS 1.3 there would
+matter only if a gateway were exposed to clients directly, or if a
+requirement named TLS 1.3 for internal hops. Neither applies now.
 
 For the record, if it is ever wanted (tested on jetty, inventory
 "Gateways"): a second Istio from Service Mesh 3.5 (Istio 1.31,
@@ -149,8 +169,6 @@ shipped, its istiod does not start on FIPS nodes (`GODEBUG=fips140=only`
 conflicts with Red Hat Go's OpenSSL mode), it accepts only P-384 for key
 exchange, and running it beside the ingress operator's istiod has no
 support statement. Not worth pursuing unless the need changes.
-
-Connectivity Link on jetty is deferred until the KubeVirt work settles.
 
 ### 7. Grafana without the operator
 
