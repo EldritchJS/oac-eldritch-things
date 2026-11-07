@@ -108,8 +108,64 @@ Starting points, not yet decided:
 | Grafana operator | Remove on compliant clusters; Grafana from provisioning files, built and tested in oac-apps #230 ([GRAFANA-FIPS-IMAGE.md](../GRAFANA-FIPS-IMAGE.md)) |
 | Portworx operator | Ask the vendor. It is in the storage path, so it is the hardest to justify keeping and the hardest to remove |
 | NVIDIA GPU Operator | Ask NVIDIA. GPUs are why the clusters exist, so this is a justification, not a removal |
-| patch-operator | Check what it patches on a compliant cluster; it may be replaceable by Argo CD or a chart |
-| group-sync-operator | Group sync controls access (800-171 3.1.1), so it needs either a FIPS answer or a replacement |
+| patch-operator | Replace its four Patches with ACM ConfigurationPolicies (tested on jetty) and server-side apply (below) |
+| group-sync-operator | Not needed on compliant hubs. Leave it off them, and take groups from Keycloak's `groups` claim, which OpenShift applies at each login (below) |
+
+### group-sync-operator (checked 2026-11-07)
+
+- **Where it runs:** only the `oac-dev-infra` hub, through its own
+  Application (`apps/oac-dev-infra/github-group-sync.yaml`). The
+  managed-cluster ApplicationSet selects clusters labeled
+  `feature-github-oauth`, and no ManagedCluster has that label.
+- **Compliant clusters do not use it.** `nist-dev-infra` and its hosted
+  cluster log in through Keycloak (MOC SSO), and their OpenID provider maps
+  the `groups` claim. OpenShift updates a user's groups at each login, so a
+  membership change takes effect at the next login rather than at a sync.
+- **What it does on `oac-dev-infra`** (read-only check): every 15 minutes it
+  copies every team in the CCI-MOC GitHub org, which is 58 groups with 159
+  people in `all-members`. Only `open-accelerator-admins` (13 members) is
+  bound by any RoleBinding: cluster-reader, monitoring view, an
+  impersonate-admin role, and ACM's view roles for each cluster. Login is
+  limited to the `CCI-MOC/open-accelerator` team.
+- **Optional, for the team, not for compliance:** on `oac-dev-infra`, replace
+  it with a static `open-accelerator-admins` Group in git (as `user-projects`
+  does for project groups), or sync only that team.
+- **To verify on the rebuilt `nist-dev-infra`:** that the Keycloak `groups`
+  claim fills an OpenShift group, and that a binding on that group grants
+  access. The runbook's `kubeadmin-removed` gap depends on it.
+
+### patch-operator (checked 2026-11-07)
+
+patch-operator 0.1.11 (last release May 2024) runs on every hub and on the
+hypervisor clusters (jetty, `oac-dev-workload1`). Four charts use its `Patch`,
+each on an object that something else owns:
+
+| Chart | What it patches | Clusters | Likely replacement |
+|---|---|---|---|
+| `node-labels` | Worker labels: the LVM label, and a unique `topology.kubernetes.io/zone` per node, set to the node's name | All hubs | ACM ConfigurationPolicy |
+| `hosted-cluster` | Feature labels on each ManagedCluster, which ACM creates later | Each hub, for its hosted clusters | ConfigurationPolicy, guarded so it waits for the object |
+| `hypervisor-cluster` | `externalTrafficPolicy: Cluster` on hosted routers' Services (a HyperShift bug workaround) | jetty, `oac-dev-workload1` | ConfigurationPolicy over Services by label, or delete if HyperShift has fixed the bug |
+| `hcp-config` | The default IngressController's `namespaceSelector` | All hubs | Server-side apply from `cluster-certificates`, which already applies `defaultCertificate` to that object; Argo apps share one field manager, so both fields have to be in one manifest |
+
+ACM and OpenShift GitOps are flagged FIPS-compliant, and ACM's policy
+controller already runs on every hub and managed cluster.
+
+**Tested on jetty** (FIPS on), with standalone ConfigurationPolicies in
+jetty's own cluster namespace (`jetty`). Nothing was created on the hub, and
+the hub did not see them. The tests used only test label keys and a temporary
+namespace, all removed afterwards:
+
+| Behaviour | Result |
+|---|---|
+| Label each worker with its own name (`object-templates-raw` ranging over `lookup` by label selector) | Workers only; masters and existing labels untouched |
+| Put a label back after it is removed | Within about 10 s |
+| Wait for an object that does not exist, without creating it (template guarded by `lookup`) | Nothing created; labelled once it appeared. Unguarded, `musthave` would create it |
+| Patch Services selected by label, including one created later; revert a manual change | Only matching Services changed, each within about 10 s |
+| Delete the policy | Its changes stay, as with a deleted `Patch` (`pruneObjectBehavior` not tested) |
+
+Trade-off: each `Patch` runs as its own narrowly scoped service account,
+while the policy controller uses its own broad access. Over the few minutes
+of the test, ACM left the standalone policies alone; longer was not checked.
 
 ## What the vendors say (2026-11-05)
 

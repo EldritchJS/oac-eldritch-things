@@ -25,7 +25,7 @@ and from whom) and [PLAN.md](PLAN.md#open--what-remains-what-it-needs-and-from-w
 |---|---|---|
 | jetty | Bare metal, FIPS on, OCP 4.22.14 | The test bed for everything below, and a KubeVirt hypervisor for oac-dev-infra (andalusia). Its internal registry is normally `Removed`; turn it on only to build a test image, then back off. No test leftovers as of 2026-11-06 |
 | oac-dev-infra | OAC dev hub, FIPS **off** | Hosts andalusia. jetty is its hive spoke |
-| andalusia | Hosted cluster on oac-dev-infra, one GPU VM worker on jetty | **Not FIPS** (the chart's default, and immutable). Fine for functional GPU tests; rebuild with `fips: true` before any compliance test |
+| andalusia | Hosted cluster on oac-dev-infra, one GPU VM worker on jetty | FIPS on: rebuilt 2026-11-04 with `fips: true` (the live HostedCluster has `spec.fips: true`). No cluster labels, so no oac-apps components, including COSI. Its hub is not compliant, so it is a FIPS test cluster, not a compliant one |
 | oac-dev-workload0 | Shared dev cluster, FIPS **off**, RHOAI 3.5 | Not ours; has the Service Mesh 3.5 operator for RHOAI |
 | nist-dev-infra, nist-dev-workload0 | The FIPS test hub and its workload cluster | **Gone** (2026-10-28). Rebuild from [nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) |
 
@@ -87,8 +87,8 @@ full record, including check-payload scans of each one's images. `verify.sh
 | Portworx | Images are not FIPS builds. Ask for FIPS builds of PX-CSI and the operator | Pure |
 | NVIDIA GPU Operator | NVIDIA's FIPS driver images need NVIDIA AI Enterprise; a free NGC key cannot pull them | NVIDIA |
 | Grafana operator | Replaced on compliant clusters by #230 (see Grafana below) | - |
-| patch-operator | Check what it patches on a compliant cluster; likely replaceable by a chart | - |
-| group-sync-operator | Controls access (800-171 3.1.1): a FIPS build or a replacement | - |
+| patch-operator | Its four Patches can become ACM ConfigurationPolicies (tested on jetty) or server-side apply ([inventory](tests/operator-fips-inventory.md#patch-operator-checked-2026-11-07)). Draft PR for `node-labels` first, as an idea for the team | larsks, tzumainn |
+| group-sync-operator | Not needed on compliant hubs, which take groups from Keycloak's `groups` claim. It runs only on `oac-dev-infra`. On the rebuilt `nist-dev-infra`, test that an SSO group grants access ([inventory](tests/operator-fips-inventory.md#group-sync-operator-checked-2026-11-07)) | - |
 
 ### 4. FIPS module validation
 
@@ -165,7 +165,6 @@ Passthrough, MIG and pod-in-VM are proven ([vms/gpu/README.md](vms/gpu/README.md
 Pod-in-VM benchmarks used the AI UAT Harness (Ahmed Sanaullah).
 
 - One tenant per GPU node until cross-tenant NVLink is answered.
-- andalusia needs a FIPS rebuild before compliance testing (above).
 - RDMA on jetty: not pursued for now (only 2 of 6 ConnectX ports linked, no
   SR-IOV or network operator).
 

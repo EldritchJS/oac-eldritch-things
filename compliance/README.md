@@ -48,7 +48,7 @@ the claim. The scan column is a separate check of the images with
 | Portworx operator | false | Fail | Storage driver for FlashBlade volumes; holds the FlashBlade API token |
 | NVIDIA GPU Operator | false | Fail | GPU drivers and device plugins; privileged on GPU nodes |
 | patch-operator | none | Fail | Patches cluster resources; broad API write access |
-| group-sync-operator | none | Fail | Syncs the groups that decide who can access what |
+| group-sync-operator | none | Fail | Syncs the groups that decide who can access what. Only on `oac-dev-infra`; compliant hubs use Keycloak's `groups` claim instead |
 
 Full record, including vendor statements and each operator's likely route:
 [tests/operator-fips-inventory.md](tests/operator-fips-inventory.md). Next
