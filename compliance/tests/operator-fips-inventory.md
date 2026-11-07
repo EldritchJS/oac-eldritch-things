@@ -272,8 +272,9 @@ Still open:
   pass check-payload. On 2026-11-05, on jetty, all three FIPS builds ran a
   full bucket lifecycle against the FlashBlade (BucketClaim, BucketAccess,
   key Secret, then revoke and bucket deletion), each with RHEL's OpenSSL
-  FIPS provider loaded. Left: publish the images and point pure-cosi's
-  manifests at them.
+  FIPS provider loaded. On 2026-11-06 the images published as pure-cosi
+  `v0.2.0` passed the same lifecycle on jetty. Left: oac-apps #232 points
+  `nist-dev-infra` at them, and it takes effect when that hub is rebuilt.
 
 ### Gateways: Service Mesh 3.5 beside the built-in Istio, on jetty
 

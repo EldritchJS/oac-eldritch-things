@@ -43,7 +43,7 @@ none should be.
 | [oac-apps #230](https://github.com/CCI-MOC/oac-apps/pull/230) | Project Grafana without the operator | Changes requested by larsks: the mode should not be configurable. Retested on jetty after the route rename | Decide whether all Grafana moves off the operator, then drop the option; then the follow-ups under Grafana below |
 | [oac-apps #231](https://github.com/CCI-MOC/oac-apps/pull/231) | Lets the `acm` chart set guardrails for ACM's namespaces (uses #216) | Review required | larsks, tzumainn. The chart deploys to hubs only, so where the add-on namespace's guardrails go on managed clusters is still open |
 | [pure-cosi #15](https://github.com/CCI-MOC/pure-cosi/pull/15) | Integration tests against a real FlashBlade | No reviews yet | naved001 |
-| [pure-cosi #16](https://github.com/CCI-MOC/pure-cosi/pull/16) | Deploy the FIPS images of all three COSI parts, at `v0.1.3` | No reviews yet | naved001; then tag `v0.1.3` from the merge commit (see Object storage below) |
+| [oac-apps #232](https://github.com/CCI-MOC/oac-apps/pull/232) | FIPS COSI images on `nist-dev-infra` only | Review required | naved001, tzumainn. Changes nothing until that hub is rebuilt (see Object storage below) |
 
 Merged and in effect: #195 (the hub compliance marker), #196, #215, #218,
 #208 (no GPUs for pods that did not ask), #212, #213, #216 (the
@@ -103,12 +103,22 @@ upgrade.
 All three parts now have FIPS builds, and on jetty (FIPS on) they ran a
 full bucket lifecycle against the FlashBlade (inventory, "Object storage").
 
-- pure-cosi #13 and #14 are merged. Left, in order: merge #16 (the manifests
-  still deploy the old driver and the upstream controller and sidecar); tag
-  `v0.1.3` from that commit, which publishes the images; run the published
-  images on jetty; then bump `kustomize/pure-cosi/base` in oac-apps from
-  `v0.1.2`. That base is shared, so the bump reaches every cluster using it,
-  including production.
+- pure-cosi #13 and #14 are merged and released as `v0.2.0`, which publishes
+  all three images. The manifests in that tag still name the old driver and
+  the upstream controller and sidecar, so oac-apps has to set the images.
+- oac-apps #232 sets them in the `nist-dev-infra` overlay only, so any
+  breakage stays off the other clusters. That hub is gone, so no live cluster
+  gets these images from oac-apps until it is rebuilt. The shared base stays
+  at `v0.1.2`, whose `k8s/` is identical to `v0.2.0`.
+- Later releases: update the `newTag` values in that overlay.
+- The published images passed on jetty, applied by hand with a jetty-only
+  overlay rather than through Argo: the driver integration tests, and a bucket
+  claim from create to delete with read-write and read-only access.
+- **Still to test, on the rebuilt hub:** S3 reads and writes with the issued
+  keys, including that read-only keys cannot write. Jetty could not reach the
+  S3 endpoint. Also run `check-payload` on the published sidecar and
+  controller: it passed on earlier builds of the same Dockerfiles, not on
+  these digests.
 - `tests/integration` (pure-cosi #15) reruns the driver's FlashBlade and FIPS
   checks in any image.
 - **The FlashBlade's identity is not checked**: its management certificate
