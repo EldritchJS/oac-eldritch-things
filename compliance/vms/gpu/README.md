@@ -1,21 +1,22 @@
 # GPU Passthrough for VMs
 
-> The options for GPUs in VMs on OAC (passthrough, vGPU, compliant and non-compliant spokes) are summarised in [OPTIONS.md](OPTIONS.md). This page is the runbook behind it.
+The options for GPUs in VMs on OAC (passthrough, vGPU, compliant and non-compliant spokes) are summarised in [OPTIONS.md](OPTIONS.md). This page is the runbook behind it.
 
 Giving a VM a physical NVIDIA GPU, and measuring what it costs to move a node between serving containers and serving VMs.
 
-> **Status: passthrough is proven on `jetty` (2026-10-20).** An Ubuntu 24.04 VM on `moc-r4pcc02u16` was given one H100; the guest saw it on its PCI bus (tier 1), the 580-server driver bound it and `nvidia-smi` reported *NVIDIA H100 80GB HBM3* (tier 2), and a CUDA kernel returned correct results with 15.4 GB/s host-to-device (tier 3). Two fixes were needed:
->
-> - **`vfio_iommu_type1` was not loaded on the node.** The GPU Operator's VFIO manager loads `vfio-pci` but not this backend, and every GPU VM failed with `vfio 0000:06:00.0: failed to setup container for group 42: No available IOMMU models`. It was loaded by hand (`modprobe vfio_iommu_type1`), which a reboot undoes; `vfio-iommu-type1-machineconfig.yaml` now loads it at boot on jetty's GPU workers (applied 2026-10-20). `setup-passthrough.sh` checks for it.
-> - **The in-guest driver install hung** until its 25-minute timeout on the first full run. The script exported `DEBIAN_FRONTEND`, which `sudo` drops, so a package could stop to ask a question with no terminal; the cause is likely, not proven. The script now passes the settings after `sudo` and closes stdin. Tiers 2 and 3 were then run by hand, with those settings, in a VM kept by `KEEP_VM=1`. The fixed script then passed all three tiers on its own the same day, run by `../../tests/cluster-acceptance.sh --gpu`.
->
-> **Several VMs per node (2026-10-20):** four 1-GPU VMs ran at once on `moc-r4pcc02u16`, each on a different H100 (four distinct UUIDs, overlapping runs), and all passed tiers 1–3 at 15.4–15.7 GB/s host-to-device.
->
-> **The second GPU node (2026-10-26):** `moc-r4pcc02u15` was switched to `vm-passthrough` for one run and back. A 1-GPU VM pinned to it (`NODE=`) passed tiers 1–3, firmware `96.00.DA.00.17` as on u16. Its NVLink links were all inactive, where on 2026-10-20 a 1-GPU VM on u16 saw them up; u15's other three GPUs were unused that time, u16's were held by other VMs with their drivers loaded.
->
-> **Two 2-GPU VMs per node (2026-10-26):** `test-gpu-vm-pair.sh` ran two VMs with 2 GPUs each on `moc-r4pcc02u16`, in one project. Both passed tiers 1–3, and while both were running each guest's `nvidia-smi` listed its own 2 GPUs: 4 distinct UUIDs, none shared. In that first run tier 3's CUDA kernel ran on each VM's first GPU only; tier 3 now runs on every GPU in a guest, and a rerun the same day passed with CUDA on all four. GPU firmware (VBIOS) `96.00.DA.00.17` in both guests.
->
-> `test-gpu-switch.sh` passed on u15 (2026-10-29): 57s to VM mode, 210s back, no reboot. See "How long does the driver stack actually take to come back?" below; `tests/gpu-switch-timing.sh` measured 73s / 208s earlier.
+**Status: passthrough is proven on `jetty` (2026-10-20).** An Ubuntu 24.04 VM on `moc-r4pcc02u16` was given one H100; the guest saw it on its PCI bus (tier 1), the 580-server driver bound it and `nvidia-smi` reported *NVIDIA H100 80GB HBM3* (tier 2), and a CUDA kernel returned correct results with 15.4 GB/s host-to-device (tier 3). Two fixes were needed:
+
+- **`vfio_iommu_type1` was not loaded on the node.** The GPU Operator's VFIO manager loads `vfio-pci` but not this backend, and every GPU VM failed with `vfio 0000:06:00.0: failed to setup container for group 42: No available IOMMU models`. It was loaded by hand (`modprobe vfio_iommu_type1`), which a reboot undoes; `vfio-iommu-type1-machineconfig.yaml` now loads it at boot on jetty's GPU workers (applied 2026-10-20). `setup-passthrough.sh` checks for it.
+
+- **The in-guest driver install hung** until its 25-minute timeout on the first full run. The script exported `DEBIAN_FRONTEND`, which `sudo` drops, so a package could stop to ask a question with no terminal; the cause is likely, not proven. The script now passes the settings after `sudo` and closes stdin. Tiers 2 and 3 were then run by hand, with those settings, in a VM kept by `KEEP_VM=1`. The fixed script then passed all three tiers on its own the same day, run by `../../tests/cluster-acceptance.sh --gpu`.
+
+**Several VMs per node (2026-10-20):** four 1-GPU VMs ran at once on `moc-r4pcc02u16`, each on a different H100 (four distinct UUIDs, overlapping runs), and all passed tiers 1–3 at 15.4–15.7 GB/s host-to-device.
+
+**The second GPU node (2026-10-26):** `moc-r4pcc02u15` was switched to `vm-passthrough` for one run and back. A 1-GPU VM pinned to it (`NODE=`) passed tiers 1–3, firmware `96.00.DA.00.17` as on u16. Its NVLink links were all inactive, where on 2026-10-20 a 1-GPU VM on u16 saw them up; u15's other three GPUs were unused that time, u16's were held by other VMs with their drivers loaded.
+
+**Two 2-GPU VMs per node (2026-10-26):** `test-gpu-vm-pair.sh` ran two VMs with 2 GPUs each on `moc-r4pcc02u16`, in one project. Both passed tiers 1–3, and while both were running each guest's `nvidia-smi` listed its own 2 GPUs: 4 distinct UUIDs, none shared. In that first run tier 3's CUDA kernel ran on each VM's first GPU only; tier 3 now runs on every GPU in a guest, and a rerun the same day passed with CUDA on all four. GPU firmware (VBIOS) `96.00.DA.00.17` in both guests.
+
+`test-gpu-switch.sh` passed on u15 (2026-10-29): 57s to VM mode, 210s back, no reboot. See "How long does the driver stack actually take to come back?" below; `tests/gpu-switch-timing.sh` measured 73s / 208s earlier.
 
 ## Cost warning
 
