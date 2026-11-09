@@ -175,6 +175,13 @@ Apply in order, as in [nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md)
 apply the hub's ACS init bundle by hand), C (node hardening: reboots every
 node; pause pools first), E (audit logging).
 
+After B, make the etcd backup findable without the hub: patch its PV to
+`Retain`, look up the volume's name on the FlashBlade, and record it in AWS
+Secrets Manager as `cluster/<hub>/etcd-backup-volume`. The commands are in
+the etcd-backup chart's `values.yaml` (oac-apps
+[#217](https://github.com/CCI-MOC/oac-apps/pull/217)). Repeat if the claim
+is ever recreated, since the name changes with it.
+
 **TODO:** once the compliance charts are upstream, replace this step with values on main and the hub's ApplicationSets. ACS is the first:
 its chart is on main ([#181](https://github.com/CCI-MOC/oac-apps/pull/181)), not yet used by any ApplicationSet.
 
