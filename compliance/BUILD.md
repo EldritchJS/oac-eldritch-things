@@ -541,7 +541,8 @@ nist-dev-workload0, 2026-10-22 and 23):
   does not notice: `file-integrity-exists` passes on the object alone.
   Its AIDE pods need `/etc/kubernetes/static-pod-resources`, which hosted
   workers do not have; the hardening chart can create it
-  (`nodePool.fioStaticPodResourcesDir`, an unsupported test).
+  (`nodePool.fioStaticPodResourcesDir`, unsupported; AIDE was measured
+  working with it on andalusia on 2026-11-09).
 - **Audit forwarding is real, not a visibility problem.** The hub
   forwards the hosted API servers' audit, but the workers' auditd and OVN
   logs stay on the workers. Run audit-logging on the cluster in

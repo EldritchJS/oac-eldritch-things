@@ -724,6 +724,25 @@ unsupported test), and enables USBGuard there in the same change
 on the hub, so it also measures the second part of E2: an `InPlace`
 rollout of node configuration on agent workers.
 
+**Measured 2026-11-09: AIDE works on a hosted worker once the directory
+exists.** The test ran on andalusia (oac-dev-infra's KubeVirt hosted
+cluster, one FIPS worker), since this hub is gone, with no NodePool
+change: the directory was made by hand with `oc debug`.
+
+1. FIO v1.5.0 from the #198 chart: the same `check-folder` failure as
+   workload0.
+2. `mkdir /etc/kubernetes/static-pod-resources` on the worker: AIDE
+   started and built its database (41,113 entries). The first check
+   passed with no changes.
+3. A test file written to `/etc`: the next check failed with one added
+   entry, `/etc/fio-test`, in the `...-failed` ConfigMap.
+
+So the empty directory is the only obstacle, and the hardening chart's
+`tmpfiles.d` entry is a working interim fix, still unsupported until
+RFE-8168. Each AIDE run also logs `gcry_md_enable 1 failed`: libgcrypt in
+FIPS mode refusing a non-FIPS digest. The checks still work. Everything
+was removed afterwards (operator, CRDs, AIDE database, directory).
+
 ### Tailoring for hosted clusters (2026-10-22)
 
 Each platform rule that failed only because the control plane is on the

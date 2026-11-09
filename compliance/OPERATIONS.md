@@ -23,7 +23,7 @@ the plan for the replacement hub.
 | ArgoCD self-heal | Puts back anything in a cluster that differs from git | Nobody needs to |
 | HyperShift NodePools | Put node configuration on workload clusters back to what git says | Nobody needs to |
 | Admission policies | The hub refuses a non-compliant hosted cluster (`compliant-hosted-clusters`) and a cleartext FlashBlade StorageClass (`flashblade-nfs-tls`) | The person whose change is refused. CI runs the same checks before merge (`scripts/check_hub_policy_compliance.py` in oac-apps) |
-| File Integrity Operator (AIDE) | Reports changed files on the hub's nodes. It does not run on hosted workers (RFE-8168) | Nobody is alerted |
+| File Integrity Operator (AIDE) | Reports changed files on the hub's nodes. On hosted workers it runs only with an unsupported workaround, an empty `/etc/kubernetes/static-pod-resources` (RFE-8168) | Nobody is alerted |
 | etcd backup | A nightly backup of the hub's etcd (oac-apps #217, in review) | Nobody is alerted. `verify.sh` T-14 checks how old the newest backup is |
 | ACS | Scans images, and runs runtime policies, inform-only | Nobody is alerted: no notifier |
 | OLM | Updates operators within their channel (`Automatic`) | Nobody. An update can change scan results or flags (§3) |
@@ -107,7 +107,8 @@ Each of these is needed to run a compliant hub day to day.
   recorded today in several files (the tailored profiles, the accepted
   operators list, [nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md)
   2.9).
-- **File integrity on hosted workers:** AIDE does not run there
-  (RFE-8168).
+- **File integrity on hosted workers:** not deployed. AIDE runs there
+  once an empty directory exists (measured 2026-11-09), but Red Hat does
+  not support it until RFE-8168; deploying it would be an SSP workaround.
 - **Separation of duties** for exceptions and approvals: it needs real user
   accounts, not shared admin ones ([PATCHING.md](PATCHING.md) §4).
