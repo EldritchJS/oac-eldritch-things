@@ -289,8 +289,8 @@ confirms. The only manual step left is the approval, and an assessor can
 see it in the PR history. This is not written yet. It needs:
 
 - a way to read results from every cluster (below);
-- `scripts/export-remediations.py` extended to export remediations that
-  were not applied (BUILD.md Part 1 step 6).
+- `scripts/export-remediations.py --all`, which exports remediations that
+  were not applied (BUILD.md Part 1 step 6; oac-apps #214).
 
 **Possible later: pre-approved in-cluster fixes.** A short, reviewed list
 of low-risk remediations that are not node-level could be enforced by ACM

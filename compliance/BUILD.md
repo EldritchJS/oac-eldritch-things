@@ -324,10 +324,11 @@ round:
      `charts/compliance-node-hardening/files/` in the same format as the
      existing files, and open a PR. Do not set `apply: true` on the hub:
      the operator would then own a MachineConfig that ArgoCD does not.
-     `scripts/export-remediations.py` only exports remediations that were
-     applied (it was written to copy jetty's). For a scan-only hub it needs
-     an option to export the ones that were not applied. That option has
-     not been written yet.
+     On a scan-only hub, run `scripts/export-remediations.py --all`, which
+     exports remediations that were not applied as well (without `--all`
+     it exports only applied ones, as it did to copy jetty's). It skips
+     ones in NeedsReview or MissingDependencies and says so (oac-apps
+     #214).
    - **Fixed by configuration:** change the chart values and open a PR.
    - **Not fixable, or not applicable:** add it to the tailored profile with
      a reason (the exceptions record), and open a PR.
