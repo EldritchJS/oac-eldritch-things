@@ -13,7 +13,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: hub-compliance
+  name: hub-components-compliance
   namespace: openshift-gitops
 spec:
   generators:

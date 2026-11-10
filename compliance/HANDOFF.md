@@ -112,23 +112,22 @@ marker (`hosted-clusters/<hub>/compliance.yaml`), not from feature labels.
 
 ## Open pull requests
 
-| PR | What | State (2026-11-07) | Next step |
+| PR | What | State (2026-11-10) | Next step |
 |---|---|---|---|
-| [oac-apps #198](https://github.com/CCI-MOC/oac-apps/pull/198) | File Integrity Operator chart | Review required | Reviews |
-| [oac-apps #214](https://github.com/CCI-MOC/oac-apps/pull/214) | RHCOS hardening from git | Review required. tzumainn's question on how the rules are regenerated is answered | Reviews |
+| [oac-apps #198](https://github.com/CCI-MOC/oac-apps/pull/198) | File Integrity Operator chart, and a hub-components-compliance ApplicationSet that deploys it to a compliant hub | Review required. Renamed from hub-compliance at tzumainn's suggestion, to pair with hub-components | Reviews |
+| [oac-apps #214](https://github.com/CCI-MOC/oac-apps/pull/214) | RHCOS hardening from git | Review required. tzumainn's question on how the rules are regenerated is answered. The export script gained `--all` for scan-only hubs, after atyronesmith's comments | Reviews |
 | [oac-apps #217](https://github.com/CCI-MOC/oac-apps/pull/217) | Nightly etcd backups of a hub | Approved by larsks; review still required | tzumainn |
 | [oac-apps #230](https://github.com/CCI-MOC/oac-apps/pull/230) | Project Grafana without the operator | Changes requested by larsks: the mode should not be configurable. Retested on jetty after the route rename | Decide whether all Grafana moves off the operator, then drop the option; then the follow-ups under Grafana below |
 | [oac-apps #231](https://github.com/CCI-MOC/oac-apps/pull/231) | Lets the `acm` chart set guardrails for ACM's namespaces (uses #216) | Approved by tzumainn; review still required | larsks. The chart deploys to hubs only, so where the add-on namespace's guardrails go on managed clusters is still open |
-| [pure-cosi #15](https://github.com/CCI-MOC/pure-cosi/pull/15) | Integration tests against a real FlashBlade | No reviews yet | naved001 |
-| [oac-apps #232](https://github.com/CCI-MOC/oac-apps/pull/232) | FIPS COSI images on `nist-dev-infra` only | Review required | naved001, tzumainn. Changes nothing until that hub is rebuilt (see Object storage below) |
 | [oac-apps #234](https://github.com/CCI-MOC/oac-apps/pull/234) | Draft: `node-labels` as ACM ConfigurationPolicies instead of patch-operator Patches | Draft, an idea for the team; CI passes | larsks, tzumainn |
 
 Merged and in effect: #195 (the hub compliance marker), #196, #215, #218,
 #197 (the compliant-hub admission policy chart; no cluster deploys it yet),
 #208 (no GPUs for pods that did not ask), #212, #213, #216 (the
 `namespace-guardrails` library chart; no cluster sets guardrails yet), #219,
-#229 and the others listed in [README.md](README.md). Merged in pure-cosi
-but not yet deployed: #13 and #14 (the FIPS builds). No ApplicationSet deploys the
+#229, #232 (FIPS COSI images on `nist-dev-infra` only; changes nothing until that hub is rebuilt) and the others listed in [README.md](README.md). Merged in pure-cosi
+but not yet deployed: #13 and #14 (the FIPS builds). Also merged: pure-cosi #15
+(integration tests against a real FlashBlade). No ApplicationSet deploys the
 compliance charts yet: once they merge, one PR wires them to #195's marker
 (BUILD.md P1).
 
@@ -202,7 +201,7 @@ flowchart LR
 - pure-cosi #13 and #14 are merged and released as `v0.2.0`, which publishes
   all three images. The manifests in that tag still name the old driver and
   the upstream controller and sidecar, so oac-apps has to set the images.
-- oac-apps #232 sets them in the `nist-dev-infra` overlay only, so any
+- oac-apps #232 (merged) sets them in the `nist-dev-infra` overlay only, so any
   breakage stays off the other clusters. That hub is gone, so no live cluster
   gets these images from oac-apps until it is rebuilt. The shared base stays
   at `v0.1.2`, whose `k8s/` is identical to `v0.2.0`.
@@ -215,7 +214,7 @@ flowchart LR
   S3 endpoint. Also run `check-payload` on the published sidecar and
   controller: it passed on earlier builds of the same Dockerfiles, not on
   these digests.
-- `tests/integration` (pure-cosi #15) reruns the driver's FlashBlade and FIPS
+- `tests/integration` (pure-cosi #15, merged) reruns the driver's FlashBlade and FIPS
   checks in any image.
 - **The FlashBlade's identity is not checked**: its management certificate
   is the factory self-signed one. A FlashBlade admin installs one from MOC's
