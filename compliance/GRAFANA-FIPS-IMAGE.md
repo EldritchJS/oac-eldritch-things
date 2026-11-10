@@ -164,13 +164,104 @@ Two things only the run showed, both fixed in the chart:
   only). Grafana's connections now use validated crypto, and fixes arrive
   through Red Hat advisories.
 
+## After #230 merges: removing the operator
+
+The team chose to drop the operator (2026-11-10). #230 runs every project
+Grafana without it and removes `grafana-operator` from
+`all-managed-clusters`. Two things Argo does not do by itself:
+
+- `all-managed-clusters` has `preserveResourcesOnDeletion: true`, so
+  removing the entry deletes each cluster's `grafana-operator` Application
+  but leaves the operator installed and running, no longer managed. It has
+  to be removed by hand on every managed cluster: oac-dev-workload0,
+  oac-dev-workload1, oac-prod-workload0, andalusia and jetty.
+- The new Grafana objects have the names the operator gave its own
+  (`grafana-deployment`, `grafana-service`, `grafana-sa`). The switch in
+  place was not tested: if Argo applies the new Deployment before it prunes
+  the old `Grafana` resource, garbage collection may delete the new one, or
+  the apply may fail on the Deployment's immutable selector. Argo's retries
+  and self-heal should settle it; check below.
+
+Only oac-dev-workload0 has project Grafana (`gavin-test`, `buit`), neither
+editable, so nothing saved is lost. The route changes from `grafana-route`
+to `grafana`: the URLs become `grafana-project-<name>.apps.<domain>`. Tell
+the `buit` requester (hdempsey) the new URL.
+
+Change nothing on a cluster without the owner's go-ahead.
+
+### 1. oac-dev-workload0: check the switch
+
+With the cluster's kubeconfig, after `user-projects` has synced:
+
+```sh
+# No operator resources left in any project: expect "No resources found".
+oc get grafanas.grafana.integreatly.org,grafanadatasources.grafana.integreatly.org,grafanadashboards.grafana.integreatly.org -A
+
+for p in gavin-test buit; do
+  oc get deploy,svc,route -n project-$p | grep -i grafana
+  # Expect no ownerReferences (none means Argo's, not the operator's).
+  oc get deploy grafana-deployment -n project-$p -o jsonpath='{.metadata.ownerReferences}{"\n"}'
+  oc get pods -n project-$p -l app=grafana
+done
+```
+
+If `grafana-deployment` is missing, or the Application shows a sync error
+naming the selector as immutable, delete it and let Argo recreate it:
+
+```sh
+oc delete deploy grafana-deployment -n project-<name>
+```
+
+Then the login page should answer on the new URL:
+
+```sh
+curl -sk -o /dev/null -w '%{http_code}\n' https://grafana-project-buit.apps.<domain>/   # expect 302 or 403
+```
+
+### 2. Every managed cluster: remove the operator
+
+First confirm that no Grafana resources are left anywhere. The operator
+clears its own finalizers, so removing it first would leave any remaining
+ones stuck in deletion. If this lists anything, stop and find out whose it
+is:
+
+```sh
+oc get grafanas.grafana.integreatly.org,grafanadatasources.grafana.integreatly.org,grafanadashboards.grafana.integreatly.org,grafanafolders.grafana.integreatly.org -A
+```
+
+Then:
+
+```sh
+oc delete subscription grafana-operator -n grafana-operator
+oc delete csv -n grafana-operator -l operators.coreos.com/grafana-operator.grafana-operator
+oc delete operatorgroup grafana-operator -n grafana-operator
+oc delete namespace grafana-operator
+```
+
+Check that nothing is left:
+
+```sh
+oc get csv -A | grep -i grafana-operator      # expect nothing
+oc get crd -o name | grep grafana.integreatly.org
+```
+
+The CRDs stay after the operator is removed. Delete them only once the
+first command in this step shows no resources (deleting a CRD deletes every
+resource of that kind):
+
+```sh
+oc get crd -o name | grep grafana.integreatly.org | xargs oc delete
+```
+
+Afterwards, `tests/operator-fips-inventory.md`'s count drops from six
+unflagged operators to five on these clusters.
+
 ## Still open
 
 - Registry: which private quay.io organization, and who holds the robot account.
 - Where the build runs (the hub is suggested).
 - Whether editable projects starting fresh on 10.2 is acceptable.
-- Switching compliant clusters to `operator: false` (#230 is the
-  off-by-default option), and not deploying the `grafana-operator` chart
-  there: `all-managed-clusters` sends it to every cluster today.
+- Setting the UBI image on compliant clusters (the default stays
+  `docker.io/grafana/grafana:11.3.0`).
 - Check COO/Perses FIPS status with the COO team; if it is close, Perses may be the
   better long-term route.
