@@ -327,8 +327,12 @@ round:
      On a scan-only hub, run `scripts/export-remediations.py --all`, which
      exports remediations that were not applied as well (without `--all`
      it exports only applied ones, as it did to copy jetty's). It skips
-     ones in NeedsReview or MissingDependencies and says so (oac-apps
-     #214).
+     ones that need a variable set or a dependency met, or are in Error,
+     and says so (oac-apps #214).
+     On the first round, run it into a scratch directory and diff that
+     against the chart's files. The committed files came from jetty with
+     remediations applied; this checks that a scan-only hub gives the same
+     result.
    - **Fixed by configuration:** change the chart values and open a PR.
    - **Not fixable, or not applicable:** add it to the tailored profile with
      a reason (the exceptions record), and open a PR.
