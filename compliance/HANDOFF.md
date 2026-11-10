@@ -117,14 +117,14 @@ marker (`hosted-clusters/<hub>/compliance.yaml`), not from feature labels.
 | [oac-apps #198](https://github.com/CCI-MOC/oac-apps/pull/198) | File Integrity Operator chart, and a hub-components-compliance ApplicationSet that deploys it to a compliant hub | Review required. Renamed from hub-compliance at tzumainn's suggestion, to pair with hub-components | Reviews |
 | [oac-apps #214](https://github.com/CCI-MOC/oac-apps/pull/214) | RHCOS hardening from git | Review required. tzumainn's question on how the rules are regenerated is answered. The export script gained `--all` for scan-only hubs, after atyronesmith's comments | Reviews |
 | [oac-apps #217](https://github.com/CCI-MOC/oac-apps/pull/217) | Nightly etcd backups of a hub | Approved by larsks; review still required | tzumainn |
-| [oac-apps #230](https://github.com/CCI-MOC/oac-apps/pull/230) | Project Grafana without the operator | The team chose this route over the POA&M item (#236, closed 2026-11-10). The option is gone (491a35a): all project Grafana runs without the operator. Approved by tzumainn (before that commit) and computate; larsks's change request predates it | larsks to re-review; then the follow-ups under Grafana below |
+| [oac-apps #238](https://github.com/CCI-MOC/oac-apps/pull/238) | Put project Grafana's token secret in its Deployment's sync wave; fixes a hang in #230's rollout | Review required | tzumainn, larsks, computate, DanNiESh. oac-dev-workload0's two secrets were made by hand until it merges ([GRAFANA-FIPS-IMAGE.md](GRAFANA-FIPS-IMAGE.md)) |
 | [oac-apps #234](https://github.com/CCI-MOC/oac-apps/pull/234) | Draft: `node-labels` as ACM ConfigurationPolicies instead of patch-operator Patches | Draft, an idea for the team; CI passes | larsks, tzumainn |
 
 Merged and in effect: #195 (the hub compliance marker), #196, #215, #218,
 #197 (the compliant-hub admission policy chart; no cluster deploys it yet),
 #208 (no GPUs for pods that did not ask), #212, #213, #216 (the
 `namespace-guardrails` library chart; no cluster sets guardrails yet), #219,
-#229, #231 (the `acm` chart can set guardrails for ACM's own namespaces; no hub sets any yet), #232 (FIPS COSI images on `nist-dev-infra` only; changes nothing until that hub is rebuilt) and the others listed in [README.md](README.md). Merged in pure-cosi
+#229, #230 (project Grafana without the operator; the operator removed from every dev cluster 2026-11-10, oac-prod-workload0 still to do), #231 (the `acm` chart can set guardrails for ACM's own namespaces; no hub sets any yet), #232 (FIPS COSI images on `nist-dev-infra` only; changes nothing until that hub is rebuilt) and the others listed in [README.md](README.md). Merged in pure-cosi
 but not yet deployed: #13 and #14 (the FIPS builds). Also merged: pure-cosi #15
 (integration tests against a real FlashBlade). No ApplicationSet deploys the
 compliance charts yet: once they merge, one PR wires them to #195's marker

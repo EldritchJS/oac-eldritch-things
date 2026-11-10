@@ -189,6 +189,36 @@ the `buit` requester (hdempsey) the new URL.
 
 Change nothing on a cluster without the owner's go-ahead.
 
+### What happened (2026-11-10)
+
+#230 merged as 44d85eb. Done on every dev cluster; oac-prod-workload0
+still has the operator, waiting on its owner.
+
+- On oac-dev-workload0 the sync failed as feared: patching the new
+  Deployment over the operator's gave `readinessProbe.httpGet: Forbidden:
+  may not specify more than 1 handler type`, five times, and stopped, so
+  the old `Grafana` resources were never pruned. Fix: delete them by full
+  name, `oc delete grafanas.grafana.integreatly.org grafana -n
+  project-<name>` (plain `grafana` matches external-secrets' Grafana
+  generator first), then start a new sync.
+- Deleting them also removed the operator's `grafana-sa`, and with it the
+  token secret Argo had made for it. The next sync then hung: the token
+  secret was in sync wave 1 and the Deployment that needs it in wave 0,
+  and Argo starts a wave only once the one before is healthy. That is a
+  bug in #230's chart, missed because the jetty test applied it by hand;
+  oac-apps #238 moves the secret into the Deployment's wave. Until it
+  merges, the two secrets on oac-dev-workload0 were created by hand, as
+  the chart defines them.
+- To stop a hung sync: `oc patch applications.argoproj.io <app> -n
+  openshift-gitops --type merge -p
+  '{"status":{"operationState":{"phase":"Terminating"}}}'` (the
+  Application has no status subresource), then start one with
+  `-p '{"operation":{"initiatedBy":{"username":"<you>"},"sync":{"prune":true}}}'`.
+- After that, both project Grafanas ran on the new URLs (403 without a
+  login), and the operator was removed from oac-dev-workload0, 1, 2,
+  andalusia and jetty with step 2 below, deleting the CSV by name,
+  `grafana-operator.v5.25.0`.
+
 ### 1. oac-dev-workload0: check the switch
 
 With the cluster's kubeconfig, after `user-projects` has synced:
