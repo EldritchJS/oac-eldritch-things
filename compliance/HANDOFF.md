@@ -117,7 +117,7 @@ marker (`hosted-clusters/<hub>/compliance.yaml`), not from feature labels.
 | [oac-apps #198](https://github.com/CCI-MOC/oac-apps/pull/198) | File Integrity Operator chart, and a hub-components-compliance ApplicationSet that deploys it to a compliant hub | Review required. Renamed from hub-compliance at tzumainn's suggestion, to pair with hub-components | Reviews |
 | [oac-apps #214](https://github.com/CCI-MOC/oac-apps/pull/214) | RHCOS hardening from git | Review required. tzumainn's question on how the rules are regenerated is answered. The export script gained `--all` for scan-only hubs, after atyronesmith's comments | Reviews |
 | [oac-apps #217](https://github.com/CCI-MOC/oac-apps/pull/217) | Nightly etcd backups of a hub | Approved by larsks; review still required | tzumainn |
-| [oac-apps #230](https://github.com/CCI-MOC/oac-apps/pull/230) | Project Grafana without the operator | Changes requested by larsks: the mode should not be configurable. Retested on jetty after the route rename | Decide whether all Grafana moves off the operator, then drop the option; then the follow-ups under Grafana below |
+| [oac-apps #230](https://github.com/CCI-MOC/oac-apps/pull/230) | Project Grafana without the operator | The team chose this route over the POA&M item (#236, closed 2026-11-10). The option is gone (491a35a): all project Grafana runs without the operator. Approved by tzumainn (before that commit) and computate; larsks's change request predates it | larsks to re-review; then the follow-ups under Grafana below |
 | [oac-apps #231](https://github.com/CCI-MOC/oac-apps/pull/231) | Lets the `acm` chart set guardrails for ACM's namespaces (uses #216) | Approved by tzumainn; review still required | larsks. The chart deploys to hubs only, so where the add-on namespace's guardrails go on managed clusters is still open |
 | [oac-apps #234](https://github.com/CCI-MOC/oac-apps/pull/234) | Draft: `node-labels` as ACM ConfigurationPolicies instead of patch-operator Patches | Draft, an idea for the team; CI passes | larsks, tzumainn |
 
@@ -278,16 +278,18 @@ support statement. Not worth pursuing unless the need changes.
 
 ### 7. Grafana without the operator
 
-#230 adds `defaultGrafana.operator: false` to `user-projects`, tested on
-jetty with RHEL's Grafana package
-([GRAFANA-FIPS-IMAGE.md](GRAFANA-FIPS-IMAGE.md)). After it merges:
+The team chose to drop the Grafana operator (2026-11-10; the POA&M
+alternative, #236, is closed). #230 runs project Grafana without it, tested
+on jetty with RHEL's Grafana package
+([GRAFANA-FIPS-IMAGE.md](GRAFANA-FIPS-IMAGE.md)); as larsks asked, it is
+the only mode, on every cluster, and the grafana-operator chart is removed.
+After it merges:
 
 - Build the image once (the hub is suggested) and push it to a private
   registry. Which quay.io organization, and who holds its robot account,
   is undecided.
-- Switch compliant clusters to the new mode, and stop deploying the
-  `grafana-operator` chart there (today `all-managed-clusters` sends it to
-  every cluster).
+- Set the UBI image on compliant clusters (the default stays
+  `docker.io/grafana/grafana:11.3.0`).
 - Accept, or not, that editable projects start fresh: RHEL ships Grafana
   10.2, which cannot read an 11.x database.
 

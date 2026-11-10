@@ -8,8 +8,10 @@ which covers the crypto modules themselves.
 oac-dev-infra are not flagged `fips-compliant: true`: Cluster Observability,
 Grafana, Portworx, NVIDIA GPU, patch-operator and group-sync-operator ([the
 table](#results-2026-11-05)). Only Cluster Observability's images pass
-`check-payload` ([the scans](#what-the-images-contain-2026-11-05)). None has
-a recorded decision yet ([the options](#deciding-each-one)).
+`check-payload` ([the scans](#what-the-images-contain-2026-11-05)). Grafana's
+is decided (2026-11-10): the operator is dropped, and project Grafana runs
+without it (oac-apps #230). The others have no recorded decision yet
+([the options](#deciding-each-one)).
 
 ## Why this exists
 
