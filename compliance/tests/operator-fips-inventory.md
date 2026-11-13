@@ -247,8 +247,17 @@ come, replace this.
   storage network, and data at rest on the FlashBlade under #5000. The
   management API (COSI driver, PX-CSI) has the same gap; it carries
   credentials, not CUI.
-- **Ask later:** is a CMVP submission planned for the in-transit path; can the
-  FlashBlade be limited to AES-GCM suites.
+- **Cipher restriction, Pure's answer 2026-11-13:** yes. TLS policies
+  (`purepolicy tls`, CLI reference 4.8.5 p. 499) attach to network
+  interfaces, and every service on an interface inherits the policy,
+  including NFS over TLS on 2049. The guides list only management, S3,
+  replication and NFS over HTTPS; Pure has asked for its docs to be fixed.
+  `--disabled-tls-ciphers TLS_CHACHA20_POLY1305_SHA256` removes ChaCha20 from
+  TLS 1.3; `TLS_AES_128_GCM_SHA256` cannot be disabled (RFC 8446 requires
+  it, and it is FIPS-approved). Check with `purepolicy tls list --effective`.
+  This is extra protection only: FIPS-mode nodes never offer ChaCha20.
+- **Still unanswered:** is a CMVP submission planned for the in-transit path
+  (asked twice).
 
 ## What the images contain (2026-11-05)
 

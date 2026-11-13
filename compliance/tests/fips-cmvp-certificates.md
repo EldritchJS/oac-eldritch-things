@@ -89,6 +89,12 @@ The FlashBlade's end has no validated module either: Pure confirmed
 (2026-11-13) that no FIPS certification covers its data in transit, NFS over
 TLS or the management API; its certificate #5000 covers data at rest only
 ([operator-fips-inventory.md](operator-fips-inventory.md), Portworx).
+Its algorithms can be limited, though: a FlashBlade TLS policy that
+disables `TLS_CHACHA20_POLY1305_SHA256` leaves only AES-GCM suites, on NFS
+over TLS as well as management (Pure, 2026-11-13). That matches what the
+FIPS-mode nodes offer, so both ends use only approved algorithms; neither
+end uses a validated module. Whether Pure plans a CMVP submission for the
+in-transit path is still unanswered.
 
 ### 3. Operational environment
 

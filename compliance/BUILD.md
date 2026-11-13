@@ -102,6 +102,18 @@ class at all:
   it on only once the hub's Portworx class is TLS (`portworx.tls: true`):
   it would refuse the cleartext class when ArgoCD replaces it. Tested on
   nist-dev-infra on 2026-10-19 (Part 1 step 7).
+- **The FlashBlade's TLS ciphers (not yet applied).** A FlashBlade TLS
+  policy attaches to network interfaces, and every service on an interface
+  follows it, NFS over TLS on 2049 included (Pure, 2026-11-13; the guides
+  list only management, S3, replication and NFS over HTTPS). To limit the
+  FlashBlade to AES-GCM, disable ChaCha20 on the policy for the data and
+  management interfaces:
+  `purepolicy tls setattr <policy> --disabled-tls-ciphers TLS_CHACHA20_POLY1305_SHA256`,
+  then check `purepolicy tls list --effective`. `TLS_AES_128_GCM_SHA256`
+  cannot be disabled. This is set once per FlashBlade, not per hub, so it
+  affects every tenant on those interfaces; it is a FlashBlade admin step.
+  FIPS-mode nodes never offer ChaCha20, so this is extra protection, not a
+  fix ([tests/operator-fips-inventory.md](tests/operator-fips-inventory.md)).
 - Re-running the realm playbook makes a new certificate. Update
   `cluster/<hub>/nfs-tls-ca` when that happens, or every mount fails.
 - **The realm certificate must be marked as a CA.** The FlashBlade's own
