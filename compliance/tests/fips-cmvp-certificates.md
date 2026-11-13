@@ -85,6 +85,11 @@ The storage-encryption path — the reason NFS-over-TLS exists (800-171
 FIPS mode still restricts them to approved algorithms (T-15 shows the
 effect), but "approved algorithms in FIPS mode" is not "validated module".
 
+The FlashBlade's end has no validated module either: Pure confirmed
+(2026-11-13) that no FIPS certification covers its data in transit, NFS over
+TLS or the management API; its certificate #5000 covers data at rest only
+([operator-fips-inventory.md](operator-fips-inventory.md), Portworx).
+
 ### 3. Operational environment
 
 #4857's tested environments are RHEL 9 on an Intel Xeon Silver 4216, IBM

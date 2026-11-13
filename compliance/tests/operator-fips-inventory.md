@@ -226,14 +226,29 @@ come, replace this.
 - **Also a registry problem:** with `platform-hardening`'s allowed registries
   on, the `docker.io` and `registry.k8s.io` images would be refused, so PX-CSI
   would not install on a compliant cluster as it stands.
-- **Ask Pure:** are PX-CSI and its operator built with validated crypto and
-  supported on FIPS OpenShift, and will the CSV say so; can it use Red Hat's
-  FIPS-built CSI sidecars and pull everything from
+- **Asked Pure** (Everpure): are PX-CSI and its operator built with validated
+  crypto and supported on FIPS OpenShift, and will the CSV say so; can it use
+  Red Hat's FIPS-built CSI sidecars and pull everything from
   `registry.connect.redhat.com`; which module does the FlashBlade use for NFS
-  over TLS and for its management API, and is that #5000. The NFS question
-  is the FlashBlade's end of the encryption-in-transit path
-  ([fips-cmvp-certificates.md](fips-cmvp-certificates.md) covers the nodes'
-  end).
+  over TLS and for its management API, and is that #5000.
+- **Pure's answer, 2026-11-13 (partial):**
+  - *FlashBlade in transit:* no FIPS certification covers data in transit,
+    neither NFS over TLS nor the management API. #5000 is data at rest only.
+    NFS over TLS follows RFC 9289: TLS 1.3, on the normal NFS port 2049, no
+    separate TLS port.
+  - *PX-CSI, operator and registries (questions 1 and 2):* Pure's Product
+    Management is discussing them; update expected the week of 2026-11-16.
+- **What it means:** neither end of NFS over TLS uses a validated module (the
+  nodes' end is GnuTLS and the kernel crypto API,
+  [fips-cmvp-certificates.md](fips-cmvp-certificates.md) §2). FIPS-mode nodes
+  offer only approved TLS 1.3 suites (AES-GCM), so the algorithms are
+  approved, but the modules are not validated. Record against 800-171
+  3.13.8 / 3.13.11 as a vendor-dependent POA&M item. Offsetting: a separate
+  storage network, and data at rest on the FlashBlade under #5000. The
+  management API (COSI driver, PX-CSI) has the same gap; it carries
+  credentials, not CUI.
+- **Ask later:** is a CMVP submission planned for the in-transit path; can the
+  FlashBlade be limited to AES-GCM suites.
 
 ## What the images contain (2026-11-05)
 
