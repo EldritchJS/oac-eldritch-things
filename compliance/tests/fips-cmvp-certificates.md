@@ -93,8 +93,9 @@ Its algorithms can be limited, though: a FlashBlade TLS policy that
 disables `TLS_CHACHA20_POLY1305_SHA256` leaves only AES-GCM suites, on NFS
 over TLS as well as management (Pure, 2026-11-13). That matches what the
 FIPS-mode nodes offer, so both ends use only approved algorithms; neither
-end uses a validated module. Whether Pure plans a CMVP submission for the
-in-transit path is still unanswered.
+end uses a validated module. Pure has not announced a CMVP submission for
+the in-transit path, so the POA&M treats it as having none; a future
+certificate would be an update to that item, not something it waits on.
 
 ### 3. Operational environment
 

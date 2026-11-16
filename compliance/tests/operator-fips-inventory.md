@@ -260,9 +260,12 @@ come, replace this.
   TLS 1.3; `TLS_AES_128_GCM_SHA256` cannot be disabled (RFC 8446 requires
   it, and it is FIPS-approved). Check with `purepolicy tls list --effective`.
   This is extra protection only: FIPS-mode nodes never offer ChaCha20.
-- **Still unanswered:** is a CMVP submission planned for the in-transit path
-  (asked twice); does the 1H2027 PX-CSI cover the operator and the CSV
-  flag; can every image come from a Red Hat registry.
+- **CMVP for the in-transit path:** no submission announced, so the
+  POA&M treats it as none. Mitigations: AES-GCM-only TLS 1.3 policies and
+  the separate storage network. Update the item if Pure announces one.
+- **Not covered by the 1H2027 answer:** whether every image can come from
+  a Red Hat registry (or PX-CSI is supported with Red Hat's CSI sidecars).
+  Not yet asked again; see the registry note above.
 - **For the POA&M:** PX-CSI and its operator stay a vendor-dependent gap
   until at least 1H2027 (tentative, Pure 2026-11-16). On a compliant
   cluster today they would also be refused by the allowed-registries list.
