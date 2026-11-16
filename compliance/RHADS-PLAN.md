@@ -28,9 +28,11 @@ andalusia is a hosted cluster on **oac-dev-infra**, and oac-dev-infra is not
 FIPS and not a compliant hub. By our rule
 ([HUB-SPOKE.md](HUB-SPOKE.md#compliant-and-non-compliant-hubs)), a
 non-compliant hub cannot have compliant workload clusters: andalusia's
-control plane, etcd and audit logs live on oac-dev-infra. So andalusia's
-own FIPS nodes do not make it compliant, and RHADS on andalusia can only
-ever be a functional test. No compliant hub is running today
+control plane, etcd and audit logs live on oac-dev-infra. andalusia is
+FIPS-built (`fips: true`, so its worker VM runs RHCOS in FIPS mode), not
+compliant: it has none of a compliant hub's hardening, and its control
+plane pods run on oac-dev-infra's non-FIPS nodes. RHADS on andalusia can
+only ever be a functional test. No compliant hub is running today
 (nist-dev-infra retired 2026-10-28).
 
 That gives two tracks: try RHADS now where it does not matter, and get a
