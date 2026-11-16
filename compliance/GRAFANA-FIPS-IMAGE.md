@@ -192,7 +192,7 @@ Change nothing on a cluster without the owner's go-ahead.
 ### What happened (2026-11-10)
 
 #230 merged as 44d85eb. Done on every dev cluster; oac-prod-workload0
-still has the operator, waiting on its owner.
+followed on 2026-11-16 (below).
 
 - On oac-dev-workload0 the sync failed as feared: patching the new
   Deployment over the operator's gave `readinessProbe.httpGet: Forbidden:
@@ -218,6 +218,21 @@ still has the operator, waiting on its owner.
   login), and the operator was removed from oac-dev-workload0, 1, 2,
   andalusia and jetty with step 2 below, deleting the CSV by name,
   `grafana-operator.v5.25.0`.
+
+### oac-prod-workload0 (2026-11-16)
+
+Removed through the production change process:
+[ops-docs #55](https://github.com/CCI-MOC/ops-docs/pull/55), approved by
+larsks and memalhot. Run at about 12:30 Eastern, ahead of the scheduled
+13:00 because of a conflict; noted on the PR. No Grafana resources were
+on the cluster beforehand; afterwards no `grafana-operator` CSV, no
+`grafana.integreatly.org` CRDs (13 deleted) and no `grafana-operator`
+namespace.
+
+On this cluster `oc delete subscription` resolved to ACM's
+`subscriptions.apps.open-cluster-management.io` and found nothing;
+deleting the namespace removed the OLM Subscription. Step 2 now names
+`subscriptions.operators.coreos.com`.
 
 ### 1. oac-dev-workload0: check the switch
 
@@ -262,7 +277,7 @@ oc get grafanas.grafana.integreatly.org,grafanadatasources.grafana.integreatly.o
 Then:
 
 ```sh
-oc delete subscription grafana-operator -n grafana-operator
+oc delete subscriptions.operators.coreos.com grafana-operator -n grafana-operator
 oc delete csv -n grafana-operator -l operators.coreos.com/grafana-operator.grafana-operator
 oc delete operatorgroup grafana-operator -n grafana-operator
 oc delete namespace grafana-operator

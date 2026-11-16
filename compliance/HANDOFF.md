@@ -124,7 +124,7 @@ Merged and in effect: #195 (the hub compliance marker), #196, #215, #218,
 #197 (the compliant-hub admission policy chart; no cluster deploys it yet),
 #208 (no GPUs for pods that did not ask), #212, #213, #216 (the
 `namespace-guardrails` library chart; no cluster sets guardrails yet), #219,
-#229, #230 (project Grafana without the operator; the operator removed from every dev cluster 2026-11-10, oac-prod-workload0 still to do), #231 (the `acm` chart can set guardrails for ACM's own namespaces; no hub sets any yet), #232 (FIPS COSI images on `nist-dev-infra` only; changes nothing until that hub is rebuilt) and the others listed in [README.md](README.md). Merged in pure-cosi
+#229, #230 (project Grafana without the operator; the operator removed from every dev cluster 2026-11-10 and from oac-prod-workload0 2026-11-16, ops-docs #55), #231 (the `acm` chart can set guardrails for ACM's own namespaces; no hub sets any yet), #232 (FIPS COSI images on `nist-dev-infra` only; changes nothing until that hub is rebuilt) and the others listed in [README.md](README.md). Merged in pure-cosi
 but not yet deployed: #13 and #14 (the FIPS builds). Also merged: pure-cosi #15
 (integration tests against a real FlashBlade). No ApplicationSet deploys the
 compliance charts yet: once they merge, one PR wires them to #195's marker
