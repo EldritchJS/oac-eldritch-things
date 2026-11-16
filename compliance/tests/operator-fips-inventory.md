@@ -408,6 +408,71 @@ Open:
 - **Support.** No Red Hat statement found that Service Mesh 3 beside the
   ingress operator's istiod is supported; ask.
 
+## RHADS, explored on andalusia (2026-11-16)
+
+Red Hat Advanced Developer Suite (software supply chain) is three products:
+Developer Hub (RHDH, Backstage), Trusted Artifact Signer (RHTAS, Sigstore)
+and Trusted Profile Analyzer (RHTPA, SBOM/VEX/CVE), plus Enterprise
+Contract (a CLI and Tekton tasks, no operator). Not installed; this is what
+it would take.
+
+**Flags**, from andalusia's catalog (4.22.14), default channels:
+
+| Operator | CSV | fips-compliant |
+|---|---|---|
+| RHTAS | `rhtas-operator.v1.5.1` (stable) | true |
+| RHTPA | `rhtpa-operator.v3.1.1` (stable-v3) | false (also v1.1) |
+| RHDH | `rhdh-operator.v2.1.0` (fast-2.1) | false (every channel, 1.1 to 2.1) |
+| OpenShift Pipelines | `openshift-pipelines-operator-rh.v1.24.3` | true |
+| Red Hat build of Keycloak | `rhbk-operator.v26.6.9-opr.1` (stable-v26.6) | false |
+| ACS | `rhacs-operator.v5.0.0` | true |
+| OpenShift GitOps | `openshift-gitops-operator.v1.22.3` | true |
+
+**Scans** ([fips-image-scan.sh](fips-image-scan.sh) with andalusia's pull
+secret; images from each CSV's `relatedImages`, and RHTPA's server from
+Red Hat's container catalog, tag `3.1.1` to match the operator):
+
+| Image | Result |
+|---|---|
+| RHTAS: operator, `fulcio`, `rekor-server`, `trillian-logserver`, `trillian-logsigner`, `certificate-transparency`, `timestamp-authority`, `rhtas-console`, `tufcli-init` | **All pass** |
+| `rhdh-rhel10-operator` | Pass |
+| `rhdh-hub-rhel10` (the portal itself) | **Fail**: no FIPS-certified OpenSSL in the image (most likely Node.js's bundled one); its Go binary has the FIPS module compiled in but not turned on |
+| `rhel10/postgresql-18` (RHDH's database) | Pass |
+| `rhtpa-rhel10-operator` | Inconclusive: `/manager: invalid semantic version` (the scanner could not read its Go version) |
+| `rhtpa-rhel10:3.1.1` (`trustd`, the RHTPA server) | **Fail**: Rust binary with bundled crypto (aws-lc, ring), not a FIPS-certified module |
+
+So RHTAS is a FIPS build as flagged. RHDH's portal and RHTPA's server are
+not, and their `false` flags are accurate. Ask Red Hat whether either is
+planned.
+
+**The installer pulls in more.** `tssc` ([tssc-cli](https://github.com/redhat-appstudio/tssc-cli)
+v1.8.0, read from source; Red Hat's docs site refused the fetch) installs
+by default:
+
+- ACS (its own Central, `tssc-acs`) and OpenShift GitOps (its own Argo CD,
+  `tssc-gitops`), both of which we already run. Each can be turned off
+  (`enabled: false`).
+- Its own Keycloak (RHBK, realm `tssc-iam` at `sso.<apps domain>`) whenever
+  RHTAS or RHTPA is on. The OIDC issuer for both is hard-coded to it; there
+  is no setting to use mocsso. A second identity provider works against
+  AC-2 / IA-2.
+- Two single-pod PostgreSQL (`rhel9/postgresql-16`, 50Gi), for Keycloak and
+  RHTPA. RHTPA connects with `sslMode: disable` (SC-8, in-cluster).
+- Every subscription `Automatic`, by design, with no option for `Manual`.
+- Integrations it needs: a Git provider (GitHub, GitLab or Bitbucket) and an
+  image registry (Quay, quay.io or Artifactory).
+
+`manageSubscription: false` reuses an existing operator but does not remove
+the Keycloak or PostgreSQL parts.
+
+**What it would take on andalusia** (FIPS, one 64 vCPU / 128Gi worker,
+storage `kubevirt-csi-infra-default`, RWO): install the operators directly
+rather than run `tssc`. RHTAS and RHTPA against mocsso (a moc-keycloak
+client each), RHTPA's PostgreSQL with TLS, Routes through jetty's
+passthrough (#226), Pipelines with Enterprise Contract for the
+sign-and-verify flow. Check what `all-managed-clusters` already deploys to
+andalusia first. RHDH and RHTPA would be recorded as known gaps.
+
 ## Checked by T-18
 
 `verify.sh -t t18` lists every operator without `fips-compliant: true`. An
