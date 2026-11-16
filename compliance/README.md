@@ -34,19 +34,20 @@ because of the hub-wide settings, not its own files
 ## Operators without a FIPS claim
 
 FIPS mode on the nodes and clean compliance scans do not cover add-on
-operators, and the scans do not look at them. **6 of the 21 operators
-installed on jetty and oac-dev-infra are not flagged `fips-compliant: true`
-(checked 2026-11-05; oac-prod-infra and the hosted clusters are not checked).
-Each has a recorded route forward, and two are settled, but none has a
-final team decision yet.** No flag means the vendor makes no claim. It
-does not prove the operator uses unapproved crypto, but an assessor goes by
+operators, and the scans do not look at them. **5 of the 20 operators
+installed on jetty and oac-dev-infra are not flagged `fips-compliant: true`**
+(6 of 21 when checked on 2026-11-05; the Grafana operator has since been
+removed from every cluster, 2026-11-16. oac-prod-infra and the hosted
+clusters are not checked). **Each has a recorded route forward, and one is
+settled, but none has a final team decision yet.** No flag means the
+vendor makes no claim. It does not prove the operator uses unapproved crypto, but an assessor goes by
 the claim. The scan column is a separate check of the images with
 `check-payload`.
 
 | Operator | Flag | Image scan | What it touches |
 |---|---|---|---|
 | Cluster Observability Operator | false | Pass (the flag looks wrong) | Perses dashboards in the console; reads metrics |
-| Grafana operator | none | Fail | Per-project Grafana; sends each project's data source token over plain HTTP |
+| ~~Grafana operator~~ | none | Fail | **Removed from every cluster** (2026-11-16, oac-apps #230). Was per-project Grafana; sent each project's data source token over plain HTTP |
 | Portworx operator | false | Fail | Storage driver for FlashBlade volumes; holds the FlashBlade API token |
 | NVIDIA GPU Operator | false | Fail | GPU drivers and device plugins; privileged on GPU nodes |
 | patch-operator | none | Fail | Patches cluster resources; broad API write access |
@@ -93,7 +94,7 @@ The full list, with next steps, is in [HANDOFF.md](HANDOFF.md). In short:
   (BUILD.md, P1 to P3).
 - An audit and alert destination (BUILD.md P9): audit records on a node
   last hours, and nothing alerts on a new scan failure.
-- A decision on each of the six [operators without a FIPS
+- A decision on each of the five [operators without a FIPS
   claim](#operators-without-a-fips-claim).
 - Storage for workload clusters: Portworx and NFS over TLS, as on the
   hub. The cluster-wide proxy is a recorded POA&M gap.
@@ -109,7 +110,7 @@ The full list, with next steps, is in [HANDOFF.md](HANDOFF.md). In short:
 |---|---|
 | [OPERATIONS.md](OPERATIONS.md) | **Day to day:** what runs by itself, what a person does and when, which scripts are for it, and what is not in place yet |
 | [HANDOFF.md](HANDOFF.md) | **Open work:** every open item, next step and who to ask. Diagrams of the clusters, how a cluster gets its components, COSI and Connectivity Link |
-| [tests/operator-fips-inventory.md](tests/operator-fips-inventory.md) | **Operators:** which installed operators claim FIPS support, the six that don't, and what their images contain |
+| [tests/operator-fips-inventory.md](tests/operator-fips-inventory.md) | **Operators:** which installed operators claim FIPS support, the five that don't, and what their images contain |
 | [HUB-SPOKE.md](HUB-SPOKE.md) | **Design:** compliant hubs and hosted clusters under GitOps; where each jetty control goes. Diagram of a compliant hub (§2) |
 | [BUILD.md](BUILD.md) | **Method:** a compliant hub, then a compliant workload cluster on it |
 | [NEW-HUB-RUNBOOK.md](NEW-HUB-RUNBOOK.md) | **Runbook:** a new hub and workload cluster from nothing, with example PRs |

@@ -10,8 +10,9 @@ Grafana, Portworx, NVIDIA GPU, patch-operator and group-sync-operator ([the
 table](#results-2026-11-05)). Only Cluster Observability's images pass
 `check-payload` ([the scans](#what-the-images-contain-2026-11-05)). Grafana's
 is decided (2026-11-10): the operator is dropped, and project Grafana runs
-without it (oac-apps #230). It was removed from every dev cluster that day;
-oac-prod-workload0 still has it. The others have no recorded decision yet
+without it (oac-apps #230). It was removed from every dev cluster that day
+and from oac-prod-workload0 on 2026-11-16, so 5 unflagged operators remain.
+The others have no recorded decision yet
 ([the options](#deciding-each-one)).
 
 ## Why this exists
@@ -108,7 +109,7 @@ Starting points, not yet decided:
 | Operator | Likely route |
 |---|---|
 | Cluster Observability Operator | Its images pass check-payload, so keep it, citing the scan; get the CSV flag corrected with the COO team |
-| Grafana operator | Remove on compliant clusters; Grafana from provisioning files, built and tested in oac-apps #230 ([GRAFANA-FIPS-IMAGE.md](../GRAFANA-FIPS-IMAGE.md)) |
+| Grafana operator | **Done:** removed from every cluster (dev 2026-11-10, oac-prod-workload0 2026-11-16); Grafana from provisioning files, oac-apps #230 ([GRAFANA-FIPS-IMAGE.md](../GRAFANA-FIPS-IMAGE.md)) |
 | Portworx operator | Ask the vendor. It is in the storage path, so it is the hardest to justify keeping and the hardest to remove |
 | NVIDIA GPU Operator | Ask NVIDIA. GPUs are why the clusters exist, so this is a justification, not a removal |
 | patch-operator | Replace its four Patches with ACM ConfigurationPolicies (tested on jetty) and server-side apply (below) |
@@ -237,7 +238,10 @@ come, replace this.
     NFS over TLS follows RFC 9289: TLS 1.3, on the normal NFS port 2049, no
     separate TLS port.
   - *PX-CSI, operator and registries (questions 1 and 2):* Pure's Product
-    Management is discussing them; update expected the week of 2026-11-16.
+    Management gave a tentative timeline of **1H2027 for a FIPS-compliant
+    PX-CSI** (2026-11-16). Not answered: whether the operator is included,
+    whether the CSV will say `fips-compliant: "true"`, and the registry
+    question (images from Red Hat registries, Red Hat's CSI sidecars).
 - **What it means:** neither end of NFS over TLS uses a validated module (the
   nodes' end is GnuTLS and the kernel crypto API,
   [fips-cmvp-certificates.md](fips-cmvp-certificates.md) §2). FIPS-mode nodes
@@ -257,7 +261,11 @@ come, replace this.
   it, and it is FIPS-approved). Check with `purepolicy tls list --effective`.
   This is extra protection only: FIPS-mode nodes never offer ChaCha20.
 - **Still unanswered:** is a CMVP submission planned for the in-transit path
-  (asked twice).
+  (asked twice); does the 1H2027 PX-CSI cover the operator and the CSV
+  flag; can every image come from a Red Hat registry.
+- **For the POA&M:** PX-CSI and its operator stay a vendor-dependent gap
+  until at least 1H2027 (tentative, Pure 2026-11-16). On a compliant
+  cluster today they would also be refused by the allowed-registries list.
 
 ## What the images contain (2026-11-05)
 
@@ -478,6 +486,7 @@ andalusia first. RHDH and RHTPA would be recorded as known gaps.
 `verify.sh -t t18` lists every operator without `fips-compliant: true`. An
 operator listed in [operator-fips-accepted.txt](operator-fips-accepted.txt) is
 a WARN; any other FAILs, so a new unflagged operator is caught instead of
-slipping in. The six above are listed as "under review" until each has a
-decision. On 2026-11-05 it gave 5 WARNs on jetty and 4 on the oac-dev-infra
+slipping in. The five that remain are listed until each has a decision;
+the Grafana operator was taken off the list once it was removed from every
+cluster (2026-11-16), so it FAILs if it ever comes back. On 2026-11-05 it gave 5 WARNs on jetty and 4 on the oac-dev-infra
 hub, no FAILs; dropping Portworx from the list turned it into a FAIL.
