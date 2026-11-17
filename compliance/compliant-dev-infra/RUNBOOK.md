@@ -241,8 +241,11 @@ has and what is new for compliant-dev-infra.
    (`docs/hardware-inventory-and-configuration.md`,
    "Network configuration"), each with its storage port untagged, with
    DHCP, unless they are already on them. Addresses on `10.20.18.0/23`:
-   the R440s `.23` to `.25` (tzumainn), the workers `.26` to `.28`
-   (proposed); the VIPs are `10.20.19.11` and `.12`.
+   each node's, as its discovery boot shows on the console (DHCP): the
+   R440s got `.23` to `.25`. The VIPs are `10.20.19.11` and `.12`.
+   Switch ports: the R440s were already on VLANs 219 and 2317; the FC430s
+   by ansible-switches #148, applied by naved or hakasapl running the
+   playbook.
 
 2. **oac-infra `infra/inventory/00hosts.yaml`.** Add a
    `compliant_dev_infra` group under `nist_clusters`, beside
