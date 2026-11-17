@@ -55,6 +55,7 @@ export SM=SecretsManagerOperatorAccess-<account>
 export CO=ClusterOperatorAccess-<account>
 export HUB=$HOME/kubeadmin-compliant-dev-infra
 export RB=~/oat/oac-eldritch-things/compliance/nist-dev-infra   # scripts and MachineConfigs, shared with the first build
+export CB=~/oat/oac-eldritch-things/compliance/compliant-dev-infra   # this hub's stage files
 aws sso login --profile $SM
 ```
 
@@ -501,12 +502,20 @@ waiting for their bucket (BUILD.md I8).
 ### 2.8 The compliance stages, from the fork
 
 Each stage file updates the same ApplicationSet, `nist-compliance-test`,
-which reads the fork's `nist-dev-infra-test` branch. Apply them in order,
+which reads the fork's `compliant-dev-infra-test` branch: upstream oac-apps
+main plus the compliance charts not yet upstream (audit-logging,
+compliance-node-hardening, etcd-backup, file-integrity), a stopgap
+`namespace-guardrails-app` (upstream's namespace-guardrails is now a
+library, #756), and this hub's values under `values/compliant-dev-infra/`.
+The upstreamed charts (compliance-operator, compliance-hub-policy,
+platform-hardening, rhacs, nfs-tls) are upstream's. nfs-tls is tlshd only:
+the TLS StorageClass is `pure-fb-nfsv4` with `portworx.tls: true`.
+`nist-dev-infra-test` stays as the first build's record. Apply them in order,
 waiting for each to settle:
 
 ```
 export KUBECONFIG=$HUB
-oc apply -f $RB/stage-a.yaml
+oc apply -f $CB/stage-a.yaml
 oc -n openshift-gitops get applications.argoproj.io | grep nist-test     # all Synced, Healthy
 ```
 
@@ -521,7 +530,7 @@ oc -n openshift-compliance get compliancesuite            # every suite DONE
 StorageClass (2.6).
 
 ```
-oc apply -f $RB/stage-b.yaml
+oc apply -f $CB/stage-b.yaml
 oc -n stackrox rollout status deploy/central --timeout=30m
 ```
 
@@ -547,7 +556,7 @@ reboots.** Agree a time, run the health check, and allow three hours.
 
 ```
 oc patch mcp master --type merge -p '{"spec":{"paused":true}}'
-oc apply -f $RB/stage-c.yaml
+oc apply -f $CB/stage-c.yaml
 oc get mc | grep -c '^75-'                                # about 380, once synced
 oc patch mcp master --type merge -p '{"spec":{"paused":false}}'
 KUBECONFIG=$HUB $RB/watch-etcd-threads.sh                 # in another terminal, during the rollout; Ctrl-C after
@@ -564,7 +573,7 @@ restarted: `oc debug node/<node> -- chroot /host systemctl restart kubelet`.
 Needs 2.7.
 
 ```
-oc apply -f $RB/stage-e.yaml
+oc apply -f $CB/stage-e.yaml
 oc -n openshift-logging get lokistack,clusterlogforwarder     # Ready
 ```
 
@@ -753,7 +762,7 @@ hub, which deploys to every managed cluster. Apply in order:
 
 ```
 export KUBECONFIG=$HUB
-oc apply -f $RB/workload-stage-a.yaml        # Compliance Operator (hosted tailoring), FIO, the notice
+oc apply -f $CB/workload-stage-a.yaml        # Compliance Operator (hosted tailoring), FIO, the notice
 oc -n openshift-gitops get applications.argoproj.io | grep compliant-dev-workload0-nist-test   # Synced, Healthy
 ```
 
@@ -761,7 +770,7 @@ oc -n openshift-gitops get applications.argoproj.io | grep compliant-dev-workloa
 hub's Central and goes to the cluster:
 
 ```
-oc apply -f $RB/workload-stage-b.yaml
+oc apply -f $CB/workload-stage-b.yaml
 umask 077; B=$(mktemp)
 oc -n stackrox exec deploy/central -- roxctl central init-bundles generate compliant-dev-workload0 \
   --insecure-skip-tls-verify \
@@ -776,7 +785,7 @@ The same nudge as 2.8 applies, with `KUBECONFIG=$W0`.
 **Stage C**, NetworkPolicies and quotas:
 
 ```
-oc apply -f $RB/workload-stage-c.yaml
+oc apply -f $CB/workload-stage-c.yaml
 oc -n openshift-gitops get applications.argoproj.io | grep compliant-dev-workload0   # all still Synced
 ```
 
@@ -787,7 +796,7 @@ hub. Argo cannot reach it to fix it, so delete that policy with
 **Stage D**, audit forwarding to the hub's Loki:
 
 ```
-oc apply -f $RB/workload-stage-d.yaml
+oc apply -f $CB/workload-stage-d.yaml
 KUBECONFIG=$W0 oc -n openshift-logging get clusterlogforwarder   # Ready
 ```
 
@@ -862,7 +871,7 @@ Every fix goes through a PR, as during the build:
 
 - The ACS chart is on main ([#181](https://github.com/CCI-MOC/oac-apps/pull/181)), but no ApplicationSet uses it
   yet; stage B still installs ACS from the fork.
-- **TODO:** the stages come from the fork's `nist-dev-infra-test` branch.
+- **TODO:** the stages come from the fork's `compliant-dev-infra-test` branch.
   Moving the compliance charts to CCI-MOC/oac-apps main is a separate
   piece of work; until then the fork is part of the build.
 - **TODO:** a home for hosted etcd that is not NFS.
