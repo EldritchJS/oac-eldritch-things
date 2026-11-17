@@ -92,12 +92,13 @@ jetty: 5 nodes (3 masters, 2 GPU workers), FIPS on, reinstalled
   a non-compliant hub, so it would have to be detached from it first.
   Quickest to a compliant cluster, but outside the hub design: a one-off
   to keep in step by hand.
-- **B2. A compliant hub on jetty's hardware, laid out like the other
-  hubs.** jetty itself is the odd one out: a hive-installed standalone
-  spoke used directly as a hypervisor, without hosted control planes. B2
-  does not keep that. The hardware is reinstalled as a standard compliant
-  hub with the standard hypervisor pattern below, so nothing about it is
-  a one-off.
+- **B2. jetty-infra: a compliant hub on jetty's hardware, laid out like
+  the other hubs.** jetty itself is the odd one out: a hive-installed
+  standalone spoke used directly as a hypervisor, without hosted control
+  planes. B2 does not keep that. The hardware is reinstalled as a
+  standard compliant hub, `jetty-infra`, with the oac-dev-infra /
+  oac-dev-workload1 / oac-dev-workload2 pattern below (agreed with
+  tzumainn), so nothing about it is a one-off.
 - For: hardware we have, already FIPS.
 - Against: jetty is oac-dev-infra's GPU hypervisor (andalusia's VMs, the
   GPU NodePool work in #212/#219) and the GPU test bed; detaching it
@@ -119,10 +120,10 @@ bare-metal Agent workers are the hypervisor; oac-dev-workload2 is a
 KubeVirt hosted cluster whose workers are VMs on workload1. For B2:
 
 ```
-compliant hub (3 control plane + 3 workers)
+jetty-infra        compliant hub (3 control plane + 3 workers)
   runs the control planes of:
-    gpu-hypervisor   hosted cluster, Agent workers = the 2 SD665-N V3s
-    andalusia        hosted cluster, KubeVirt workers = GPU VMs on gpu-hypervisor
+    jetty-workload1  hosted cluster, Agent workers = the 2 SD665-N V3s (like oac-dev-workload1)
+    andalusia        hosted cluster, KubeVirt workers = GPU VMs on jetty-workload1 (like oac-dev-workload2)
 ```
 
 | Role | Count | Spec |
@@ -146,6 +147,33 @@ compliant hub (3 control plane + 3 workers)
 - **Wipe every node first** (800-171 3.8.3), including the SD665s' NVMe,
   which holds andalusia's VM disks today.
 - **andalusia is rebuilt, not moved:** a HostedCluster cannot change hubs.
+
+#### B2 configuration: nist-dev-infra's files as the template
+
+Everything nist-dev-infra needed is still in the repos (checked
+2026-11-17). Copy it under the new name rather than starting over
+(tzumainn's suggestion):
+
+| Repo | nist-dev-infra's | For jetty-infra |
+|---|---|---|
+| oac-apps | `hosted-clusters/nist-dev-infra/` (hub values, `compliance.yaml`, `nist-dev-workload0`), `values/nist-dev-infra/`, `apps/nist-dev-infra/` | Copy to `jetty-infra` paths. `nist-dev-workload0` (an Agent cluster) is the starting point for `jetty-workload1`: change NIC names, node count, GPU settings. andalusia gets a new entry here; its current one belongs to oac-dev-infra |
+| moc-aws | Hosted zone, OIDC and cert-manager roles, external-dns user, ESO prefixes | The same for jetty-infra; run `setup-oidc.sh` before the apply, as in the runbook |
+| moc-keycloak | nist-dev-infra client (#55), workload0 (#54) | Clients for jetty-infra, jetty-workload1 and andalusia |
+| moc-dns | `nist.int.massopen.cloud` delegation (#33) | A delegation for jetty-infra's zone |
+| oac-infra | `hub-images/group_vars/nist-dev-infra/`, inventory | New vars: the six hub nodes, 3 control plane plus 3 workers, not compact |
+
+The runbook ([nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md)) was
+written for a compact hub; it needs the 3+3 layout and etcd encryption
+from install. Once jetty-infra works, delete nist-dev-infra's files so
+there is one set of hub config.
+
+**The old jetty's records** do not collide with the new name, so they
+can go after the build, not before: `values/oac-dev-infra/jetty` in
+oac-apps, jetty's roles in moc-aws (#66), its records in moc-dns's
+`int.massopen.cloud` zone, and the ManagedCluster and hive
+ClusterDeployment on oac-dev-infra. `oac-infra/infra/jetty-net.tf` is
+the network and stays. The old jetty itself is gone when its nodes are
+wiped.
 
 ### C. Wait
 
