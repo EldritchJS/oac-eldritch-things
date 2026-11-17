@@ -172,8 +172,9 @@ Section 0 lists what the new name changes in each repo.
 - **GPU passthrough on an Agent hosted cluster is untested.** oac-apps
   #212 and #219 set it up on jetty as a spoke; oac-dev-workload1 is a
   hypervisor without GPUs.
-- **Wipe every node first** (800-171 3.8.3), including the SD665s' NVMe,
-  which holds andalusia's VM disks today.
+- **Wipe every node first** (800-171 3.8.3). andalusia's VM disks and
+  the test volumes are on the FlashBlade, not the nodes: delete them
+  while jetty runs (runbook section 1).
 - **andalusia is rebuilt, not moved:** a HostedCluster cannot change hubs.
 - **jetty's records go afterwards:** `values/oac-dev-infra/jetty` in
   oac-apps, jetty's roles in moc-aws (#66), its records in moc-dns's

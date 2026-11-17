@@ -135,8 +135,14 @@ FlashBlade, Keycloak) before the PRs.
 jetty and andalusia are only in use by this work, so they go first and
 the hub is installed with all six nodes at once (decided 2026-11-17).
 From here until andalusia is rebuilt on this hub (#788) there is no GPU
-VM cluster. **Copy off anything worth keeping first** (benchmark results,
-VM images): the wipe takes everything.
+VM cluster.
+
+**What is on them** (checked 2026-11-17): every PVC on jetty and
+andalusia is on the FlashBlade (`pure-fb-nfsv4`; andalusia's through
+`kubevirt-csi-infra-default`), not on node disks, and all have reclaim
+policy `Delete`. The AI UAT Harness runs are already local
+(`ai-uat-harness/runs`). Nothing on the nodes needs copying; the
+FlashBlade volumes need deleting, or they outlive jetty.
 
 1. **Remove andalusia first, while jetty still works,** so oac-dev-infra
    and jetty's KubeVirt clean up after it. On a branch of oac-apps:
@@ -152,6 +158,10 @@ VM images): the wipe takes everything.
    ```
 
    If it stays in `Deleting`: oac-apps `docs/hypershift-issues.md`.
+   jetty's two GPU nodes were NotReady on 2026-11-17, so the VM's
+   VirtualMachineInstance may not terminate by itself. If it hangs, on
+   jetty: `oc -n clusters-andalusia delete vmi --all --force --grace-period=0`,
+   then check that the `clusters-andalusia` PVCs are gone.
 
 2. **Detach jetty from oac-dev-infra:** remove `values/oac-dev-infra/jetty`
    and anything else selecting it in oac-apps by PR. Then, on
@@ -159,10 +169,21 @@ VM images): the wipe takes everything.
    ClusterDeployment so deleting it does not try to deprovision, and
    delete the ManagedCluster and the ClusterDeployment.
 
-3. **Power off jetty's five nodes.** The FC430s go on to 2.1, the SD665s
+3. **Delete jetty's own test volumes** while jetty still runs, so
+   Portworx removes them from the FlashBlade:
+
+   ```
+   export KUBECONFIG=~/kubeadmin-jetty
+   oc delete project uat-runner uat-project gpu-bench mm-test
+   oc get pvc -A | grep -v '^openshift-'      # nothing left but the cluster's own
+   ```
+
+   andalusia's volumes (`clusters-andalusia`) go with step 1.
+
+4. **Power off jetty's five nodes.** The FC430s go on to 2.1, the SD665s
    to section 4. Wipe all five (800-171 3.8.3), every disk.
 
-4. **Afterwards, by PR:** jetty's roles in moc-aws (#66) and its records in
+5. **Afterwards, by PR:** jetty's roles in moc-aws (#66) and its records in
    moc-dns's `int.massopen.cloud` zone. `oac-infra/infra/jetty-net.tf` is
    the network; leave it until the SD665s have moved.
 
@@ -303,7 +324,11 @@ has and what is new for compliant-dev-infra.
    the pull secret in `group_vars/compliant-dev-infra/secrets.yml` (neither in
    git).
 
-2. **Make the boot media:**
+2. **Make the boot media, on a FIPS-enabled RHEL host:**
+   `openshift-install-fips` will not make media for a FIPS cluster on a
+   host without FIPS mode. jetty's nodes have been that host for
+   tzumainn's hub images, so **make this ISO before jetty goes**
+   (section 1), or have a replacement FIPS host ready.
 
    ```
    cd ~/oat/oac-infra/hub-images
