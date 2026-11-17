@@ -92,10 +92,12 @@ jetty: 5 nodes (3 masters, 2 GPU workers), FIPS on, reinstalled
   a non-compliant hub, so it would have to be detached from it first.
   Quickest to a compliant cluster, but outside the hub design: a one-off
   to keep in step by hand.
-- **B2. jetty as the compliant hub.** Detach from oac-dev-infra, add
-  ACM/MCE and HyperShift, apply the compliant-hub charts, and host
-  andalusia's control plane on jetty as well as its VMs.
-
+- **B2. A compliant hub on jetty's hardware, laid out like the other
+  hubs.** jetty itself is the odd one out: a hive-installed standalone
+  spoke used directly as a hypervisor, without hosted control planes. B2
+  does not keep that. The hardware is reinstalled as a standard compliant
+  hub with the standard hypervisor pattern below, so nothing about it is
+  a one-off.
 - For: hardware we have, already FIPS.
 - Against: jetty is oac-dev-infra's GPU hypervisor (andalusia's VMs, the
   GPU NodePool work in #212/#219) and the GPU test bed; detaching it
@@ -111,34 +113,39 @@ What jetty has (checked 2026-11-17):
 | 3 masters | Dell FC430, 2 x Xeon E5-2640 v4, 40 threads, 126 GiB, 2 x 186 GB SSD, no TPM |
 | 2 workers | Lenovo SD665-N V3, 2 x EPYC 9754 (512 threads), 1.5 TiB, 4 x H100, 894 GB and 7 TB NVMe |
 
-With only these five, the hub's own components (ACM, multicluster
-engine, Argo CD, ACS Central, Compliance, Loki) and andalusia's hosted
-control plane would run on the two GPU nodes. That means:
+The pattern to copy is oac-dev-infra's (checked 2026-11-17): the hub runs
+control planes only; oac-dev-workload1 is a hosted cluster whose two
+bare-metal Agent workers are the hypervisor; oac-dev-workload2 is a
+KubeVirt hosted cluster whose workers are VMs on workload1. For B2:
 
-- andalusia's etcd on 512-thread nodes, where FIPS etcd's lock contention
-  is worst (BUILD.md Part 1 step 1), unless CPU limits or a GOMAXPROCS cap
-  hold it (untested);
-- a SingleReplica control plane, since three etcd replicas need three
-  workers;
-- tenant GPU VMs on the hub's nodes, inside the hub's boundary;
-- draining one GPU node moves every hub component onto the other.
-
-What B2 needs, eight nodes:
+```
+compliant hub (3 control plane + 3 workers)
+  runs the control planes of:
+    gpu-hypervisor   hosted cluster, Agent workers = the 2 SD665-N V3s
+    andalusia        hosted cluster, KubeVirt workers = GPU VMs on gpu-hypervisor
+```
 
 | Role | Count | Spec |
 |---|---|---|
-| Control plane | 3 | The FC430s: about 40 cores on 2 sockets is the shape BUILD.md asks for. Separate SSDs for the OS and etcd |
-| Hub workers | 3, new | CPU only, no GPUs. About 32 to 64 cores on 1 or 2 sockets, 256 GiB, 1 to 2 TB local NVMe for LVM Storage (hosted etcd on local disk), a port on the storage VLAN |
-| GPU hypervisors | 2 | The SD665-N V3s, labelled and tainted for andalusia's VMs only |
+| Hub control plane | 3 | The FC430s: about 40 cores on 2 sockets is the shape BUILD.md asks for. Separate SSDs for the OS and etcd |
+| Hub workers | 3, new | CPU only, no GPUs. About 32 to 64 cores on 1 or 2 sockets, 256 GiB, 1 to 2 TB local NVMe for LVM Storage (the hosted clusters' etcd on local disk), a port on the storage VLAN. They run the hub's own components and both hosted control planes |
+| Hypervisor cluster workers | 2 | The SD665-N V3s, booted from the hub's discovery ISO as Agents, like workload1's nodes |
 
+- **Not a hub without the three workers.** The standard layout is not
+  compact (BUILD.md Part 1 step 4), and with no hub workers the hosted
+  etcds would run beside the hub's etcd on the FC430s.
+- **Two compliant hosted clusters, not one.** The hypervisor cluster is
+  in scope too: andalusia's VMs and their disks run on it. It gets the
+  same node hardening through its NodePool as any hosted cluster.
+- **GPU passthrough on a hosted hypervisor cluster** is what oac-apps #212
+  and #219 set up on jetty as a spoke; on an Agent hosted cluster it is
+  untested. workload1 is a hypervisor without GPUs.
 - **Disk encryption: a recorded exception.** None of the nodes will use a
   TPM, as on nist-dev-infra. Encrypt at install once nodes with working
   TPMs are available (MOC-issues #672).
 - **Wipe every node first** (800-171 3.8.3), including the SD665s' NVMe,
   which holds andalusia's VM disks today.
 - **andalusia is rebuilt, not moved:** a HostedCluster cannot change hubs.
-- Without the three hub workers, B2 can still run as a test hub, with the
-  four points above as recorded gaps.
 
 ### C. Wait
 
