@@ -99,9 +99,46 @@ jetty: 5 nodes (3 masters, 2 GPU workers), FIPS on, reinstalled
 - For: hardware we have, already FIPS.
 - Against: jetty is oac-dev-infra's GPU hypervisor (andalusia's VMs, the
   GPU NodePool work in #212/#219) and the GPU test bed; detaching it
-  breaks andalusia as it is built today. B2 puts a hub's control
-  planes on the same three masters as GPU tenants. Either variant is a
-  rebuild in all but name; agree it with tzumainn and larsks first.
+  breaks andalusia as it is built today. Either variant is a rebuild in
+  all but name; agree it with tzumainn and larsks first.
+
+#### B2 hardware
+
+What jetty has (checked 2026-11-17):
+
+| Nodes | Hardware |
+|---|---|
+| 3 masters | Dell FC430, 2 x Xeon E5-2640 v4, 40 threads, 126 GiB, 2 x 186 GB SSD, no TPM |
+| 2 workers | Lenovo SD665-N V3, 2 x EPYC 9754 (512 threads), 1.5 TiB, 4 x H100, 894 GB and 7 TB NVMe |
+
+With only these five, the hub's own components (ACM, multicluster
+engine, Argo CD, ACS Central, Compliance, Loki) and andalusia's hosted
+control plane would run on the two GPU nodes. That means:
+
+- andalusia's etcd on 512-thread nodes, where FIPS etcd's lock contention
+  is worst (BUILD.md Part 1 step 1), unless CPU limits or a GOMAXPROCS cap
+  hold it (untested);
+- a SingleReplica control plane, since three etcd replicas need three
+  workers;
+- tenant GPU VMs on the hub's nodes, inside the hub's boundary;
+- draining one GPU node moves every hub component onto the other.
+
+What B2 needs, eight nodes:
+
+| Role | Count | Spec |
+|---|---|---|
+| Control plane | 3 | The FC430s: about 40 cores on 2 sockets is the shape BUILD.md asks for. Separate SSDs for the OS and etcd |
+| Hub workers | 3, new | CPU only, no GPUs. About 32 to 64 cores on 1 or 2 sockets, 256 GiB, 1 to 2 TB local NVMe for LVM Storage (hosted etcd on local disk), a port on the storage VLAN |
+| GPU hypervisors | 2 | The SD665-N V3s, labelled and tainted for andalusia's VMs only |
+
+- **Disk encryption: a recorded exception.** None of the nodes will use a
+  TPM, as on nist-dev-infra. Encrypt at install once nodes with working
+  TPMs are available (MOC-issues #672).
+- **Wipe every node first** (800-171 3.8.3), including the SD665s' NVMe,
+  which holds andalusia's VM disks today.
+- **andalusia is rebuilt, not moved:** a HostedCluster cannot change hubs.
+- Without the three hub workers, B2 can still run as a test hub, with the
+  four points above as recorded gaps.
 
 ### C. Wait
 
