@@ -92,16 +92,17 @@ jetty: 5 nodes (3 masters, 2 GPU workers), FIPS on, reinstalled
   a non-compliant hub, so it would have to be detached from it first.
   Quickest to a compliant cluster, but outside the hub design: a one-off
   to keep in step by hand.
-- **B2. Build `compliant-dev-infra` on the R440s, from nist-dev-infra's
-  configuration, with jetty's GPU nodes as its hypervisor.** The layout
+- **B2. Build `compliant-dev-infra` with R440s as its control plane and
+  jetty's FC430s as its workers, from nist-dev-infra's configuration, with
+  jetty's GPU nodes as its hypervisor.** The layout
   oac-dev-infra uses, as tzumainn proposed. jetty itself, a
   hive-installed spoke used directly as a hypervisor, is
-  not kept: its two GPU nodes join the new hub as a hosted cluster's
-  workers, and its three FC430s drop out.
+  not kept: its three FC430s become the hub's workers, and its two GPU
+  nodes a hosted cluster's workers.
 
 - For: nist-dev-infra's configuration is still in every repo and is the
-  template, copied under the new name; the R440s are much better hardware
-  than jetty's FC430s; nothing about the result is a one-off.
+  template, copied under the new name; only three R440s are needed, none
+  as compute; the FC430s are reused; nothing about the result is a one-off.
 - Against: jetty stops being oac-dev-infra's GPU hypervisor and test bed,
   and andalusia as built today goes with it. Agree it with tzumainn and
   larsks first.
@@ -109,7 +110,7 @@ jetty: 5 nodes (3 masters, 2 GPU workers), FIPS on, reinstalled
 #### B2 layout
 
 ```
-compliant-dev-infra  compliant hub on R440s (3 control plane + 3 workers)
+compliant-dev-infra  compliant hub: 3 R440s control plane + jetty's 3 FC430s as workers
   runs the control planes of:
     GPU hypervisor  Agent hosted cluster on jetty's 2 SD665-N V3s (like oac-dev-workload1)
     andalusia       KubeVirt hosted cluster, GPU VMs on the hypervisor (like oac-dev-workload2)
@@ -118,12 +119,13 @@ compliant-dev-infra  compliant hub on R440s (3 control plane + 3 workers)
 | Role | Nodes |
 |---|---|
 | Hub control plane | 3 R440s |
-| Hub workers | 3 R440s. They run the hub's own components and both hosted control planes, with local disks for LVM Storage so hosted etcd is not on NFS |
+| Hub workers | jetty's 3 Dell FC430s (2 x Xeon E5-2640 v4, 40 threads, 126 GiB, 2 x 186 GB SSD). They run the hub's own components and both hosted control planes; each one's second SSD becomes the LVM Storage disk for hosted etcd |
 | GPU hypervisor workers | jetty's 2 Lenovo SD665-N V3s (2 x EPYC 9754, 1.5 TiB, 4 x H100 each), booted from the hub's discovery ISO as Agents |
 
-There are 8 R440s (MOC-R6PCC06U14 to U21). oac-infra's inventory has
-them commented out as future oac-prod-infra computes; confirm they are
-free before using six.
+There are 8 R440s (MOC-R6PCC06U14 to U21); whether three are free is
+being asked in `moc_2_0`. No R440 is used as compute. Taking the FC430s
+ends jetty, and with it andalusia as built today, before the hub is
+installed.
 
 #### B2 steps that differ from nist-dev-infra's build
 
@@ -134,7 +136,7 @@ Section 0 lists what the new name changes in each repo.
 - **oac-infra `hub-images/group_vars/compliant-dev-infra/vars.yml`:** a
   copy of nist-dev-infra's with the new cluster name, the R440s in place
   of the three FC830 masters (names, IPs, MACs, install disk serials, etcd
-  disk WWNs), and a `workers:` list, which the templates support (as
+  disk WWNs), and a `workers:` list for the FC430s, which the templates support (as
   oac-prod-infra uses). The base domain, networks, VIPs and `fips_enabled`
   stay.
 - **Set `diskencryption_mode` to none.** Disk encryption is a recorded

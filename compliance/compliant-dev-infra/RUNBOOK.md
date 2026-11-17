@@ -3,12 +3,13 @@
 *Runbook, draft (2026-11-17). Not yet run. Open items are marked
 **TODO**.*
 
-compliant-dev-infra is a new compliant hub on the R440s, built from the
+compliant-dev-infra is a new compliant hub, with R440s as its control
+plane and jetty's FC430s as its workers, built from the
 configuration and lessons of [nist-dev-infra](../nist-dev-infra/), the
 first FIPS test hub (2026-10-15 to 2026-10-28). nist-dev-infra's documents
 stay as they are: they are the record of that build and its results. This
 runbook follows them step for step, changing what the new name, the
-standard 3+3 layout and the R440s change. The reasons behind each step
+standard 3+3 layout and the new hardware change. The reasons behind each step
 are in [BUILD.md](../BUILD.md); what happened on nist-dev-infra, stage by
 stage, is in [nist-dev-infra/README.md](../nist-dev-infra/README.md).
 
@@ -83,8 +84,8 @@ the new name.
 
 **Still to decide before the PRs:**
 
-- **Hardware:** whether six R440s are free (2.1); tzumainn is asking in
-  `moc_2_0`.
+- **Hardware:** whether three R440s are free for the control plane (2.1);
+  tzumainn is asking in `moc_2_0`.
 - **The workload cluster's name:** section 4 still says
   `nist-dev-workload0`. Rename it the same way (for example
   `compliant-dev-workload0`) or keep it; either way it is a new hosted
@@ -137,43 +138,55 @@ Upstream: oac-apps `docs/infra-cluster-deployment.md`. Why each step:
 
 ### 2.1 Hardware and networks
 
-**The rebuild uses the standard layout, not the first build's compact
-one:** three R440s as control plane and three R440s as workers, as
-oac-prod-infra does with FC430s and FC830s (oac-apps
-`docs/infra-cluster-deployment.md`, "Infrastructure Configuration"). nist-dev-infra
-ran on three compact FC830s at 176 threads each, whose etcd
-crashed under FIPS TLS load (BUILD.md Part 1 step 1). There are eight
-R440s, `MOC-R6PCC06U14` to `U21`; oac-infra's inventory has them commented
-out as future oac-prod-infra computes. **Whether six are free is not
-known yet** (2026-11-17): tzumainn is asking in `moc_2_0`.
+**The standard layout, not nist-dev-infra's compact one:** three R440s as
+control plane, and jetty's three Dell FC430s (2 x Xeon E5-2640 v4, 40
+threads, 126 GiB, 2 x 186 GB SSD) as workers (oac-apps
+`docs/infra-cluster-deployment.md`, "Infrastructure Configuration").
+nist-dev-infra ran on three compact FC830s at 176 threads each, whose
+etcd crashed under FIPS TLS load (BUILD.md Part 1 step 1). No R440 is
+used as compute. There are eight R440s, `MOC-R6PCC06U14` to `U21`;
+**whether three are free is not known yet** (2026-11-17): tzumainn is
+asking in `moc_2_0`.
+
+**The FC430s are jetty's control plane today,** so jetty (and andalusia,
+whose VMs run on it) goes out of service when they are taken for this
+hub, before the hub is installed, not only when the GPU nodes move (#787).
+Each FC430's second SSD, jetty's etcd disk today, becomes the worker's LVM
+Storage disk for the hosted clusters' etcd: small, but enough for the two
+hosted clusters this hub carries.
 
 Each step below follows tzumainn's doc, with what nist-dev-infra already
 has and what is new for compliant-dev-infra.
 
 1. **Networks.** nist-dev-infra's cluster network (`10.20.18.0/23`), its
-   storage network and their firewall rules exist. **Attach the six R440s**
-   to both (`docs/hardware-inventory-and-configuration.md`, "Network
+   storage network and their firewall rules exist. **Attach the three
+   R440s and the three FC430s** to both; the FC430s move off jetty's
+   network (`docs/hardware-inventory-and-configuration.md`, "Network
    configuration"), each with its storage port untagged, with DHCP, unless
    they are already on them.
 
 2. **oac-infra `infra/inventory/00hosts.yaml`.** Add a
-   `compliant_dev_infra` group with three R440s as controllers and three as
-   workers (copy the shape of `oac_prod_infra`). Leave `nist_dev_infra`
-   as it is. Point both at `discovery-r440.iso` for now.
+   `compliant_dev_infra` group with the three R440s as controllers and the
+   three FC430s as workers (copy the shape of `oac_prod_infra`). Leave
+   `nist_dev_infra` as it is. Point the R440s at `discovery-r440.iso` and
+   the FC430s at `discovery.iso` for now.
 
 3. **Node details.** Boot each R440 from
    `http://10.2.0.82/boot/discovery-r440.iso`, not the generic
-   `discovery.iso` in tzumainn's doc, which does not work on R440s. Read
+   `discovery.iso` in tzumainn's doc, which does not work on R440s; boot
+   the FC430s from `discovery.iso`. Read
    `http://<node-ip-on-cluster-network>/index.txt`. Record each node's MAC
-   on the cluster network, the install disk's serial, and, for the three
-   control-plane nodes, a second disk's WWN for etcd.
+   on the cluster network and the install disk's serial; for the R440s, a
+   second disk's WWN for etcd; for the FC430s, the second SSD, for LVM
+   Storage.
 
    **Also note the thread count.** If the control-plane nodes have much
    more than about 40 threads, 2.3 applies.
 
-4. **Wipe them** if they have been used before (800-171 3.8.3). The
-   install rewrites the install disk; the etcd disk and any LVM Storage
-   disks on the workers need wiping too.
+4. **Wipe them** (800-171 3.8.3): the FC430s certainly, as jetty's
+   former control plane, and the R440s if they have been used before. The
+   install rewrites the install disk; the etcd disks and the FC430s'
+   second SSDs need wiping too.
 
 ### 2.2 Install
 
@@ -184,8 +197,8 @@ has and what is new for compliant-dev-infra.
      `install_drive_serial` and `etcd_drive_wwn` from 2.1. **Quote the
      WWNs:** YAML reads an unquoted `0x...` as a number, and Jinja writes
      it back in decimal.
-   - Add a `workers:` list (hostname, ip, mac, install_drive_serial for
-     each), as in `group_vars/examples/vars.yaml.example`.
+   - Add a `workers:` list for the three FC430s (hostname, ip, mac,
+     install_drive_serial), as in `group_vars/examples/vars.yaml.example`.
    - `diskencryption_mode: ""`, not `tpmv2`. The R440s' TPMs are faulty
      (MOC-issues #670), and on the FC830s `tpmv2` with no working TPM
      installed unencrypted without saying so. Disk encryption is a
