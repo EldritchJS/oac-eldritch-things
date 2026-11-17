@@ -108,6 +108,41 @@ which is the vendor's position that RHCOS carries the RHEL module.
 
 ---
 
+## Network switches (MOC2, NVIDIA Cumulus Linux)
+
+Not part of jetty, recorded here so all of the FIPS evidence is in one place.
+The MOC2 switches carry the clusters' traffic, and their management sessions
+(SSH, SNMPv3, the NVUE API) are in scope for 3.13.11. Hakan (hakasapl)
+enabled FIPS mode on them (MOC-issues #644).
+
+**FIPS mode is on and enforced. FIPS validation is not established: no CMVP
+certificate was found for Cumulus Linux.**
+
+Evidence from MOC2-R4PCC02-SW-TORS (10.80.2.91), Cumulus Linux 5.16.0 (build
+5.16.0.0087), posted on #644 on 2026-11-17:
+
+- `nv show system security fips`: mode enabled (operational, applied).
+- SSH offers only FIPS-approved algorithms (`nmap --script ssh2-enum-algos`):
+  - key exchange: diffie-hellman-group14/16/18 with SHA-2;
+  - host keys: rsa-sha2-256/512 and ecdsa-sha2-nistp256;
+  - ciphers: AES-CTR and AES-GCM;
+  - MACs: HMAC-SHA2.
+- curve25519, chacha20-poly1305, ssh-ed25519 and the SHA-1 MACs are gone. A
+  client asking for chacha20-poly1305 is refused before authentication.
+
+Certificate: none found (checked 2026-11-17).
+- NIST's CMVP database lists one active NVIDIA certificate, #5446, which is
+  for the H100 GPU.
+- NVIDIA's Cumulus 5.16 FIPS page says the switch "enforces FIPS 140-2 and
+  140-3 compliant cryptographic operations". It names no module and no
+  certificate.
+- Open: whether the module is on the CMVP Modules In Process list, and
+  which module Cumulus uses. Both are questions for NVIDIA (through Lenovo).
+- Only one switch was checked. The others are assumed to be configured the
+  same way.
+
+---
+
 ## What to put in the SSP
 
 1. FIPS mode is enforced on all nodes (evidence: T-01).
@@ -117,6 +152,10 @@ which is the vendor's position that RHCOS carries the RHEL module.
    (cite Red Hat's answer once received). Kernel Crypto API and GnuTLS for
    this release are not yet validated (GnuTLS in CMVP review).
 3. Re-reviewed at every platform upgrade (T-02 enforces the reminder).
+4. Network switches: FIPS mode is enforced and management sessions use only
+   FIPS-approved algorithms, but no validated module is established for
+   Cumulus Linux. The switches carry no CUI at rest. Record this as a POA&M
+   item until NVIDIA names a certificate.
 
 ## Re-review procedure (each upgrade)
 
