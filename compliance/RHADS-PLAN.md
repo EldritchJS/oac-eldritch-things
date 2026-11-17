@@ -92,88 +92,77 @@ jetty: 5 nodes (3 masters, 2 GPU workers), FIPS on, reinstalled
   a non-compliant hub, so it would have to be detached from it first.
   Quickest to a compliant cluster, but outside the hub design: a one-off
   to keep in step by hand.
-- **B2. jetty-infra: a compliant hub on jetty's hardware, laid out like
-  the other hubs.** jetty itself is the odd one out: a hive-installed
-  standalone spoke used directly as a hypervisor, without hosted control
-  planes. B2 does not keep that. The hardware is reinstalled as a
-  standard compliant hub, `jetty-infra`, with the oac-dev-infra /
-  oac-dev-workload1 / oac-dev-workload2 pattern below (agreed with
-  tzumainn), so nothing about it is a one-off.
-- For: hardware we have, already FIPS.
-- Against: jetty is oac-dev-infra's GPU hypervisor (andalusia's VMs, the
-  GPU NodePool work in #212/#219) and the GPU test bed; detaching it
-  breaks andalusia as it is built today. Either variant is a rebuild in
-  all but name; agree it with tzumainn and larsks first.
+- **B2. Rebuild nist-dev-infra on the R440s, with jetty's GPU nodes as
+  its hypervisor.** The layout oac-dev-infra uses, as tzumainn proposed.
+  jetty itself, a hive-installed spoke used directly as a hypervisor, is
+  not kept: its two GPU nodes join the rebuilt hub as a hosted cluster's
+  workers, and its three FC430s drop out.
 
-#### B2 hardware
+- For: nist-dev-infra's configuration is still in every repo and is reused
+  under its own name; the R440s are much better hardware than jetty's
+  FC430s; nothing about the result is a one-off.
+- Against: jetty stops being oac-dev-infra's GPU hypervisor and test bed,
+  and andalusia as built today goes with it. Agree it with tzumainn and
+  larsks first.
 
-What jetty has (checked 2026-11-17):
-
-| Nodes | Hardware |
-|---|---|
-| 3 masters | Dell FC430, 2 x Xeon E5-2640 v4, 40 threads, 126 GiB, 2 x 186 GB SSD, no TPM |
-| 2 workers | Lenovo SD665-N V3, 2 x EPYC 9754 (512 threads), 1.5 TiB, 4 x H100, 894 GB and 7 TB NVMe |
-
-The pattern to copy is oac-dev-infra's (checked 2026-11-17): the hub runs
-control planes only; oac-dev-workload1 is a hosted cluster whose two
-bare-metal Agent workers are the hypervisor; oac-dev-workload2 is a
-KubeVirt hosted cluster whose workers are VMs on workload1. For B2:
+#### B2 layout
 
 ```
-jetty-infra        compliant hub (3 control plane + 3 workers)
+nist-dev-infra     compliant hub on R440s (3 control plane + 3 workers)
   runs the control planes of:
-    jetty-workload1  hosted cluster, Agent workers = the 2 SD665-N V3s (like oac-dev-workload1)
-    andalusia        hosted cluster, KubeVirt workers = GPU VMs on jetty-workload1 (like oac-dev-workload2)
+    GPU hypervisor  Agent hosted cluster on jetty's 2 SD665-N V3s (like oac-dev-workload1)
+    andalusia       KubeVirt hosted cluster, GPU VMs on the hypervisor (like oac-dev-workload2)
 ```
 
-| Role | Count | Spec |
-|---|---|---|
-| Hub control plane | 3 | The FC430s: about 40 cores on 2 sockets is the shape BUILD.md asks for. Separate SSDs for the OS and etcd |
-| Hub workers | 3, new | CPU only, no GPUs. About 32 to 64 cores on 1 or 2 sockets, 256 GiB, 1 to 2 TB local NVMe for LVM Storage (the hosted clusters' etcd on local disk), a port on the storage VLAN. They run the hub's own components and both hosted control planes |
-| Hypervisor cluster workers | 2 | The SD665-N V3s, booted from the hub's discovery ISO as Agents, like workload1's nodes |
+| Role | Nodes |
+|---|---|
+| Hub control plane | 3 R440s |
+| Hub workers | 3 R440s. They run the hub's own components and both hosted control planes, with local disks for LVM Storage so hosted etcd is not on NFS |
+| GPU hypervisor workers | jetty's 2 Lenovo SD665-N V3s (2 x EPYC 9754, 1.5 TiB, 4 x H100 each), booted from the hub's discovery ISO as Agents |
 
-- **Not a hub without the three workers.** The standard layout is not
-  compact (BUILD.md Part 1 step 4), and with no hub workers the hosted
-  etcds would run beside the hub's etcd on the FC430s.
-- **Two compliant hosted clusters, not one.** The hypervisor cluster is
-  in scope too: andalusia's VMs and their disks run on it. It gets the
-  same node hardening through its NodePool as any hosted cluster.
-- **GPU passthrough on a hosted hypervisor cluster** is what oac-apps #212
-  and #219 set up on jetty as a spoke; on an Agent hosted cluster it is
-  untested. workload1 is a hypervisor without GPUs.
-- **Disk encryption: a recorded exception.** None of the nodes will use a
-  TPM, as on nist-dev-infra. Encrypt at install once nodes with working
-  TPMs are available (MOC-issues #672).
+There are 8 R440s (MOC-R6PCC06U14 to U21). oac-infra's inventory has
+them commented out as future oac-prod-infra computes; confirm they are
+free before using six.
+
+#### B2 steps that differ from the first build
+
+- **oac-infra `hub-images/group_vars/nist-dev-infra/vars.yml`:** replace
+  the three FC830 masters with the R440s (names, IPs, MACs, install disk
+  serials, etcd disk WWNs) and add three workers; check the hub-images
+  playbook handles workers. The rest of the file (domain, networks, VIPs,
+  `fips_enabled`) stays.
+- **Set `diskencryption_mode` to none.** Disk encryption is a recorded
+  exception, as on the first build (MOC-issues #672). The R440s' TPMs
+  are faulty (#670), and on the FC830s `tpmv2` with no working TPM
+  installed unencrypted without saying so; make the exception explicit.
+- **Network:** nist-dev-infra was on `10.20.18.0/23`. tzumainn believes
+  the R440s are on that VLAN; confirm with whoever cabled them.
+- **Core count:** if the control-plane R440s have much more than about 40
+  threads, boot them with `nr_cpus=40`
+  ([nist-dev-infra/nr-cpus-machineconfig.yaml](nist-dev-infra/nr-cpus-machineconfig.yaml)),
+  as BUILD.md Part 1 step 1 explains.
+- **The runbook** ([nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md))
+  was written for a compact hub: update it for 3+3, and add etcd
+  encryption from install.
+- **OIDC:** rerun `setup-oidc.sh` for the new install before the moc-aws
+  apply; the roles stay.
+- **Hosted clusters in oac-apps:** `hosted-clusters/nist-dev-infra/nist-dev-workload0`
+  (an Agent cluster) is the starting point for the GPU hypervisor: change
+  NIC names, node count and GPU settings. andalusia gets an entry under
+  `hosted-clusters/nist-dev-infra/`; its current one belongs to
+  oac-dev-infra.
+- **Two compliant hosted clusters, not one.** The hypervisor cluster is in
+  scope: andalusia's VMs and their disks run on it.
+- **GPU passthrough on an Agent hosted cluster is untested.** oac-apps
+  #212 and #219 set it up on jetty as a spoke; oac-dev-workload1 is a
+  hypervisor without GPUs.
 - **Wipe every node first** (800-171 3.8.3), including the SD665s' NVMe,
   which holds andalusia's VM disks today.
 - **andalusia is rebuilt, not moved:** a HostedCluster cannot change hubs.
-
-#### B2 configuration: nist-dev-infra's files as the template
-
-Everything nist-dev-infra needed is still in the repos (checked
-2026-11-17). Copy it under the new name rather than starting over
-(tzumainn's suggestion):
-
-| Repo | nist-dev-infra's | For jetty-infra |
-|---|---|---|
-| oac-apps | `hosted-clusters/nist-dev-infra/` (hub values, `compliance.yaml`, `nist-dev-workload0`), `values/nist-dev-infra/`, `apps/nist-dev-infra/` | Copy to `jetty-infra` paths. `nist-dev-workload0` (an Agent cluster) is the starting point for `jetty-workload1`: change NIC names, node count, GPU settings. andalusia gets a new entry here; its current one belongs to oac-dev-infra |
-| moc-aws | Hosted zone, OIDC and cert-manager roles, external-dns user, ESO prefixes | The same for jetty-infra; run `setup-oidc.sh` before the apply, as in the runbook |
-| moc-keycloak | nist-dev-infra client (#55), workload0 (#54) | Clients for jetty-infra, jetty-workload1 and andalusia |
-| moc-dns | `nist.int.massopen.cloud` delegation (#33) | A delegation for jetty-infra's zone |
-| oac-infra | `hub-images/group_vars/nist-dev-infra/`, inventory | New vars: the six hub nodes, 3 control plane plus 3 workers, not compact |
-
-The runbook ([nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md)) was
-written for a compact hub; it needs the 3+3 layout and etcd encryption
-from install. Once jetty-infra works, delete nist-dev-infra's files so
-there is one set of hub config.
-
-**The old jetty's records** do not collide with the new name, so they
-can go after the build, not before: `values/oac-dev-infra/jetty` in
-oac-apps, jetty's roles in moc-aws (#66), its records in moc-dns's
-`int.massopen.cloud` zone, and the ManagedCluster and hive
-ClusterDeployment on oac-dev-infra. `oac-infra/infra/jetty-net.tf` is
-the network and stays. The old jetty itself is gone when its nodes are
-wiped.
+- **jetty's records go afterwards:** `values/oac-dev-infra/jetty` in
+  oac-apps, jetty's roles in moc-aws (#66), its records in moc-dns's
+  `int.massopen.cloud` zone, and the ManagedCluster and hive
+  ClusterDeployment on oac-dev-infra.
 
 ### C. Wait
 
