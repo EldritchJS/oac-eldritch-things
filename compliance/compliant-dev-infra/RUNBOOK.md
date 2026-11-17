@@ -223,9 +223,14 @@ etcd crashed under FIPS TLS load (BUILD.md Part 1 step 1). No R440 is
 used as compute. There are eight R440s, `MOC-R6PCC06U14` to `U21`;
 this hub takes `MOC-R440-U14` to `U16` (tzumainn, 2026-11-17).
 
-**The workers are not assigned yet** (2026-11-17). jetty's FC430s go back
-to the pool rather than becoming this hub's workers. Each worker needs a
-second disk for LVM Storage (the hosted clusters' etcd, 2.11).
+**The workers are three FC430s** from the pool: `MOC-R4PAC10U31-S1D`,
+`-S3A` and `-S3B` (BMCs `10.2.13.164` to `.166`; tzumainn, 2026-11-17).
+jetty's own FC430s go back to the pool. Each worker's second disk is for
+LVM Storage (the hosted clusters' etcd, 2.11).
+
+**The R440s** (from their discovery ISO): two 447 GiB SSDs each, `sda`
+for the install and `sdb` for etcd, plus four 5.8 TiB NVMe left unused.
+The cluster network is on the NIC discovery calls `eth2`.
 
 Each step below follows tzumainn's doc, with what nist-dev-infra already
 has and what is new for compliant-dev-infra.
@@ -235,9 +240,9 @@ has and what is new for compliant-dev-infra.
    R440s and the three workers** to both
    (`docs/hardware-inventory-and-configuration.md`,
    "Network configuration"), each with its storage port untagged, with
-   DHCP, unless they are already on them. Pick six free addresses on
-   `10.20.18.0/23` (nist-dev-infra used `.20` to `.22`; the VIPs
-   are `10.20.19.11` and `.12`).
+   DHCP, unless they are already on them. Addresses on `10.20.18.0/23`:
+   the R440s `.23` to `.25` (tzumainn), the workers `.26` to `.28`
+   (proposed); the VIPs are `10.20.19.11` and `.12`.
 
 2. **oac-infra `infra/inventory/00hosts.yaml`.** Add a
    `compliant_dev_infra` group under `nist_clusters`, beside
@@ -266,9 +271,17 @@ has and what is new for compliant-dev-infra.
                   bmc_addr: 10.3.10.116
             compliant_dev_infra_compute:
               vars:
-                boot_image_url: "http://10.2.0.82/boot/discovery.iso"   # or the R440 one, by model
+                boot_image_url: "http://10.2.0.82/boot/discovery.iso"
               hosts:
-                # the three workers, once assigned
+                compliant-dev-infra-compute-0:
+                  node_name: MOC-R4PAC10U31-S1D
+                  bmc_addr: 10.2.13.164
+                compliant-dev-infra-compute-1:
+                  node_name: MOC-R4PAC10U31-S3A
+                  bmc_addr: 10.2.13.165
+                compliant-dev-infra-compute-2:
+                  node_name: MOC-R4PAC10U31-S3B
+                  bmc_addr: 10.2.13.166
    ```
 
    In the same PR: remove the commented `oac_prod_infra_compute` block
@@ -278,7 +291,7 @@ has and what is new for compliant-dev-infra.
 3. **Node details.** Boot each R440 from
    `http://10.2.0.82/boot/discovery-r440.iso`, not the generic
    `discovery.iso` in tzumainn's doc, which does not work on R440s; boot
-   the workers from the ISO for their model. Read
+   the FC430s from `discovery.iso`. Read
    `http://<node-ip-on-cluster-network>/index.txt`. Record each node's MAC
    on the cluster network and the install disk's serial; for the R440s, a
    second disk's WWN for etcd; for the workers, the second disk, for LVM
