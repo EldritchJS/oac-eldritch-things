@@ -15,7 +15,10 @@ stage, is in [nist-dev-infra/README.md](../nist-dev-infra/README.md).
 
 The steps after section 2.2 are nist-dev-infra's, with the hub's name
 changed; read each against the new layout as you go. Section 4 still
-names the workload cluster `nist-dev-workload0` (see section 0).
+builds the workload cluster as nist-dev-workload0 was built; here it is
+`compliant-dev-workload0`, the GPU hypervisor cluster on jetty's two
+SD665-N V3s (MOC-issues #787), so its node and GPU steps still need
+writing for that hardware.
 
 Times are UTC unless they say EDT.
 
@@ -78,6 +81,8 @@ the new name.
 
 **Decided:**
 
+- **Workload cluster:** `compliant-dev-workload0`, an Agent hosted cluster
+  on jetty's two GPU nodes, the hypervisor for andalusia (#787, #788).
 - **Base domain:** `nist.int.massopen.cloud`, kept (agreed with tzumainn,
   2026-11-17). The hub is `api.compliant-dev-infra.nist.int.massopen.cloud`,
   and the zones and their delegation (moc-aws #54, moc-dns #33) stay.
@@ -86,13 +91,14 @@ the new name.
 
 - **Hardware:** whether three R440s are free for the control plane (2.1);
   tzumainn is asking in `moc_2_0`.
-- **The workload cluster's name:** section 4 still says
-  `nist-dev-workload0`. Rename it the same way (for example
-  `compliant-dev-workload0`) or keep it; either way it is a new hosted
-  cluster entry under the new hub.
-- **The FlashBlade realm** can keep its name, `nist-dev-infra`: it is only
-  referenced from values files. Renaming it means a new realm and
-  certificate from the FlashBlade admins.
+- **FlashBlade realms:** each realm is named after its cluster
+  (everpure-moc `ansible/group_vars/all/realms.yaml`): `nist-dev-infra`
+  (10.9.7.10, VLAN 2317) and `nist-dev-workload0` (10.9.12.10, VLAN 2318),
+  with S3 endpoints built from the names. Either keep them, which breaks
+  that convention, or add `compliant-dev-infra` and
+  `compliant-dev-workload0` on the same VLANs and subnets: an everpure-moc
+  PR, new CA-marked realm certificates from the FlashBlade admins, and new
+  S3 endpoint records. Proposed: new realms.
 
 **Kept, as they are:**
 
@@ -518,7 +524,8 @@ oc get validatingadmissionpolicybinding compliant-hosted-clusters -o jsonpath='{
 
 The hub's own scans are not clean yet (2.9); the workload cluster does not
 depend on them. `auditWriters.clusters` in the hub's audit-logging values
-already lists `nist-dev-workload0` on the test branch.
+needs `compliant-dev-workload0` (nist-dev-infra's lists
+`nist-dev-workload0` on the test branch).
 
 ---
 
@@ -544,9 +551,9 @@ and label them:
 oc -n hardware-inventory get agents                        # both listed
 for a in $(oc -n hardware-inventory get agents -o name); do
   h=$(oc -n hardware-inventory get $a -o jsonpath='{.spec.hostname}')
-  case $h in moc-r4pac10u37-s1b|moc-r4pac10u37-s1d)
+  case $h in <the two SD665-N V3s' hostnames>)   # TODO: nist-dev-workload0 used two FC430s here
     oc -n hardware-inventory patch $a --type merge -p '{"spec":{"approved":true}}'
-    oc -n hardware-inventory label $a --overwrite massopen.cloud/cluster=nist-dev-workload0 openstack/resource-class=fc430
+    oc -n hardware-inventory label $a --overwrite massopen.cloud/cluster=compliant-dev-workload0 openstack/resource-class=<TODO: SD665 class>
   esac
 done
 ```
@@ -567,7 +574,7 @@ Merge it. The `hosted-clusters` ApplicationSet creates the HostedCluster
 and NodePool, and the hub's admission policy checks them. **Check:**
 
 ```
-oc -n clusters get hostedcluster nist-dev-workload0 -o jsonpath='{.spec.fips} {.spec.configuration.apiServer.audit.profile}{"\n"}'
+oc -n clusters get hostedcluster compliant-dev-workload0 -o jsonpath='{.spec.fips} {.spec.configuration.apiServer.audit.profile}{"\n"}'
 # true WriteRequestBodies
 oc -n clusters get hostedcluster,nodepool                 # Available, 2 of 2 nodes (about an hour)
 ```
@@ -580,7 +587,7 @@ out of repos and delete it when done.
 
 ```
 umask 077; W0=$(mktemp)
-oc -n clusters extract secret/nist-dev-workload0-admin-kubeconfig --keys=kubeconfig --to=- > $W0
+oc -n clusters extract secret/compliant-dev-workload0-admin-kubeconfig --keys=kubeconfig --to=- > $W0
 KUBECONFIG=$W0 oc get nodes                               # 2 Ready
 ```
 
@@ -591,8 +598,8 @@ KUBECONFIG=$W0 oc get nodes                               # 2 Ready
 
    ```
    cd ~/oat/oac-apps
-   KUBECONFIG=$W0 AWS_PROFILE=$CO CLUSTER_NAME=nist-dev-workload0 bootstrap/setup-oidc.sh -f -n
-   curl -s https://oac-clusters-oidc.s3.us-east-1.amazonaws.com/nist-dev-workload0/.well-known/openid-configuration | jq .issuer
+   KUBECONFIG=$W0 AWS_PROFILE=$CO CLUSTER_NAME=compliant-dev-workload0 bootstrap/setup-oidc.sh -f -n
+   curl -s https://oac-clusters-oidc.s3.us-east-1.amazonaws.com/compliant-dev-workload0/.well-known/openid-configuration | jq .issuer
    ```
 
 2. **SSO** needs nothing: the Keycloak client and secret are kept, and
@@ -619,7 +626,7 @@ hub, which deploys to every managed cluster. Apply in order:
 ```
 export KUBECONFIG=$HUB
 oc apply -f $RB/workload-stage-a.yaml        # Compliance Operator (hosted tailoring), FIO, the notice
-oc -n openshift-gitops get applications.argoproj.io | grep nist-dev-workload0-nist-test   # Synced, Healthy
+oc -n openshift-gitops get applications.argoproj.io | grep compliant-dev-workload0-nist-test   # Synced, Healthy
 ```
 
 **Stage B**, the ACS SecuredCluster. Its init bundle comes from the
@@ -628,7 +635,7 @@ hub's Central and goes to the cluster:
 ```
 oc apply -f $RB/workload-stage-b.yaml
 umask 077; B=$(mktemp)
-oc -n stackrox exec deploy/central -- roxctl central init-bundles generate nist-dev-workload0 \
+oc -n stackrox exec deploy/central -- roxctl central init-bundles generate compliant-dev-workload0 \
   --insecure-skip-tls-verify \
   --password "$(oc -n stackrox get secret central-htpasswd -o go-template='{{index .data "password" | base64decode}}')" \
   --output-secrets - > $B
@@ -642,7 +649,7 @@ The same nudge as 2.8 applies, with `KUBECONFIG=$W0`.
 
 ```
 oc apply -f $RB/workload-stage-c.yaml
-oc -n openshift-gitops get applications.argoproj.io | grep nist-dev-workload0   # all still Synced
+oc -n openshift-gitops get applications.argoproj.io | grep compliant-dev-workload0   # all still Synced
 ```
 
 If an app goes Unknown, a policy may have cut the cluster off from the

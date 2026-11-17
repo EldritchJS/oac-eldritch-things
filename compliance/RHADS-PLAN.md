@@ -112,7 +112,7 @@ jetty: 5 nodes (3 masters, 2 GPU workers), FIPS on, reinstalled
 ```
 compliant-dev-infra  compliant hub: 3 R440s control plane + jetty's 3 FC430s as workers
   runs the control planes of:
-    GPU hypervisor  Agent hosted cluster on jetty's 2 SD665-N V3s (like oac-dev-workload1)
+    compliant-dev-workload0  Agent hosted cluster (GPU hypervisor) on jetty's 2 SD665-N V3s (like oac-dev-workload1)
     andalusia       KubeVirt hosted cluster, GPU VMs on the hypervisor (like oac-dev-workload2)
 ```
 
