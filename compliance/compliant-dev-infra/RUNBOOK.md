@@ -75,12 +75,16 @@ Manager paths and the oac-apps paths, so nist-dev-infra's configuration is
 **copied under the new name**, not reused as it is. The steps below use
 the new name.
 
-**Decisions to confirm before the PRs:**
+**Decided:**
 
-- **Base domain:** keep `nist.int.massopen.cloud`, so the hub is
-  `api.compliant-dev-infra.nist.int.massopen.cloud` and the zones and their
-  delegation (moc-aws #54, moc-dns #33) stay. A new zone is possible but
-  adds a moc-aws and a moc-dns PR.
+- **Base domain:** `nist.int.massopen.cloud`, kept (agreed with tzumainn,
+  2026-11-17). The hub is `api.compliant-dev-infra.nist.int.massopen.cloud`,
+  and the zones and their delegation (moc-aws #54, moc-dns #33) stay.
+
+**Still to decide before the PRs:**
+
+- **Hardware:** whether six R440s are free (2.1); tzumainn is asking in
+  `moc_2_0`.
 - **The workload cluster's name:** section 4 still says
   `nist-dev-workload0`. Rename it the same way (for example
   `compliant-dev-workload0`) or keep it; either way it is a new hosted
@@ -103,7 +107,7 @@ stay where they are):
 | Repo or store | From | To |
 |---|---|---|
 | oac-apps | `hosted-clusters/nist-dev-infra/`, `values/nist-dev-infra/`, `apps/nist-dev-infra/`, the pure-cosi overlay | `compliant-dev-infra` paths, with the name and domain changed inside them |
-| oac-infra | `hub-images/group_vars/compliant-dev-infra/`, the `hub-images/inventory.yml` entry, `nist_dev_infra` in `infra/inventory/00hosts.yaml` | `compliant-dev-infra` (2.1, 2.2) |
+| oac-infra | `hub-images/group_vars/nist-dev-infra/`, the `hub-images/inventory.yml` entry, `nist_dev_infra` in `infra/inventory/00hosts.yaml` | `compliant-dev-infra` (2.1, 2.2) |
 | moc-aws | The OIDC provider and roles (`eso-*`, `cert-manager-*`), ESO secret prefixes, external-dns user, the `s3.nist-dev-infra` record | The same for `compliant-dev-infra`. The issuer URL changes with the name, so these are new, not reused |
 | moc-aws (DNS) | api, api-int, `*.apps` records for nist-dev-infra | The same names for `compliant-dev-infra`, same VIPs |
 | moc-keycloak | `nist-dev-infra` client (#55) | A `compliant-dev-infra` client; its redirect URI has the new domain |
@@ -140,8 +144,8 @@ oac-prod-infra does with FC430s and FC830s (oac-apps
 ran on three compact FC830s at 176 threads each, whose etcd
 crashed under FIPS TLS load (BUILD.md Part 1 step 1). There are eight
 R440s, `MOC-R6PCC06U14` to `U21`; oac-infra's inventory has them commented
-out as future oac-prod-infra computes, so **confirm they are free** before
-taking six.
+out as future oac-prod-infra computes. **Whether six are free is not
+known yet** (2026-11-17): tzumainn is asking in `moc_2_0`.
 
 Each step below follows tzumainn's doc, with what nist-dev-infra already
 has and what is new for compliant-dev-infra.
@@ -154,10 +158,12 @@ has and what is new for compliant-dev-infra.
 
 2. **oac-infra `infra/inventory/00hosts.yaml`.** Add a
    `compliant_dev_infra` group with three R440s as controllers and three as
-   workers (copy the shape of `oac_prod_infra`); remove `nist_dev_infra`. Point both at `discovery.iso` for now.
+   workers (copy the shape of `oac_prod_infra`). Leave `nist_dev_infra`
+   as it is. Point both at `discovery-r440.iso` for now.
 
 3. **Node details.** Boot each R440 from
-   `http://10.2.0.82/boot/discovery.iso` and read
+   `http://10.2.0.82/boot/discovery-r440.iso`, not the generic
+   `discovery.iso` in tzumainn's doc, which does not work on R440s. Read
    `http://<node-ip-on-cluster-network>/index.txt`. Record each node's MAC
    on the cluster network, the install disk's serial, and, for the three
    control-plane nodes, a second disk's WWN for etcd.
