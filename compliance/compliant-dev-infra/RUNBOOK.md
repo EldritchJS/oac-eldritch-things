@@ -4,7 +4,7 @@
 **TODO**.*
 
 compliant-dev-infra is a new compliant hub, with R440s as its control
-plane and jetty's FC430s as its workers, built from the
+plane and three worker nodes still to be assigned, built from the
 configuration and lessons of [nist-dev-infra](../nist-dev-infra/), the
 first FIPS test hub (2026-10-15 to 2026-10-28). nist-dev-infra's documents
 stay as they are: they are the record of that build and its results. This
@@ -91,8 +91,10 @@ the new name.
   `10.3.10.114` to `.116`) for the control plane (tzumainn, 2026-11-17).
   oac-infra's inventory had them commented out as future oac-prod-infra
   computes.
-- **Standard hub, jetty and andalusia down first:** agreed with tzumainn,
-  2026-11-17.
+- **Standard hub,** installed with all six nodes at once; jetty and
+  andalusia go once its ISO is made: agreed with tzumainn, 2026-11-17.
+- **Workers:** three nodes, not yet assigned. jetty's FC430s go back to
+  the pool.
 - **FlashBlade realms:** each realm is named after its cluster
   (everpure-moc `ansible/group_vars/all/realms.yaml`): `nist-dev-infra`
   (10.9.7.10, VLAN 2317) and `nist-dev-workload0` (10.9.12.10, VLAN 2318),
@@ -132,9 +134,11 @@ FlashBlade, Keycloak) before the PRs.
 
 ## 1. Before the install: andalusia and jetty go
 
-jetty and andalusia are only in use by this work, so they go first and
-the hub is installed with all six nodes at once (decided 2026-11-17).
-From here until andalusia is rebuilt on this hub (#788) there is no GPU
+**When:** after compliant-dev-infra's ISO is made (2.2 step 2; jetty is
+the FIPS node it is made on) and before section 4, which needs jetty's
+GPU nodes. The hub's own install does not wait for this.
+
+jetty and andalusia are only in use by this work. From here until andalusia is rebuilt on this hub (#788) there is no GPU
 VM cluster.
 
 **What is on them** (checked 2026-11-17): every PVC on jetty and
@@ -180,8 +184,9 @@ FlashBlade volumes need deleting, or they outlive jetty.
 
    andalusia's volumes (`clusters-andalusia`) go with step 1.
 
-4. **Power off jetty's five nodes.** The FC430s go on to 2.1, the SD665s
-   to section 4. Wipe all five (800-171 3.8.3), every disk.
+4. **Power off jetty's five nodes** and wipe them (800-171 3.8.3), every
+   disk. The three FC430s go back to the pool; the SD665s go on to
+   section 4.
 
 5. **Afterwards, by PR:** jetty's roles in moc-aws (#66) and its records in
    moc-dns's `int.massopen.cloud` zone. `oac-infra/infra/jetty-net.tf` is
@@ -204,31 +209,31 @@ under FIPS is also the one combination that failed: nist-dev-infra's etcd
 crashed under TLS load (BUILD.md Part 1 step 1), while oac-dev-infra runs
 compact on the same FC830s without FIPS.
 
-Order: jetty and andalusia go (section 1), the hub is built on the R440s
-and FC430s (2.1 to 2.11), then compliant-dev-workload0 on jetty's GPU
-nodes (3, 4; MOC-issues #787) and andalusia on it (#788).
+Order: the hub is built on the R440s and three workers (2.1 to 2.11);
+jetty and andalusia go once the hub's ISO is made (section 1); then
+compliant-dev-workload0 on jetty's GPU nodes (3, 4; MOC-issues #787) and
+andalusia on it (#788).
 
 ### 2.1 Hardware and networks
 
-Three R440s as control plane; jetty's three Dell FC430s (2 x Xeon E5-2640 v4, 40
-threads, 126 GiB, 2 x 186 GB SSD) as workers (oac-apps
+Three R440s as control plane and three workers (oac-apps
 `docs/infra-cluster-deployment.md`, "Infrastructure Configuration").
 nist-dev-infra ran on three compact FC830s at 176 threads each, whose
 etcd crashed under FIPS TLS load (BUILD.md Part 1 step 1). No R440 is
 used as compute. There are eight R440s, `MOC-R6PCC06U14` to `U21`;
 this hub takes `MOC-R440-U14` to `U16` (tzumainn, 2026-11-17).
 
-The FC430s were jetty's control plane (section 1). Each FC430's second SSD, jetty's etcd disk today,
-becomes the worker's LVM Storage disk for the hosted clusters' etcd:
-small, but enough for the two hosted clusters this hub carries.
+**The workers are not assigned yet** (2026-11-17). jetty's FC430s go back
+to the pool rather than becoming this hub's workers. Each worker needs a
+second disk for LVM Storage (the hosted clusters' etcd, 2.11).
 
 Each step below follows tzumainn's doc, with what nist-dev-infra already
 has and what is new for compliant-dev-infra.
 
 1. **Networks.** nist-dev-infra's cluster network (`10.20.18.0/23`), its
    storage network and their firewall rules exist. **Attach the three
-   R440s and the three FC430s** to both; the FC430s move off jetty's
-   network (`docs/hardware-inventory-and-configuration.md`,
+   R440s and the three workers** to both
+   (`docs/hardware-inventory-and-configuration.md`,
    "Network configuration"), each with its storage port untagged, with
    DHCP, unless they are already on them. Pick six free addresses on
    `10.20.18.0/23` (nist-dev-infra used `.20` to `.22`; the VIPs
@@ -237,7 +242,7 @@ has and what is new for compliant-dev-infra.
 2. **oac-infra `infra/inventory/00hosts.yaml`.** Add a
    `compliant_dev_infra` group under `nist_clusters`, beside
    `nist_dev_infra` (leave that as it is), with the R440s as controllers
-   and the FC430s as workers. iDRAC, like nist-dev-infra:
+   and the workers. iDRAC, like nist-dev-infra:
 
    ```yaml
         compliant_dev_infra:
@@ -261,39 +266,30 @@ has and what is new for compliant-dev-infra.
                   bmc_addr: 10.3.10.116
             compliant_dev_infra_compute:
               vars:
-                boot_image_url: "http://10.2.0.82/boot/discovery.iso"
+                boot_image_url: "http://10.2.0.82/boot/discovery.iso"   # or the R440 one, by model
               hosts:
-                compliant-dev-infra-compute-0:
-                  node_name: MOC-R4PAC08U35-S3D
-                  bmc_addr: 10.2.14.188
-                compliant-dev-infra-compute-1:
-                  node_name: MOC-R4PAC08U31-S1A
-                  bmc_addr: 10.2.14.161
-                compliant-dev-infra-compute-2:
-                  node_name: MOC-R4PAC08U31-S1B
-                  bmc_addr: 10.2.14.162
+                # the three workers, once assigned
    ```
 
-   In the same PR: remove jetty's `jetty_controller` hosts (the FC430s,
-   above) and the commented `oac_prod_infra_compute` block that names the
-   same three R440 BMCs, so no node is claimed twice. Keep `jetty_gpu`
-   until the SD665s move (section 4).
+   In the same PR: remove the commented `oac_prod_infra_compute` block
+   that names the same three R440 BMCs, so no node is claimed twice.
+   jetty's entry stays until jetty goes (section 1).
 
 3. **Node details.** Boot each R440 from
    `http://10.2.0.82/boot/discovery-r440.iso`, not the generic
    `discovery.iso` in tzumainn's doc, which does not work on R440s; boot
-   the FC430s from `discovery.iso`. Read
+   the workers from the ISO for their model. Read
    `http://<node-ip-on-cluster-network>/index.txt`. Record each node's MAC
    on the cluster network and the install disk's serial; for the R440s, a
-   second disk's WWN for etcd; for the FC430s, the second SSD, for LVM
+   second disk's WWN for etcd; for the workers, the second disk, for LVM
    Storage (2.11).
 
    **Also note the thread count.** If the control-plane nodes have much
    more than about 40 threads, 2.3 applies.
 
-4. **Wipe the R440s** if they have been used before (800-171 3.8.3); the
-   FC430s were wiped in section 1. The install rewrites the install disk;
-   the etcd disks need wiping too.
+4. **Wipe all six** if they have been used before (800-171 3.8.3). The
+   install rewrites the install disk; the etcd and LVM Storage disks need
+   wiping too.
 
 ### 2.2 Install
 
@@ -304,7 +300,7 @@ has and what is new for compliant-dev-infra.
      `install_drive_serial` and `etcd_drive_wwn` from 2.1. **Quote the
      WWNs:** YAML reads an unquoted `0x...` as a number, and Jinja writes
      it back in decimal.
-   - Add a `workers:` list for the three FC430s (hostname, ip, mac,
+   - Add a `workers:` list for the three workers (hostname, ip, mac,
      install_drive_serial), as in `group_vars/examples/vars.yaml.example`
      and oac-prod-infra's vars.
    - `diskencryption_mode: ""`, not `tpmv2`. The R440s' TPMs are faulty
@@ -326,9 +322,12 @@ has and what is new for compliant-dev-infra.
 
 2. **Make the boot media, on a FIPS-enabled RHEL host:**
    `openshift-install-fips` will not make media for a FIPS cluster on a
-   host without FIPS mode. jetty's nodes have been that host for
-   tzumainn's hub images, so **make this ISO before jetty goes**
-   (section 1), or have a replacement FIPS host ready.
+   host without FIPS mode. Until there is a FIPS bastion (tzumainn is
+   opening an issue), do as tzumainn does: run the playbook on the bastion,
+   let its last step (the `openshift-install-fips` image creation) fail,
+   copy `output/compliant-dev-infra/work` to a FIPS node, run that command
+   there, and copy the result back. jetty's nodes have been that FIPS
+   node, so **make this ISO before jetty goes** (section 1).
 
    ```
    cd ~/oat/oac-infra/hub-images
@@ -619,10 +618,10 @@ this hub (2026-10-19 and 20) all were.
 
 ---
 
-### 2.11 LVM Storage on the FC430s
+### 2.11 LVM Storage on the workers
 
 For the hosted clusters' etcd (MOC-issues #772): point the LVMCluster's
-device selector at the FC430s' second SSDs, by path, on workers only.
+device selector at the workers' second disks, by path, on workers only.
 
 ---
 
