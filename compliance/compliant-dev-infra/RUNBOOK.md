@@ -87,10 +87,8 @@ the new name.
   2026-11-17). The hub is `api.compliant-dev-infra.nist.int.massopen.cloud`,
   and the zones and their delegation (moc-aws #54, moc-dns #33) stay.
 
-**Still to decide before the PRs:**
-
-- **Hardware:** whether three R440s are free for the control plane (2.1);
-  tzumainn is asking in `moc_2_0`.
+- **Hardware:** three R440s for the control plane are available
+  (tzumainn, 2026-11-17; which three to follow).
 - **FlashBlade realms:** each realm is named after its cluster
   (everpure-moc `ansible/group_vars/all/realms.yaml`): `nist-dev-infra`
   (10.9.7.10, VLAN 2317) and `nist-dev-workload0` (10.9.12.10, VLAN 2318),
@@ -151,8 +149,8 @@ threads, 126 GiB, 2 x 186 GB SSD) as workers (oac-apps
 nist-dev-infra ran on three compact FC830s at 176 threads each, whose
 etcd crashed under FIPS TLS load (BUILD.md Part 1 step 1). No R440 is
 used as compute. There are eight R440s, `MOC-R6PCC06U14` to `U21`;
-**whether three are free is not known yet** (2026-11-17): tzumainn is
-asking in `moc_2_0`.
+three are available for this hub (tzumainn, 2026-11-17); which three
+is to follow.
 
 **The FC430s are jetty's control plane today,** so jetty (and andalusia,
 whose VMs run on it) goes out of service when they are taken for this

@@ -122,8 +122,8 @@ compliant-dev-infra  compliant hub: 3 R440s control plane + jetty's 3 FC430s as 
 | Hub workers | jetty's 3 Dell FC430s (2 x Xeon E5-2640 v4, 40 threads, 126 GiB, 2 x 186 GB SSD). They run the hub's own components and both hosted control planes; each one's second SSD becomes the LVM Storage disk for hosted etcd |
 | GPU hypervisor workers | jetty's 2 Lenovo SD665-N V3s (2 x EPYC 9754, 1.5 TiB, 4 x H100 each), booted from the hub's discovery ISO as Agents |
 
-There are 8 R440s (MOC-R6PCC06U14 to U21); whether three are free is
-being asked in `moc_2_0`. No R440 is used as compute. Taking the FC430s
+Three of the 8 R440s (MOC-R6PCC06U14 to U21) are available for this
+hub (tzumainn, 2026-11-17). No R440 is used as compute. Taking the FC430s
 ends jetty, and with it andalusia as built today, before the hub is
 installed.
 
