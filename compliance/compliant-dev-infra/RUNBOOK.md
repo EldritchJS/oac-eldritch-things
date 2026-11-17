@@ -98,7 +98,7 @@ the new name.
   that convention, or add `compliant-dev-infra` and
   `compliant-dev-workload0` on the same VLANs and subnets: an everpure-moc
   PR, new CA-marked realm certificates from the FlashBlade admins, and new
-  S3 endpoint records. Proposed: new realms.
+  S3 endpoint records. Going with new realms: MOC-issues #789 (naved001).
 
 **Kept, as they are:**
 
