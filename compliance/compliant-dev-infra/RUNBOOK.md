@@ -87,8 +87,12 @@ the new name.
   2026-11-17). The hub is `api.compliant-dev-infra.nist.int.massopen.cloud`,
   and the zones and their delegation (moc-aws #54, moc-dns #33) stay.
 
-- **Hardware:** three R440s for the control plane are available
-  (tzumainn, 2026-11-17; which three to follow).
+- **Hardware:** R440s `MOC-R440-U14`, `U15` and `U16` (BMCs
+  `10.3.10.114` to `.116`) for the control plane (tzumainn, 2026-11-17).
+  oac-infra's inventory had them commented out as future oac-prod-infra
+  computes.
+- **Standard hub, jetty and andalusia down first:** agreed with tzumainn,
+  2026-11-17.
 - **FlashBlade realms:** each realm is named after its cluster
   (everpure-moc `ansible/group_vars/all/realms.yaml`): `nist-dev-infra`
   (10.9.7.10, VLAN 2317) and `nist-dev-workload0` (10.9.12.10, VLAN 2318),
@@ -191,8 +195,7 @@ threads, 126 GiB, 2 x 186 GB SSD) as workers (oac-apps
 nist-dev-infra ran on three compact FC830s at 176 threads each, whose
 etcd crashed under FIPS TLS load (BUILD.md Part 1 step 1). No R440 is
 used as compute. There are eight R440s, `MOC-R6PCC06U14` to `U21`;
-three are available for this hub (tzumainn, 2026-11-17); which three
-is to follow.
+this hub takes `MOC-R440-U14` to `U16` (tzumainn, 2026-11-17).
 
 The FC430s were jetty's control plane (section 1). Each FC430's second SSD, jetty's etcd disk today,
 becomes the worker's LVM Storage disk for the hosted clusters' etcd:
@@ -211,10 +214,49 @@ has and what is new for compliant-dev-infra.
    are `10.20.19.11` and `.12`).
 
 2. **oac-infra `infra/inventory/00hosts.yaml`.** Add a
-   `compliant_dev_infra` group with the three R440s as controllers and the
-   three FC430s as workers (copy the shape of `oac_prod_infra`). Leave
-   `nist_dev_infra` as it is. Point the R440s at `discovery-r440.iso` and
-   the FC430s at `discovery.iso` for now.
+   `compliant_dev_infra` group under `nist_clusters`, beside
+   `nist_dev_infra` (leave that as it is), with the R440s as controllers
+   and the FC430s as workers. iDRAC, like nist-dev-infra:
+
+   ```yaml
+        compliant_dev_infra:
+          vars:
+            cluster: compliant-dev-infra
+            bm_management: bmc
+            bmc_type: idrac
+          children:
+            compliant_dev_infra_controller:
+              vars:
+                boot_image_url: "http://10.2.0.82/boot/discovery-r440.iso"
+              hosts:
+                compliant-dev-infra-control-0:
+                  node_name: MOC-R440-U14
+                  bmc_addr: 10.3.10.114
+                compliant-dev-infra-control-1:
+                  node_name: MOC-R440-U15
+                  bmc_addr: 10.3.10.115
+                compliant-dev-infra-control-2:
+                  node_name: MOC-R440-U16
+                  bmc_addr: 10.3.10.116
+            compliant_dev_infra_compute:
+              vars:
+                boot_image_url: "http://10.2.0.82/boot/discovery.iso"
+              hosts:
+                compliant-dev-infra-compute-0:
+                  node_name: MOC-R4PAC08U35-S3D
+                  bmc_addr: 10.2.14.188
+                compliant-dev-infra-compute-1:
+                  node_name: MOC-R4PAC08U31-S1A
+                  bmc_addr: 10.2.14.161
+                compliant-dev-infra-compute-2:
+                  node_name: MOC-R4PAC08U31-S1B
+                  bmc_addr: 10.2.14.162
+   ```
+
+   In the same PR: remove jetty's `jetty_controller` hosts (the FC430s,
+   above) and the commented `oac_prod_infra_compute` block that names the
+   same three R440 BMCs, so no node is claimed twice. Keep `jetty_gpu`
+   until the SD665s move (section 4).
 
 3. **Node details.** Boot each R440 from
    `http://10.2.0.82/boot/discovery-r440.iso`, not the generic
