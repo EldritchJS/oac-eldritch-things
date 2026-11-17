@@ -4,7 +4,7 @@
 **TODO**.*
 
 compliant-dev-infra is a new compliant hub, with R440s as its control
-plane and three worker nodes still to be assigned, built from the
+plane and three pool FC430s as its workers, built from the
 configuration and lessons of [nist-dev-infra](../nist-dev-infra/), the
 first FIPS test hub (2026-10-15 to 2026-10-28). nist-dev-infra's documents
 stay as they are: they are the record of that build and its results. This
@@ -94,8 +94,10 @@ the new name.
   computes.
 - **Standard hub,** installed with all six nodes at once; jetty and
   andalusia go once its ISO is made: agreed with tzumainn, 2026-11-17.
-- **Workers:** three nodes, not yet assigned. jetty's FC430s go back to
-  the pool.
+- **Workers:** three pool FC430s, `MOC-R4PAC10U31-S1D`, `-S3A` and
+  `-S3B` (BMCs `10.2.13.164` to `.166`); jetty's FC430s go back to the
+  pool. Hosted etcd goes on LVM Storage on their second disks (2.11), not
+  on the FlashBlade.
 - **FlashBlade realms:** each realm is named after its cluster
   (everpure-moc `ansible/group_vars/all/realms.yaml`): `nist-dev-infra`
   (10.9.7.10, VLAN 2317) and `nist-dev-workload0` (10.9.12.10, VLAN 2318),
@@ -107,8 +109,6 @@ the new name.
 
 **Kept, as they are:**
 
-- The FlashBlade realm `nist-dev-infra`, its CA-marked certificate
-  (`nist-dev-infra::realm-cert`) and its export policies.
 - Route 53 zones `nist.int.massopen.cloud` and `hcp.nist.int.massopen.cloud`.
 - The `moc-aws-cluster-operators` memberships.
 - The cluster and storage networks and their firewall rules.
@@ -120,16 +120,29 @@ stay where they are):
 |---|---|---|
 | oac-apps | `hosted-clusters/nist-dev-infra/`, `values/nist-dev-infra/`, `apps/nist-dev-infra/`, the pure-cosi overlay | `compliant-dev-infra` paths, with the name and domain changed inside them |
 | oac-infra | `hub-images/group_vars/nist-dev-infra/`, the `hub-images/inventory.yml` entry, `nist_dev_infra` in `infra/inventory/00hosts.yaml` | `compliant-dev-infra` (2.1, 2.2) |
-| moc-aws | The OIDC provider and roles (`eso-*`, `cert-manager-*`), ESO secret prefixes, external-dns user, the `s3.nist-dev-infra` record | The same for `compliant-dev-infra`. The issuer URL changes with the name, so these are new, not reused |
-| moc-aws (DNS) | api, api-int, `*.apps` records for nist-dev-infra | The same names for `compliant-dev-infra`, same VIPs |
-| moc-keycloak | `nist-dev-infra` client (#55) | A `compliant-dev-infra` client; its redirect URI has the new domain |
+| moc-aws | The OIDC provider and roles (`eso-*`, `cert-manager-*`), ESO secret prefixes, external-dns user, the `s3.nist-dev-infra` record | The same for `compliant-dev-infra` and `compliant-dev-workload0`, with a new external-dns key on the existing user. The issuer URL changes with the name, so these are new, not reused |
+| moc-aws (DNS) | api, api-int, `*.apps` records for nist-dev-infra | The same names for `compliant-dev-infra`, same VIPs; nist-dev-infra's are removed. The `*.hcp` and `*.hcp-int` wildcards are shared |
+| moc-keycloak | `nist-dev-infra` client (#55) | `compliant-dev-infra` and `compliant-dev-workload0` clients; their redirect URIs have the new domain |
 | Secrets Manager | `cluster/nist-dev-infra/{sshkey,portworx,pure-cosi,nfs-tls-ca,keycloak-oidc}` | `cluster/compliant-dev-infra/...`; `keycloak-oidc` gets the new client's secret |
 
 **Rebuilt:** the cluster, its kubeadmin kubeconfig, its OIDC signing keys,
 the ACS init bundles, and the COSI buckets for Loki and ACM observability.
 
-**TODO:** confirm the kept list with the owners of each (moc-aws,
-FlashBlade, Keycloak) before the PRs.
+**Where each piece is** (2026-11-17):
+
+| Piece | Where | State |
+|---|---|---|
+| Inventory and hardware doc | oac-infra [#32](https://github.com/CCI-MOC/oac-infra/pull/32) | Merged |
+| Worker switch ports (VLANs 219, 2317) | ansible-switches [#148](https://github.com/CCI-MOC/ansible-switches/pull/148) | Merged; **the playbook run is pending** (naved001 or hakasapl) |
+| DNS, OIDC providers and roles, external-dns key | moc-aws [#77](https://github.com/CCI-MOC/moc-aws/pull/77) | In review (2 approvals) |
+| Cleanup of nist-dev-infra's OIDC, IAM and cert-manager entries | moc-aws, branch `nist-dev-infra-cleanup` | After #77 |
+| Keycloak clients | moc-keycloak [#68](https://github.com/CCI-MOC/moc-keycloak/pull/68) | Merged; both `keycloak-oidc` secrets are in Secrets Manager |
+| Hub values, compliant-dev-workload0 | oac-apps [#248](https://github.com/CCI-MOC/oac-apps/pull/248) | Draft, until the workers' LVM disk path is confirmed (2.11) |
+| Hub vars | oac-infra, branch `compliant-dev-infra-hub-vars` | Waits for the workers' discovery data (2.1) |
+| FIPS build host | oac-infra [#33](https://github.com/CCI-MOC/oac-infra/pull/33), MOC-issues #792 | Draft; host hardware from hakasapl |
+| SD665 switch ports to VLANs 220 and 2318 | ansible-switches, branch `compliant-dev-workload0-ports` | Open the PR at the teardown (1, step 4); it cuts jetty off |
+| FlashBlade realms | MOC-issues #789 (naved001) | Open; `portworx`, `pure-cosi` and `nfs-tls-ca` secrets wait for it |
+| `cluster/compliant-dev-infra/sshkey`, `hub-images/pull-secret` | Secrets Manager | Stored |
 
 ---
 
@@ -187,7 +200,10 @@ FlashBlade volumes need deleting, or they outlive jetty.
 
 4. **Power off jetty's five nodes** and wipe them (800-171 3.8.3), every
    disk. The three FC430s go back to the pool; the SD665s go on to
-   section 4.
+   section 4. Move the SD665s' switch ports from jetty's VLANs (218, 2316)
+   to workload0's (220, 2318): open the PR from the ansible-switches branch
+   `compliant-dev-workload0-ports` now, and ask naved001 or hakasapl to run
+   the playbook.
 
 5. **Afterwards, by PR:** jetty's roles in moc-aws (#66) and its records in
    moc-dns's `int.massopen.cloud` zone. `oac-infra/infra/jetty-net.tf` is
@@ -331,16 +347,19 @@ has and what is new for compliant-dev-infra.
      or RSA (FIPS rejects Ed25519).
 
    **Before the install** (section 0): `cluster/compliant-dev-infra/sshkey`
-   in Secrets Manager (copy nist-dev-infra's); the api, api-int and
-   `*.apps` records for `compliant-dev-infra` in `nist.int.massopen.cloud`,
-   on the same VIPs. Put the SSH key in `credentials/compliant-dev-infra/` and
-   the pull secret in `group_vars/compliant-dev-infra/secrets.yml` (neither in
-   git).
+   and `hub-images/pull-secret` in Secrets Manager (both stored
+   2026-11-17); the api, api-int and `*.apps` records for
+   `compliant-dev-infra` in `nist.int.massopen.cloud`, on the same VIPs
+   (moc-aws #77). For a manual build, put the SSH key in
+   `credentials/compliant-dev-infra/` and the pull secret in
+   `group_vars/compliant-dev-infra/secrets.yml` (neither in git); the FIPS
+   build host fetches both from Secrets Manager itself.
 
 2. **Make the boot media, on a FIPS-enabled RHEL host:**
    `openshift-install-fips` will not make media for a FIPS cluster on a
-   host without FIPS mode. Until there is a FIPS bastion (tzumainn is
-   opening an issue), do as tzumainn does: run the playbook on the bastion,
+   host without FIPS mode. The FIPS build host (oac-infra #33, MOC-issues
+   #792) does this in one command, `hub-images/build.sh compliant-dev-infra`,
+   once it exists. Until then, do as tzumainn does: run the playbook on the bastion,
    let its last step (the `openshift-install-fips` image creation) fail,
    copy `output/compliant-dev-infra/work` to a FIPS node, run that command
    there, and copy the result back. jetty's nodes have been that FIPS
@@ -647,6 +666,12 @@ this hub (2026-10-19 and 20) all were.
 
 For the hosted clusters' etcd (MOC-issues #772): point the LVMCluster's
 device selector at the workers' second disks, by path, on workers only.
+In oac-apps #248, `values/compliant-dev-infra/local-cluster/lvmcluster.yaml`
+has `/dev/disk/by-path/pci-0000:00:11.4-ata-2`, the second SSD on jetty's
+FC430s. **TODO:** confirm it on the pool FC430s from their discovery boot,
+then take #248 out of draft. `node-labels` marks every worker for it, and
+the hosted-cluster chart's default `lvms-vg0` class is used, so the
+hosted-clusters values set no etcd storage class.
 
 ---
 
@@ -673,8 +698,9 @@ Upstream: oac-apps `docs/workload-cluster-deployment.md`. Why each step:
 
 ### 4.1 Workers
 
-Two FC430s, `moc-r4pac10u37-s1b` and `-s1d`, booted from **this hub's**
-discovery ISO:
+jetty's two Lenovo SD665-N V3s, `MOC-R4PCC02U15` and `U16` (4 x H100
+each), wiped and on workload0's VLANs (section 1, step 4), booted from
+**this hub's** discovery ISO:
 
 ```
 export KUBECONFIG=$HUB
@@ -688,27 +714,25 @@ and label them:
 oc -n hardware-inventory get agents                        # both listed
 for a in $(oc -n hardware-inventory get agents -o name); do
   h=$(oc -n hardware-inventory get $a -o jsonpath='{.spec.hostname}')
-  case $h in <the two SD665-N V3s' hostnames>)   # TODO: nist-dev-workload0 used two FC430s here
+  case $h in <the two SD665s' hostnames>)   # TODO: read them from the agents
     oc -n hardware-inventory patch $a --type merge -p '{"spec":{"approved":true}}'
-    oc -n hardware-inventory label $a --overwrite massopen.cloud/cluster=compliant-dev-workload0 openstack/resource-class=<TODO: SD665 class>
+    oc -n hardware-inventory label $a --overwrite massopen.cloud/cluster=compliant-dev-workload0 openstack/resource-class=lenovo-sd665nv3-h100
   esac
 done
 ```
 
-The storage NIC's `never-default` setting is already in the NodePool
-values (oac-apps [#166](https://github.com/CCI-MOC/oac-apps/pull/166)):
-without it a reboot can put `br-ex` on the wrong NIC.
+The storage NIC's `never-default` setting (`enp163s0np0`) is in the
+`hypervisor` NodePool's values (oac-apps #248), as for nist-dev-workload0
+([#166](https://github.com/CCI-MOC/oac-apps/pull/166)): without it a
+reboot can put `br-ex` on the wrong NIC. Portworx and GPU passthrough
+are follow-ups, listed at the end of those values.
 
 ### 4.2 The cluster
 
-Put the cluster back by reverting the teardown PR (1.1) in a new PR:
-
-```
-git revert <merge commit from 1.1>
-```
-
-Merge it. The `hosted-clusters` ApplicationSet creates the HostedCluster
-and NodePool, and the hub's admission policy checks them. **Check:**
+The HostedCluster comes from oac-apps #248
+(`hosted-clusters/compliant-dev-infra/compliant-dev-workload0/values.yaml`).
+The `hosted-clusters` ApplicationSet creates the HostedCluster and
+NodePool, and the hub's admission policy checks them. **Check:**
 
 ```
 oc -n clusters get hostedcluster compliant-dev-workload0 -o jsonpath='{.spec.fips} {.spec.configuration.apiServer.audit.profile}{"\n"}'
@@ -739,7 +763,8 @@ KUBECONFIG=$W0 oc get nodes                               # 2 Ready
    curl -s https://oac-clusters-oidc.s3.us-east-1.amazonaws.com/compliant-dev-workload0/.well-known/openid-configuration | jq .issuer
    ```
 
-2. **SSO** needs nothing: the Keycloak client and secret are kept, and
+2. **SSO** needs nothing: the Keycloak client and its secret come from
+   moc-keycloak #68, and
    `oauth.mocsso.enabled: true` is in the values. HyperShift removes
    kubeadmin once oauth-openshift is up. The OAuth route is internal: log
    in over the VPN.
@@ -874,7 +899,7 @@ Every fix goes through a PR, as during the build:
 - **TODO:** the stages come from the fork's `compliant-dev-infra-test` branch.
   Moving the compliance charts to CCI-MOC/oac-apps main is a separate
   piece of work; until then the fork is part of the build.
-- **TODO:** a home for hosted etcd that is not NFS.
+- Hosted etcd is on LVM Storage on the workers (2.11), no longer on NFS.
 - **TODO:** have someone other than the original builder walk through
   this on the hub's replacement masters, and fix what is unclear. The
   current masters stall under FIPS (2.3, section 5), and an API server
