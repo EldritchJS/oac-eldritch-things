@@ -92,15 +92,16 @@ jetty: 5 nodes (3 masters, 2 GPU workers), FIPS on, reinstalled
   a non-compliant hub, so it would have to be detached from it first.
   Quickest to a compliant cluster, but outside the hub design: a one-off
   to keep in step by hand.
-- **B2. Rebuild nist-dev-infra on the R440s, with jetty's GPU nodes as
-  its hypervisor.** The layout oac-dev-infra uses, as tzumainn proposed.
-  jetty itself, a hive-installed spoke used directly as a hypervisor, is
-  not kept: its two GPU nodes join the rebuilt hub as a hosted cluster's
+- **B2. Build `compliant-dev-infra` on the R440s, from nist-dev-infra's
+  configuration, with jetty's GPU nodes as its hypervisor.** The layout
+  oac-dev-infra uses, as tzumainn proposed. jetty itself, a
+  hive-installed spoke used directly as a hypervisor, is
+  not kept: its two GPU nodes join the new hub as a hosted cluster's
   workers, and its three FC430s drop out.
 
-- For: nist-dev-infra's configuration is still in every repo and is reused
-  under its own name; the R440s are much better hardware than jetty's
-  FC430s; nothing about the result is a one-off.
+- For: nist-dev-infra's configuration is still in every repo and is the
+  template, copied under the new name; the R440s are much better hardware
+  than jetty's FC430s; nothing about the result is a one-off.
 - Against: jetty stops being oac-dev-infra's GPU hypervisor and test bed,
   and andalusia as built today goes with it. Agree it with tzumainn and
   larsks first.
@@ -108,7 +109,7 @@ jetty: 5 nodes (3 masters, 2 GPU workers), FIPS on, reinstalled
 #### B2 layout
 
 ```
-nist-dev-infra     compliant hub on R440s (3 control plane + 3 workers)
+compliant-dev-infra  compliant hub on R440s (3 control plane + 3 workers)
   runs the control planes of:
     GPU hypervisor  Agent hosted cluster on jetty's 2 SD665-N V3s (like oac-dev-workload1)
     andalusia       KubeVirt hosted cluster, GPU VMs on the hypervisor (like oac-dev-workload2)
@@ -124,13 +125,18 @@ There are 8 R440s (MOC-R6PCC06U14 to U21). oac-infra's inventory has
 them commented out as future oac-prod-infra computes; confirm they are
 free before using six.
 
-#### B2 steps that differ from the first build
+#### B2 steps that differ from nist-dev-infra's build
 
-- **oac-infra `hub-images/group_vars/nist-dev-infra/vars.yml`:** replace
-  the three FC830 masters with the R440s (names, IPs, MACs, install disk
-  serials, etcd disk WWNs) and add three workers; check the hub-images
-  playbook handles workers. The rest of the file (domain, networks, VIPs,
-  `fips_enabled`) stays.
+The full procedure is [compliant-dev-infra/RUNBOOK.md](compliant-dev-infra/RUNBOOK.md)
+(sections 0 to 2), following oac-apps `docs/infra-cluster-deployment.md`.
+Section 0 lists what the new name changes in each repo.
+
+- **oac-infra `hub-images/group_vars/compliant-dev-infra/vars.yml`:** a
+  copy of nist-dev-infra's with the new cluster name, the R440s in place
+  of the three FC830 masters (names, IPs, MACs, install disk serials, etcd
+  disk WWNs), and a `workers:` list, which the templates support (as
+  oac-prod-infra uses). The base domain, networks, VIPs and `fips_enabled`
+  stay.
 - **Set `diskencryption_mode` to none.** Disk encryption is a recorded
   exception, as on the first build (MOC-issues #672). The R440s' TPMs
   are faulty (#670), and on the FC830s `tpmv2` with no working TPM
@@ -141,15 +147,18 @@ free before using six.
   threads, boot them with `nr_cpus=40`
   ([nist-dev-infra/nr-cpus-machineconfig.yaml](nist-dev-infra/nr-cpus-machineconfig.yaml)),
   as BUILD.md Part 1 step 1 explains.
-- **The runbook** ([nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md))
-  was written for a compact hub: update it for 3+3, and add etcd
-  encryption from install.
-- **OIDC:** rerun `setup-oidc.sh` for the new install before the moc-aws
-  apply; the roles stay.
-- **Hosted clusters in oac-apps:** `hosted-clusters/nist-dev-infra/nist-dev-workload0`
+- **The runbook:** [compliant-dev-infra/RUNBOOK.md](compliant-dev-infra/RUNBOOK.md),
+  drafted from nist-dev-infra's for 3+3, with etcd encryption from
+  install. nist-dev-infra's documents stay as the record of the first
+  build.
+- **OIDC:** new provider and roles in moc-aws, since the issuer URL has
+  the cluster's name; `setup-oidc.sh` before the apply.
+- **Hosted clusters in oac-apps:**
+  `hosted-clusters/nist-dev-infra/nist-dev-workload0`, copied under
+  `hosted-clusters/compliant-dev-infra/`,
   (an Agent cluster) is the starting point for the GPU hypervisor: change
   NIC names, node count and GPU settings. andalusia gets an entry under
-  `hosted-clusters/nist-dev-infra/`; its current one belongs to
+  `hosted-clusters/compliant-dev-infra/`; its current one belongs to
   oac-dev-infra.
 - **Two compliant hosted clusters, not one.** The hypervisor cluster is in
   scope: andalusia's VMs and their disks run on it.
