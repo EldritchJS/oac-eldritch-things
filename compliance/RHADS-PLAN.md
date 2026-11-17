@@ -123,9 +123,16 @@ compliant-dev-infra  compliant hub: 3 R440s control plane + jetty's 3 FC430s as 
 | GPU hypervisor workers | jetty's 2 Lenovo SD665-N V3s (2 x EPYC 9754, 1.5 TiB, 4 x H100 each), booted from the hub's discovery ISO as Agents |
 
 Three of the 8 R440s (MOC-R6PCC06U14 to U21) are available for this
-hub (tzumainn, 2026-11-17). No R440 is used as compute. Taking the FC430s
-ends jetty, and with it andalusia as built today, before the hub is
-installed.
+hub (tzumainn, 2026-11-17). No R440 is used as compute. The target
+layout is oac-prod-infra's (dedicated control plane plus workers), the
+only standard hub; the dev hubs are compact, and compact under FIPS is
+what failed on nist-dev-infra.
+
+Built in phases so jetty and andalusia keep running as long as possible
+(runbook section 2, "Phases"): A, the hub on the R440s alone, compact for
+now, through storage and the compliance stages; B, remove andalusia, then
+take jetty down; C, the FC430s join as workers and the masters stop
+taking workloads; D, compliant-dev-workload0 and andalusia.
 
 #### B2 steps that differ from nist-dev-infra's build
 
@@ -136,8 +143,8 @@ Section 0 lists what the new name changes in each repo.
 - **oac-infra `hub-images/group_vars/compliant-dev-infra/vars.yml`:** a
   copy of nist-dev-infra's with the new cluster name, the R440s in place
   of the three FC830 masters (names, IPs, MACs, install disk serials, etcd
-  disk WWNs), and a `workers:` list for the FC430s, which the templates support (as
-  oac-prod-infra uses). The base domain, networks, VIPs and `fips_enabled`
+  disk WWNs), and no `workers:` list: the FC430s join after install with
+  `oc adm node-image`. The base domain, networks, VIPs and `fips_enabled`
   stay.
 - **Set `diskencryption_mode` to none.** Disk encryption is a recorded
   exception, as on the first build (MOC-issues #672). The R440s' TPMs
@@ -150,7 +157,7 @@ Section 0 lists what the new name changes in each repo.
   ([nist-dev-infra/nr-cpus-machineconfig.yaml](nist-dev-infra/nr-cpus-machineconfig.yaml)),
   as BUILD.md Part 1 step 1 explains.
 - **The runbook:** [compliant-dev-infra/RUNBOOK.md](compliant-dev-infra/RUNBOOK.md),
-  drafted from nist-dev-infra's for 3+3, with etcd encryption from
+  drafted from nist-dev-infra's for oac-prod-infra's layout, with etcd encryption from
   install. nist-dev-infra's documents stay as the record of the first
   build.
 - **OIDC:** new provider and roles in moc-aws, since the issuer URL has

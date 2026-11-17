@@ -140,11 +140,37 @@ reuse (800-171 3.8.3).
 Upstream: oac-apps `docs/infra-cluster-deployment.md`. Why each step:
 [BUILD.md](../BUILD.md) Part 1.
 
-### 2.1 Hardware and networks
+### Phases
 
-**The standard layout, not nist-dev-infra's compact one:** three R440s as
-control plane, and jetty's three Dell FC430s (2 x Xeon E5-2640 v4, 40
-threads, 126 GiB, 2 x 186 GB SSD) as workers (oac-apps
+**The target layout is oac-prod-infra's: three dedicated control-plane
+nodes and three workers.** oac-prod-infra is the only standard hub; the
+dev hubs (oac-dev-infra, dizzy-infra, bu-ist-demo-infra) are compact. A
+compliant hub is on the way to production, so it follows prod. Compact
+under FIPS is also the one combination that failed: nist-dev-infra's etcd
+crashed under TLS load (BUILD.md Part 1 step 1), while oac-dev-infra runs
+compact on the same FC830s without FIPS.
+
+The workers are jetty's FC430s, which are jetty's control plane until
+jetty is taken down, so the hub is built in phases and jetty and
+andalusia keep running for as long as possible:
+
+| Phase | Sections | jetty and andalusia |
+|---|---|---|
+| A. The hub on the three R440s alone, compact for now: install, storage, compliance stages, scans | 2.1 to 2.10 | Untouched |
+| B. The cut: remove andalusia from oac-dev-infra, then detach jetty and take it down | 2.11 | Gone. Agree the date with tzumainn, larsks and andalusia's users first; nothing here without the go-ahead at the time |
+| C. The FC430s join as workers; the masters stop taking workloads | 2.12 | |
+| D. compliant-dev-workload0 on jetty's GPU nodes, then andalusia on it | 3, 4; MOC-issues #787, #788 | Rebuilt |
+
+During phase A the hub runs compact. That is a build step, not a layout
+being evaluated, but it is the pattern that failed on nist-dev-infra:
+keep it short, and watch etcd through any drain or reboot round
+(`$RB/watch-etcd-threads.sh`, NotReady spells, etcd restarts). Its scans
+are a baseline; rescan after phase C.
+
+### 2.1 Hardware and networks (phase A: the R440s)
+
+Three R440s as control plane now; jetty's three Dell FC430s (2 x Xeon E5-2640 v4, 40
+threads, 126 GiB, 2 x 186 GB SSD) join as workers in 2.12 (oac-apps
 `docs/infra-cluster-deployment.md`, "Infrastructure Configuration").
 nist-dev-infra ran on three compact FC830s at 176 threads each, whose
 etcd crashed under FIPS TLS load (BUILD.md Part 1 step 1). No R440 is
@@ -152,45 +178,40 @@ used as compute. There are eight R440s, `MOC-R6PCC06U14` to `U21`;
 three are available for this hub (tzumainn, 2026-11-17); which three
 is to follow.
 
-**The FC430s are jetty's control plane today,** so jetty (and andalusia,
-whose VMs run on it) goes out of service when they are taken for this
-hub, before the hub is installed, not only when the GPU nodes move (#787).
-Each FC430's second SSD, jetty's etcd disk today, becomes the worker's LVM
-Storage disk for the hosted clusters' etcd: small, but enough for the two
-hosted clusters this hub carries.
+**The FC430s are jetty's control plane today,** so taking them ends jetty
+and andalusia (2.11). Each FC430's second SSD, jetty's etcd disk today,
+becomes the worker's LVM Storage disk for the hosted clusters' etcd:
+small, but enough for the two hosted clusters this hub carries.
 
 Each step below follows tzumainn's doc, with what nist-dev-infra already
 has and what is new for compliant-dev-infra.
 
 1. **Networks.** nist-dev-infra's cluster network (`10.20.18.0/23`), its
    storage network and their firewall rules exist. **Attach the three
-   R440s and the three FC430s** to both; the FC430s move off jetty's
-   network (`docs/hardware-inventory-and-configuration.md`, "Network
-   configuration"), each with its storage port untagged, with DHCP, unless
-   they are already on them.
+   R440s** to both (`docs/hardware-inventory-and-configuration.md`,
+   "Network configuration"), each with its storage port untagged, with
+   DHCP, unless they are already on them. Pick three free addresses on
+   `10.20.18.0/23` for them (nist-dev-infra used `.20` to `.22`; the VIPs
+   are `10.20.19.11` and `.12`).
 
 2. **oac-infra `infra/inventory/00hosts.yaml`.** Add a
-   `compliant_dev_infra` group with the three R440s as controllers and the
-   three FC430s as workers (copy the shape of `oac_prod_infra`). Leave
-   `nist_dev_infra` as it is. Point the R440s at `discovery-r440.iso` and
-   the FC430s at `discovery.iso` for now.
+   `compliant_dev_infra` group with the three R440s as controllers (copy
+   the shape of `oac_prod_infra`; the worker group comes in 2.12). Leave
+   `nist_dev_infra` as it is. Point the R440s at `discovery-r440.iso` for
+   now.
 
 3. **Node details.** Boot each R440 from
    `http://10.2.0.82/boot/discovery-r440.iso`, not the generic
-   `discovery.iso` in tzumainn's doc, which does not work on R440s; boot
-   the FC430s from `discovery.iso`. Read
+   `discovery.iso` in tzumainn's doc, which does not work on R440s. Read
    `http://<node-ip-on-cluster-network>/index.txt`. Record each node's MAC
-   on the cluster network and the install disk's serial; for the R440s, a
-   second disk's WWN for etcd; for the FC430s, the second SSD, for LVM
-   Storage.
+   on the cluster network, the install disk's serial, and a second disk's
+   WWN for etcd.
 
    **Also note the thread count.** If the control-plane nodes have much
    more than about 40 threads, 2.3 applies.
 
-4. **Wipe them** (800-171 3.8.3): the FC430s certainly, as jetty's
-   former control plane, and the R440s if they have been used before. The
-   install rewrites the install disk; the etcd disks and the FC430s'
-   second SSDs need wiping too.
+4. **Wipe them** if they have been used before (800-171 3.8.3). The
+   install rewrites the install disk; the etcd disks need wiping too.
 
 ### 2.2 Install
 
@@ -201,8 +222,9 @@ has and what is new for compliant-dev-infra.
      `install_drive_serial` and `etcd_drive_wwn` from 2.1. **Quote the
      WWNs:** YAML reads an unquoted `0x...` as a number, and Jinja writes
      it back in decimal.
-   - Add a `workers:` list for the three FC430s (hostname, ip, mac,
-     install_drive_serial), as in `group_vars/examples/vars.yaml.example`.
+   - **No `workers:` list.** The templates set the worker count from it,
+     so with none the install is compact and the masters are schedulable.
+     The FC430s join after install (2.12).
    - `diskencryption_mode: ""`, not `tpmv2`. The R440s' TPMs are faulty
      (MOC-issues #670), and on the FC830s `tpmv2` with no working TPM
      installed unencrypted without saying so. Disk encryption is a
@@ -231,9 +253,9 @@ has and what is new for compliant-dev-infra.
    and the kubeadmin password printed.
 
 3. **Boot the nodes from it.** Copy the ISO to the bastion as
-   `/srv/boot/compliant-dev-infra-agent.x86_64.iso`, point both groups in
-   `00hosts.yaml` at `http://10.2.0.82/boot/compliant-dev-infra-agent.x86_64.iso`,
-   and boot all six (`docs/hardware-inventory-and-configuration.md`, "Boot
+   `/srv/boot/compliant-dev-infra-agent.x86_64.iso`, point the controller
+   group in `00hosts.yaml` at `http://10.2.0.82/boot/compliant-dev-infra-agent.x86_64.iso`,
+   and boot the three R440s (`docs/hardware-inventory-and-configuration.md`, "Boot
    configuration"). Then wait:
 
    ```
@@ -242,11 +264,11 @@ has and what is new for compliant-dev-infra.
 
    **Expect:** `Install complete!` in about an hour.
 
-4. **Store the kubeconfig**, overwriting the old one, then copy it to
-   `$HUB`. Never in a repo:
+4. **Store the kubeconfig** in a new secret, then copy it to `$HUB`.
+   Never in a repo:
 
    ```
-   aws --profile $SM secretsmanager put-secret-value --secret-id cluster/compliant-dev-infra/kubeadmin \
+   aws --profile $SM secretsmanager create-secret --name cluster/compliant-dev-infra/kubeadmin \
      --secret-binary fileb://output/compliant-dev-infra/work/auth/kubeconfig
    (umask 077; aws --profile $SM secretsmanager get-secret-value --secret-id cluster/compliant-dev-infra/kubeadmin \
      --query SecretBinary --output text | base64 -d > $HUB)
@@ -256,7 +278,7 @@ has and what is new for compliant-dev-infra.
 
    ```
    export KUBECONFIG=$HUB
-   oc get nodes                                                  # 6 Ready: 3 control-plane, 3 worker
+   oc get nodes                                                  # 3 Ready, roles control-plane,master,worker (compact for now)
    oc get cm cluster-config-v1 -n kube-system -o yaml | grep fips  # fips: true
    for n in $(oc get nodes -o name); do
      oc debug $n -q -- chroot /host cat /proc/sys/crypto/fips_enabled   # 1
@@ -508,6 +530,102 @@ BUILD.md Part 1 step 7 has the dry runs, which create nothing: a
 cleartext FlashBlade StorageClass and four non-compliant HostedClusters
 and NodePools must each be denied, and the compliant ones accepted. On
 this hub (2026-10-19 and 20) all were.
+
+---
+
+### 2.11 The cut: andalusia and jetty go (phase B)
+
+**Only with the go-ahead of jetty's owner at the time,** after the date is
+agreed with tzumainn, larsks and andalusia's users. From here until
+andalusia is rebuilt on this hub (#788) there is no GPU VM cluster.
+
+1. **Remove andalusia first, while jetty still works,** so oac-dev-infra
+   and jetty's KubeVirt clean up after it. On a branch of oac-apps:
+
+   ```
+   git rm -r hosted-clusters/oac-dev-infra/andalusia
+   ```
+
+   Merge it, then on oac-dev-infra:
+
+   ```
+   oc -n clusters get hostedcluster,nodepool | grep andalusia   # gone within about 15 minutes
+   ```
+
+   If it stays in `Deleting`: oac-apps `docs/hypershift-issues.md`.
+
+2. **Detach jetty from oac-dev-infra:** remove `values/oac-dev-infra/jetty`
+   and anything else selecting it in oac-apps by PR, then detach the
+   ManagedCluster and delete the hive ClusterDeployment on oac-dev-infra
+   (the first without deleting the cluster's resources twice; check each
+   placement that selects jetty first).
+
+3. **Power off jetty's five nodes.** The FC430s go on to 2.12, the SD665s
+   to section 4.
+
+4. **Afterwards, by PR:** jetty's roles in moc-aws (#66) and its records in
+   moc-dns's `int.massopen.cloud` zone. `oac-infra/infra/jetty-net.tf` is
+   the network; leave it until the SD665s have moved.
+
+### 2.12 The FC430s join as workers (phase C)
+
+1. **Network and inventory.** Move the three FC430s to the cluster network
+   (`10.20.18.0/23`) and storage VLAN 2317, with three more free addresses.
+   Add a worker group for them to `compliant_dev_infra` in `00hosts.yaml`.
+
+2. **Wipe them** (800-171 3.8.3), both SSDs: they were jetty's control plane.
+
+3. **Node details.** Boot each from `http://10.2.0.82/boot/discovery.iso`
+   and record, from `index.txt`, the MAC on the cluster network, the install
+   disk's serial, and the second SSD for LVM Storage.
+
+4. **Add them to the cluster.** Agent-installed clusters take new nodes
+   with `oc adm node-image` (4.17 and later). Write `nodes-config.yaml`
+   with the three hosts (hostname, MAC, interfaces as in `vars.yml`,
+   `rootDeviceHints` by serial), then:
+
+   ```
+   export KUBECONFIG=$HUB
+   oc adm node-image create nodes-config.yaml --dir out
+   ```
+
+   Copy `out/node.x86_64.iso` to the bastion, point the worker group in
+   `00hosts.yaml` at it, and boot the FC430s. Approve their CSRs as they
+   come in:
+
+   ```
+   oc get csr | grep Pending
+   oc adm certificate approve <name>      # two per node: client, then serving
+   oc get nodes -l node-role.kubernetes.io/worker,!node-role.kubernetes.io/master   # 3 Ready
+   ```
+
+   They take the hub's node hardening from the worker MachineConfigPool as
+   they join. **Check FIPS on each** as in 2.2 step 5.
+
+5. **Stop the masters taking workloads,** one at a time:
+
+   ```
+   oc patch scheduler cluster --type merge -p '{"spec":{"mastersSchedulable":false}}'
+   for n in $(oc get nodes -l node-role.kubernetes.io/master -o name); do
+     oc adm drain $n --ignore-daemonsets --delete-emptydir-data --timeout=30m
+     oc adm uncordon $n
+     # health check (top of this runbook) before the next one
+   done
+   ```
+
+   Watch etcd during the drains (`$RB/watch-etcd-threads.sh`). Workloads
+   that pin themselves to masters stay there; check that the hub's own
+   components (ACM, Argo CD, ACS Central, Loki) are now on the FC430s:
+
+   ```
+   oc get pods -A -o wide --field-selector spec.nodeName=<an R440> | grep -v -E "openshift-(etcd|kube-|machine-config|ovn|multus|dns|monitoring|cluster-node)"
+   ```
+
+6. **LVM Storage on the FC430s' second SSDs,** for the hosted clusters'
+   etcd (MOC-issues #772). Point the LVMCluster's device selector at those
+   disks by path, on workers only.
+
+7. **Rescan** (2.9) and compare with phase A's baseline.
 
 ---
 
