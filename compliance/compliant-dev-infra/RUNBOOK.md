@@ -243,7 +243,12 @@ this hub takes `MOC-R440-U14` to `U16` (tzumainn, 2026-11-17).
 **The workers are three FC430s** from the pool: `MOC-R4PAC10U31-S1D`,
 `-S3A` and `-S3B` (BMCs `10.2.13.164` to `.166`; tzumainn, 2026-11-17).
 jetty's own FC430s go back to the pool. Each worker's second disk is for
-LVM Storage (the hosted clusters' etcd, 2.11).
+LVM Storage (the hosted clusters' etcd, 2.11). Port 1 (`eth0`) is on the
+cluster network (VLAN 219) and port 2 (`eth1`) on storage (2317),
+ansible-switches #148. **All three boot in legacy BIOS mode:** S1D was
+in UEFI mode with no hard disk in its boot order, so its discovery ISO
+dropped to GRUB; tzumainn switched it to BIOS on 2026-11-18. If a sled
+will not power on from its BMC, reset the iDRAC first (`racadm racreset`).
 
 **The R440s** (from their discovery ISO): two 447 GiB SSDs each, `sda`
 for the install and `sdb` for etcd, plus four 5.8 TiB NVMe left unused.
@@ -365,6 +370,20 @@ has and what is new for compliant-dev-infra.
    there, and copy the result back. jetty's nodes have been that FIPS
    node, so **make this ISO before jetty goes** (section 1).
 
+   **Done 2026-11-18,** with OpenShift 4.22.22 (latest stable-4.22). The
+   playbook ran on a laptop and failed at the manifests step, as
+   expected. On jetty node `a0-88-c2-27-c2-d4` (`10.20.16.25`, FIPS mode)
+   in a debug pod under `/var/tmp/cdi-build`:
+   `openshift-install-fips agent create cluster-manifests`, then a copy of
+   `work` to `work-backup`, then `agent create image`. The ISO is
+   1,461,622,784 bytes, sha256
+   `4cf890802d2fe6239b6797d7fde8daeb40b53a1381d7ec2cd1a3e2d445366666`.
+   `work` (with `auth/`) is back in `output/compliant-dev-infra/` on the
+   builder's laptop. Copy the ISO from that node to the bastion
+   (`scp core@10.20.16.25:/var/tmp/cdi-build/work/agent.x86_64.iso ...`),
+   then delete `/var/tmp/cdi-build` (it holds the pull secret) and the
+   debug pod.
+
    ```
    cd ~/oat/oac-infra/hub-images
    ansible-playbook -i inventory.yml create_agent_install_media.yaml -e cluster_name=compliant-dev-infra
@@ -375,8 +394,8 @@ has and what is new for compliant-dev-infra.
 
 3. **Boot the nodes from it.** Copy the ISO to the bastion as
    `/srv/boot/compliant-dev-infra-agent.x86_64.iso`, point both groups
-   in `00hosts.yaml` at `http://10.2.0.82/boot/compliant-dev-infra-agent.x86_64.iso`,
-   and boot all six (`docs/hardware-inventory-and-configuration.md`, "Boot
+   in `00hosts.yaml` at `http://10.2.0.82/boot/compliant-dev-infra-agent.x86_64.iso`
+   (oac-infra branch `compliant-dev-infra-agent-iso`), and boot all six (`docs/hardware-inventory-and-configuration.md`, "Boot
    configuration"). Then wait:
 
    ```
