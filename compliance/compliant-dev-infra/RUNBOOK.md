@@ -128,21 +128,24 @@ stay where they are):
 **Rebuilt:** the cluster, its kubeadmin kubeconfig, its OIDC signing keys,
 the ACS init bundles, and the COSI buckets for Loki and ACM observability.
 
-**Where each piece is** (2026-11-17):
+**Where each piece is** (2026-11-18):
 
 | Piece | Where | State |
 |---|---|---|
 | Inventory and hardware doc | oac-infra [#32](https://github.com/CCI-MOC/oac-infra/pull/32) | Merged |
-| Worker switch ports (VLANs 219, 2317) | ansible-switches [#148](https://github.com/CCI-MOC/ansible-switches/pull/148) | Merged; **the playbook run is pending** (naved001 or hakasapl) |
-| DNS, OIDC providers and roles, external-dns key | moc-aws [#77](https://github.com/CCI-MOC/moc-aws/pull/77) | In review (2 approvals) |
-| Cleanup of nist-dev-infra's OIDC, IAM and cert-manager entries | moc-aws, branch `nist-dev-infra-cleanup` | After #77 |
+| Worker switch ports (VLANs 219, 2317) | ansible-switches [#148](https://github.com/CCI-MOC/ansible-switches/pull/148) | Merged and applied (naved001) |
+| DNS, OIDC providers and roles, external-dns key | moc-aws [#77](https://github.com/CCI-MOC/moc-aws/pull/77) | Merged and applied; the OIDC documents are placeholders until 2.4 |
+| Cleanup of nist-dev-infra's OIDC, IAM and cert-manager entries | moc-aws [#78](https://github.com/CCI-MOC/moc-aws/pull/78), moc-keycloak [#69](https://github.com/CCI-MOC/moc-keycloak/pull/69) | Merged and applied |
 | Keycloak clients | moc-keycloak [#68](https://github.com/CCI-MOC/moc-keycloak/pull/68) | Merged; both `keycloak-oidc` secrets are in Secrets Manager |
-| Hub values, compliant-dev-workload0 | oac-apps [#248](https://github.com/CCI-MOC/oac-apps/pull/248) | Draft, until the workers' LVM disk path is confirmed (2.11) |
-| Hub vars | oac-infra, branch `compliant-dev-infra-hub-vars` | Waits for the workers' discovery data (2.1) |
+| Hub values, compliant-dev-workload0 | oac-apps [#248](https://github.com/CCI-MOC/oac-apps/pull/248) | In review; LVM Storage on `/dev/mapper/lvms` (2.11) |
+| Hub vars | oac-infra [#34](https://github.com/CCI-MOC/oac-infra/pull/34) | Merged |
+| Boot the hub's nodes from its ISO | oac-infra [#35](https://github.com/CCI-MOC/oac-infra/pull/35) | Merged |
+| Tang disk encryption: root, etcd, LVM Storage disks | oac-infra [#36](https://github.com/CCI-MOC/oac-infra/pull/36), [#37](https://github.com/CCI-MOC/oac-infra/pull/37), [#38](https://github.com/CCI-MOC/oac-infra/pull/38); MOC-issues #672, #811 | Merged; installed 2026-11-18 |
+| Where the Tang server lives | MOC-issues #810 (naved001) | Open; today naved's server at `172.16.1.1` |
 | FIPS build host | oac-infra [#33](https://github.com/CCI-MOC/oac-infra/pull/33), MOC-issues #792 | Draft; host hardware from hakasapl |
 | SD665 switch ports to VLANs 220 and 2318 | ansible-switches, branch `compliant-dev-workload0-ports` | Open the PR at the teardown (1, step 4); it cuts jetty off |
 | FlashBlade realms | MOC-issues #789 (naved001) | Open; `portworx`, `pure-cosi` and `nfs-tls-ca` secrets wait for it |
-| `cluster/compliant-dev-infra/sshkey`, `hub-images/pull-secret` | Secrets Manager | Stored |
+| `cluster/compliant-dev-infra/sshkey`, `hub-images/pull-secret`, `cluster/compliant-dev-infra/kubeadmin` | Secrets Manager | Stored |
 
 ---
 
@@ -250,6 +253,22 @@ in UEFI mode with no hard disk in its boot order, so its discovery ISO
 dropped to GRUB; tzumainn switched it to BIOS on 2026-11-18. If a sled
 will not power on from its BMC, reset the iDRAC first (`racadm racreset`).
 
+**Secure Boot must be off on the R440s.** U15 and U16 had it on and would
+not boot the agent ISO (tzumainn turned it off, 2026-11-18). The R440s'
+iDRACs (`10.3.10.114` to `.116`) use a different root password from the
+FC430s', and are on `10.3.10.0/24`, which has to be in your WireGuard
+`AllowedIPs`.
+
+**The storage network must not hand out a gateway.** Every node gets
+DHCP on both ports. When VLAN 2317's DHCP also gave a default route (via
+`10.9.7.1`), it sometimes won in early boot, and the node could not reach
+Tang and stayed at the disk unlock prompt. naved removed the gateway from
+2317's DHCP on 2026-11-18; Tang is only reachable from the cluster network.
+
+**Name disks by serial or WWN, never `sdX`:** the names change between
+boots (on the workers, the install disk was `sda` in discovery and `sdb`
+once installed).
+
 **The R440s** (from their discovery ISO): two 447 GiB SSDs each, `sda`
 for the install and `sdb` for etcd, plus four 5.8 TiB NVMe left unused.
 The cluster network is on the NIC discovery calls `eth2`.
@@ -326,8 +345,8 @@ has and what is new for compliant-dev-infra.
    more than about 40 threads, 2.3 applies.
 
 4. **Wipe all six** if they have been used before (800-171 3.8.3). The
-   install rewrites the install disk; the etcd and LVM Storage disks need
-   wiping too.
+   install rewrites the install disk, and with Tang (2.2) the etcd and
+   LVM Storage disks are wiped and re-encrypted once per install.
 
 ### 2.2 Install
 
@@ -339,12 +358,15 @@ has and what is new for compliant-dev-infra.
      WWNs:** YAML reads an unquoted `0x...` as a number, and Jinja writes
      it back in decimal.
    - Add a `workers:` list for the three workers (hostname, ip, mac,
-     install_drive_serial), as in `group_vars/examples/vars.yaml.example`
-     and oac-prod-infra's vars.
-   - `diskencryption_mode: ""`, not `tpmv2`. The R440s' TPMs are faulty
-     (MOC-issues #670), and on the FC830s `tpmv2` with no working TPM
-     installed unencrypted without saying so. Disk encryption is a
-     recorded exception on this hub (E6, MOC-issues #672).
+     install_drive_serial, and `lvms_drive_wwn` for the LVM Storage disk),
+     as in `group_vars/examples/vars.yaml.example` and oac-prod-infra's vars.
+   - `diskencryption_mode: tang`, with `tang_servers` (url, thumbprint).
+     Get the thumbprint from the server itself (`tang-show-keys`), not
+     from its `/adv`. Every node's root disk, the masters' etcd disks and
+     the workers' LVM Storage disks are LUKS2, unlocked only through Tang
+     (MOC-issues #672, #811). Not `tpmv2`: the R440s' TPMs are faulty
+     (#670), and on the FC830s `tpmv2` with no working TPM installed
+     unencrypted without saying so.
    - `cluster_domain_name: compliant-dev-infra`.
    - Keep: `base_domain`, the networks,
      `rendezvous_ip` (make it one of the new control-plane IPs), `api_ip`,
@@ -370,19 +392,24 @@ has and what is new for compliant-dev-infra.
    there, and copy the result back. jetty's nodes have been that FIPS
    node, so **make this ISO before jetty goes** (section 1).
 
-   **Done 2026-11-18,** with OpenShift 4.22.22 (latest stable-4.22). The
-   playbook ran on a laptop and failed at the manifests step, as
-   expected. On jetty node `a0-88-c2-27-c2-d4` (`10.20.16.25`, FIPS mode)
-   in a debug pod under `/var/tmp/cdi-build`:
-   `openshift-install-fips agent create cluster-manifests`, then a copy of
-   `work` to `work-backup`, then `agent create image`. The ISO is
-   1,461,622,784 bytes, sha256
-   `4cf890802d2fe6239b6797d7fde8daeb40b53a1381d7ec2cd1a3e2d445366666`.
-   `work` (with `auth/`) is back in `output/compliant-dev-infra/` on the
-   builder's laptop. Copy the ISO from that node to the bastion
-   (`scp core@10.20.16.25:/var/tmp/cdi-build/work/agent.x86_64.iso ...`),
-   then delete `/var/tmp/cdi-build` (it holds the pull secret) and the
-   debug pod.
+   **How it was done, 2026-11-18** (OpenShift 4.22.22, latest
+   stable-4.22). The playbook ran on a laptop in a copy of `hub-images`:
+   it deletes `output/<cluster>` when it starts, so never run it while
+   that holds a live install's `auth/`. It fails at the manifests step,
+   as expected. The rendered `work` went to jetty node
+   `a0-88-c2-27-c2-d4` (`10.20.16.25`, FIPS mode) through a debug pod
+   (`oc debug` passes no stdin: keep a pod running and use `oc exec -i`),
+   tarred with `COPYFILE_DISABLE=1` (macOS otherwise adds `._*` files,
+   which the installer fails to parse). There:
+   `openshift-install-fips agent create cluster-manifests`, then the
+   playbook's Tang `diskEncryption` block added to
+   `cluster-manifests/agent-cluster-install.yaml` by hand, a copy of
+   `work` to `work-backup`, then `agent create image`. The final ISO
+   (all disks on Tang) has sha256
+   `bb85301bd3f21f3bb3f8a8fc6e68cef2cecb070a9c21656b29879812acbddbf3`;
+   its `work` is on the builder's laptop. tzumainn copied it to the
+   bastion. Afterwards, delete the node's `/var/tmp/cdi-build` (it holds
+   the pull secret) and the debug pod.
 
    ```
    cd ~/oat/oac-infra/hub-images
@@ -395,14 +422,19 @@ has and what is new for compliant-dev-infra.
 3. **Boot the nodes from it.** Copy the ISO to the bastion as
    `/srv/boot/compliant-dev-infra-agent.x86_64.iso`, point both groups
    in `00hosts.yaml` at `http://10.2.0.82/boot/compliant-dev-infra-agent.x86_64.iso`
-   (oac-infra branch `compliant-dev-infra-agent-iso`), and boot all six (`docs/hardware-inventory-and-configuration.md`, "Boot
-   configuration"). Then wait:
+   (oac-infra #35), and boot all six (`docs/hardware-inventory-and-configuration.md`, "Boot
+   configuration"; boot the R440s and FC430s as separate runs, since
+   their BMC passwords differ and the playbook stops every host when one
+   fails). Then wait. `wait-for` does not need FIPS, so the plain
+   `openshift-install` of the same version works from a laptop on the
+   VPN; jetty's nodes cannot reach the rendezvous host's port 8090:
 
    ```
-   openshift-install-fips agent wait-for install-complete --dir output/compliant-dev-infra/work
+   openshift-install agent wait-for install-complete --dir output/compliant-dev-infra/work
    ```
 
-   **Expect:** `Install complete!` in about an hour.
+   **Expect:** `Install complete!` in about an hour. If a node stalls,
+   see section 5: the disk unlock rows.
 
 4. **Store the kubeconfig** in a new secret, then copy it to `$HUB`.
    Never in a repo:
@@ -422,6 +454,20 @@ has and what is new for compliant-dev-infra.
    oc get cm cluster-config-v1 -n kube-system -o yaml | grep fips  # fips: true
    for n in $(oc get nodes -o name); do
      oc debug $n -q -- chroot /host cat /proc/sys/crypto/fips_enabled   # 1
+   done
+   ```
+
+   **And Tang on every data disk:** `root` on all six, `etcd` on the
+   masters, `lvms` on the workers, each with one keyslot, a clevis
+   token, and no passphrase:
+
+   ```
+   for n in $(oc get nodes -o name); do
+     oc debug $n -q -- chroot /host sh -c 'for m in root etcd lvms; do
+       [ -e /dev/mapper/$m ] || continue
+       d=$(cryptsetup status $m | awk "/device:/{print \$2}")
+       echo "$(hostname) $m keyslots=$(cryptsetup luksDump $d | grep -cE "^  [0-9]+: luks2") $(clevis luks list -d $d)"
+     done'
    done
    ```
 
@@ -683,12 +729,13 @@ this hub (2026-10-19 and 20) all were.
 
 ### 2.11 LVM Storage on the workers
 
-For the hosted clusters' etcd (MOC-issues #772): point the LVMCluster's
-device selector at the workers' second disks, by path, on workers only.
-In oac-apps #248, `values/compliant-dev-infra/local-cluster/lvmcluster.yaml`
-has `/dev/disk/by-path/pci-0000:00:11.4-ata-2`, the second SSD on jetty's
-FC430s. **TODO:** confirm it on the pool FC430s from their discovery boot,
-then take #248 out of draft. `node-labels` marks every worker for it, and
+For the hosted clusters' etcd (MOC-issues #772): each worker's second disk
+is encrypted against Tang at install and opened as `/dev/mapper/lvms`
+before kubelet starts (2.2). In oac-apps #248,
+`values/compliant-dev-infra/local-cluster/lvmcluster.yaml` points the
+LVMCluster's device selector at `/dev/mapper/lvms`. Tested on S3B
+(2026-11-18): the volume group came back after a reboot with its data
+(MOC-issues #811). `node-labels` marks every worker for it, and
 the hosted-cluster chart's default `lvms-vg0` class is used, so the
 hosted-clusters values set no etcd storage class.
 
@@ -893,6 +940,10 @@ Archive the first results as the cluster's baseline.
 | A hosted cluster loses its compliance namespaces | An ApplicationSet deleted its Applications when the cluster left the placement | `preserveResourcesOnDeletion: true` (already set; BUILD.md Part 2 step 3) |
 | `openshift-samples` Degraded: "global openshift image configuration prevents the creation of imagestreams" | The allowlist has no bare `quay.io`, which the samples operator wants when `samplesRegistry` is empty | `imageConfig.samplesRegistry: registry.redhat.io` (fork `75773f6`, already set) |
 | workload0's audit collectors log "certificate verify failed" | The hub's apps certificate changed, and the forwarder trusted only the hub's ingress CA, copied by the audit-writers policy: for a Let's Encrypt certificate, a chain without its root | `forwarder.remote.hubIngressCA: false` in the hosted-cluster values (fork `9c2cbca`, already set) |
+| A node sits at "Please enter passphrase for disk root", the console repeating "clevis-luks-askpass: Error communicating with server http://172.16.1.1:80" | The storage network's DHCP gave a default route that won in early boot; Tang is reachable only from the cluster network | Fixed on VLAN 2317's DHCP (no gateway, 2026-11-18). If it recurs, check `ip route` on a running node shows one default route, via `br-ex`, then power-cycle the stuck node |
+| A node is up and pings but never registers; no CSRs; `etcd-disk.service` or `lvms-disk.service` failed with "Error communicating with server" | On first boot the unit unlocked its disk while ovs-configuration was moving the address onto `br-ex` | Fixed in oac-infra [#38](https://github.com/CCI-MOC/oac-infra/pull/38). On an ISO made before it: `ssh core@<node>` (key in `cluster/compliant-dev-infra/sshkey`), `sudo systemctl restart etcd-disk` (or `lvms-disk`), `sudo systemctl start kubelet` |
+| An R440 never boots the agent ISO | Secure Boot on | Turn it off in the BIOS (2.1) |
+| `agent create image` fails: "could not decode YAML for openshift/._98-...: control characters are not allowed" | macOS `tar` added AppleDouble files | Delete `._*` in `work`, rebuild; tar with `COPYFILE_DISABLE=1` |
 | A kube-apiserver rollout stops: `installer-N` Pending on one master, the node `Unknown` | That master's kubelet froze, on 2026-10-26 at the moment its own API server switched revision (u13 for 5 minutes, u15 and u17 until power-cycled); etcd on it stayed healthy | A graceful shutdown hangs on a node in this state. Power-cycle it from its iDRAC: `ssh root@<bmc_addr>` (oac-infra `infra/inventory/00hosts.yaml`; older iDRACs need `-o KexAlgorithms=+diffie-hellman-group14-sha1 -o HostKeyAlgorithms=+ssh-rsa`), then `racadm serveraction powercycle`. Check first that the other two masters' etcd members are healthy. The node is back in about 9 minutes and the rollout resumes |
 
 ---
@@ -919,6 +970,9 @@ Every fix goes through a PR, as during the build:
   Moving the compliance charts to CCI-MOC/oac-apps main is a separate
   piece of work; until then the fork is part of the build.
 - Hosted etcd is on LVM Storage on the workers (2.11), no longer on NFS.
+- **TODO:** a more reliable home for the Tang server, and a DNS name for
+  it so a later move is only a key copy (MOC-issues #810). Every node
+  needs Tang at every boot.
 - **TODO:** have someone other than the original builder walk through
   this on the hub's replacement masters, and fix what is unclear. The
   current masters stall under FIPS (2.3, section 5), and an API server
