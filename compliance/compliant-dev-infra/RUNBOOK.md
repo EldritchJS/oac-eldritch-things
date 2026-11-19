@@ -601,11 +601,14 @@ waiting for their bucket (BUILD.md I8).
 Each stage file updates the same ApplicationSet, `nist-compliance-test`,
 which reads the fork's `compliant-dev-infra-test` branch: upstream oac-apps
 main plus the compliance charts not yet upstream (audit-logging,
-compliance-node-hardening, etcd-backup, file-integrity), a stopgap
+compliance-node-hardening, etcd-backup), a stopgap
 `namespace-guardrails-app` (upstream's namespace-guardrails is now a
 library, #756), and this hub's values under `values/compliant-dev-infra/`.
 The upstreamed charts (compliance-operator, compliance-hub-policy,
-platform-hardening, rhacs, nfs-tls) are upstream's. nfs-tls is tlshd only:
+platform-hardening, rhacs, nfs-tls) are upstream's. File integrity is not
+in the stages: since oac-apps #198 (2026-11-19) main deploys it to every
+compliant hub (`hub-file-integrity`), and a second Application for it
+would fight the first. nfs-tls is tlshd only:
 the TLS StorageClass is `pure-fb-nfsv4` with `portworx.tls: true`.
 `nist-dev-infra-test` stays as the first build's record. Apply them in order,
 waiting for each to settle:

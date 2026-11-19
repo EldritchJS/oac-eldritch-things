@@ -16,7 +16,6 @@ spec:
         elements:
           - component: compliance-operator
           - component: compliance-hub-policy
-          - component: file-integrity
           - component: platform-hardening
           - component: etcd-backup
           - component: rhacs
