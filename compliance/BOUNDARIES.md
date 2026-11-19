@@ -51,7 +51,7 @@ Ahmed Sanaullah's AI UAT Harness as well as our own scripts.
 | GPU sharing between pods | MIG: hardware limits, no visibility of neighbours. Time-slicing: neighbours see each other's memory use and utilisation, no limits. MPS: one pod's fault killed every pod on the GPU | `test-gpu-sharing.sh` (2026-10-29) | **Time-slicing and MPS only within one tenant.** Nothing enforces that today; the oac-apps chart sets no sharing, so it holds by default |
 | GPUs a pod did not request | Toolkit setting `ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED=false` and an admission policy refusing the `nvidia*` RuntimeClasses outside the operator | **Found open:** with GPU Operator defaults, a tenant with `edit` listed all four H100s on a node, including GPUs held by others (jetty and oac-dev-workload0). Closed by oac-apps [#208](https://github.com/CCI-MOC/oac-apps/pull/208), verified on workload0 2026-10-29 ([#738](https://github.com/CCI-MOC/MOC-issues/issues/738)) | `test-gpu-unrequested.sh` checks a cluster still has both. Also a billing hole ([#766](https://github.com/CCI-MOC/MOC-issues/issues/766)) |
 | NVLink between tenants' GPUs | With the stock driver, a guest sees no peers and none of a neighbour's traffic | Tenant A moved about 8 TiB over NVLink; tenant B's counters on the same board stayed at zero (2026-10-29) | **The links stay physically up.** What a guest running its own driver could do over them is NVIDIA's to answer. Until then, compliant tenants get whole nodes or VMs holding all of a node's GPUs |
-| Tenants on separate GPU nodes | A project node selector (`openshift.io/node-selector`), which tenants cannot change or override | Selector, affinity, tolerations and a GPU VM all failed to reach another tenant's node (2026-10-29) | **Projects without a selector run anywhere**, and users can create projects. Needs a cluster default node selector or a project template; not in oac-apps |
+| Tenants on separate GPU nodes | A project node selector (`openshift.io/node-selector`), which tenants cannot change or override | Selector, affinity, tolerations and a GPU VM all failed to reach another tenant's node (2026-10-29) | **Projects without a selector run anywhere**, and users can create projects. Needs a cluster default node selector or a project template; not in oac-apps ([#814](https://github.com/CCI-MOC/MOC-issues/issues/814)) |
 
 ## 3. VMs
 
@@ -68,7 +68,7 @@ Ahmed Sanaullah's AI UAT Harness as well as our own scripts.
 | Boundary | What holds it | How we know | Open |
 |---|---|---|---|
 | Metrics | Thanos Querier holds every namespace's metrics in one pile; the tenancy port pins a query to namespaces the caller may read, and only cluster monitors may use the web port | The AI UAT Harness `metrics-isolation` test (Ahmed Sanaullah) | Not yet run on a compliant cluster |
-| Network between namespaces | Default-deny NetworkPolicies from the `namespace-guardrails` chart, written from measured traffic | jetty's six namespaces (2026-10-08). Guessing broke things: default-deny cut external-dns off from DNS on the test hub until its traffic was measured | Hub platform namespaces ([#756](https://github.com/CCI-MOC/MOC-issues/issues/756)). A new tenant project has no policy at all. Egress: route allowlist ([#764](https://github.com/CCI-MOC/MOC-issues/issues/764)), egress proxy ([#771](https://github.com/CCI-MOC/MOC-issues/issues/771)) |
+| Network between namespaces | Default-deny NetworkPolicies from the `namespace-guardrails` chart, written from measured traffic | jetty's six namespaces (2026-10-08). Guessing broke things: default-deny cut external-dns off from DNS on the test hub until its traffic was measured | Hub platform namespaces ([#756](https://github.com/CCI-MOC/MOC-issues/issues/756)). A new tenant project has no policy at all ([#815](https://github.com/CCI-MOC/MOC-issues/issues/815)). Egress: route allowlist ([#764](https://github.com/CCI-MOC/MOC-issues/issues/764)), egress proxy ([#771](https://github.com/CCI-MOC/MOC-issues/issues/771)) |
 | Privileged workloads | A register of every privileged workload and why ([PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md)); a test fails on any new privileged SCC | T-11 | The GPU Operator, Portworx and ACS run privileged by necessity. Portworx's operator has cluster-wide RBAC ([#769](https://github.com/CCI-MOC/MOC-issues/issues/769)) |
 | Audit logs | Per hosted cluster, a service account on the hub that may only write the audit tenant; its token is never in git | nist-dev-infra (2026-10) | Every hosted cluster's API audit lands in the same Loki tenant. Who may read it is the hub's access control |
 
@@ -86,8 +86,8 @@ Ahmed Sanaullah's AI UAT Harness as well as our own scripts.
 
 1. NVLink between tenants with their own drivers: NVIDIA.
 2. Why the GPU reset clears memory, and whether it holds on other firmware: NVIDIA.
-3. A default node selector or project template, so new projects cannot land on a tenant's GPU node.
-4. Default NetworkPolicies for new tenant projects, and the hub's own ([#756](https://github.com/CCI-MOC/MOC-issues/issues/756)).
+3. A default node selector or project template, so new projects cannot land on a tenant's GPU node ([#814](https://github.com/CCI-MOC/MOC-issues/issues/814)).
+4. Default NetworkPolicies for new tenant projects ([#815](https://github.com/CCI-MOC/MOC-issues/issues/815)), and the hub's own ([#756](https://github.com/CCI-MOC/MOC-issues/issues/756)).
 5. Enforcing "time-slicing and MPS only within one tenant", if sharing is ever turned on.
 6. Metrics isolation run on a compliant cluster.
 7. Shared services (Secrets Manager, Keycloak, Route 53, `oac-apps`) inside the compliant boundary ([#803](https://github.com/CCI-MOC/MOC-issues/issues/803)).
