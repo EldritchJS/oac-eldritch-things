@@ -33,7 +33,7 @@ Times are UTC unless they say EDT.
 | The kubeadmin kubeconfig, ACS secrets, the preflight | AWS SSO, `SecretsManagerOperatorAccess` permission set |
 | Uploading OIDC signing keys (2.4, 4.3) | AWS SSO, `ClusterOperatorAccess` (membership in `moc-aws-cluster-operators`) |
 | The hub's nodes | The MOC VPN, with the hub's subnet in your WireGuard `AllowedIPs`, and the BMCs, in case a node does not come back |
-| The install | CCI-MOC/oac-infra `hub-images`: the pull secret and SSH key for `credentials/compliant-dev-infra/` (not in git) |
+| The install | CCI-MOC/oac-infra `hub-images`: the pull secret and SSH key for `credentials/compliant-dev-infra/` (not in git). The pull secret's account needs ACM and ACS entitlements too (check in 2.8) |
 | PRs | Write to forks of CCI-MOC/oac-apps; reviewers named in §6 |
 
 **Tools:** `oc`, `helm`, `aws`, `jq`, `gh`, `ansible` with
@@ -137,15 +137,17 @@ the ACS init bundles, and the COSI buckets for Loki and ACM observability.
 | DNS, OIDC providers and roles, external-dns key | moc-aws [#77](https://github.com/CCI-MOC/moc-aws/pull/77) | Merged and applied; the OIDC documents are placeholders until 2.4 |
 | Cleanup of nist-dev-infra's OIDC, IAM and cert-manager entries | moc-aws [#78](https://github.com/CCI-MOC/moc-aws/pull/78), moc-keycloak [#69](https://github.com/CCI-MOC/moc-keycloak/pull/69) | Merged and applied |
 | Keycloak clients | moc-keycloak [#68](https://github.com/CCI-MOC/moc-keycloak/pull/68) | Merged; both `keycloak-oidc` secrets are in Secrets Manager |
-| Hub values, compliant-dev-workload0 | oac-apps [#248](https://github.com/CCI-MOC/oac-apps/pull/248) | In review; LVM Storage on `/dev/mapper/lvms` (2.11) |
+| Hub values, compliant-dev-workload0 | oac-apps [#248](https://github.com/CCI-MOC/oac-apps/pull/248), [#254](https://github.com/CCI-MOC/oac-apps/pull/254), [#257](https://github.com/CCI-MOC/oac-apps/pull/257) | Merged; workload0's hosted-clusters entry held back until section 4 (#254) |
 | Hub vars | oac-infra [#34](https://github.com/CCI-MOC/oac-infra/pull/34) | Merged |
 | Boot the hub's nodes from its ISO | oac-infra [#35](https://github.com/CCI-MOC/oac-infra/pull/35) | Merged |
 | Tang disk encryption: root, etcd, LVM Storage disks | oac-infra [#36](https://github.com/CCI-MOC/oac-infra/pull/36), [#37](https://github.com/CCI-MOC/oac-infra/pull/37), [#38](https://github.com/CCI-MOC/oac-infra/pull/38); MOC-issues #672, #811 | Merged; installed 2026-11-18 |
 | Where the Tang server lives | MOC-issues #810 (naved001) | Open; today naved's server at `172.16.1.1` |
-| FIPS build host | oac-infra [#33](https://github.com/CCI-MOC/oac-infra/pull/33), MOC-issues #792 | Draft; host hardware from hakasapl |
-| SD665 switch ports to VLANs 220 and 2318 | ansible-switches, branch `compliant-dev-workload0-ports` | Open the PR at the teardown (1, step 4); it cuts jetty off |
-| FlashBlade realms | MOC-issues #789 (naved001) | Open; `portworx`, `pure-cosi` and `nfs-tls-ca` secrets wait for it |
+| FIPS build host | oac-infra [#33](https://github.com/CCI-MOC/oac-infra/pull/33), MOC-issues #792 | Draft, rebased, 4.22.22; asked hakasapl for an SD530 (#805); needs a RHEL activation key |
+| SD665 switch ports to VLANs 220 and 2318 | ansible-switches [#151](https://github.com/CCI-MOC/ansible-switches/pull/151) | Merged and applied 2026-11-18; the SD665s are out of ESI |
+| FlashBlade realms | MOC-issues #789, everpure-moc [#38](https://github.com/CCI-MOC/everpure-moc/pull/38) | Done 2026-11-19: both realms, CA-marked certificates, all three secrets |
 | `cluster/compliant-dev-infra/sshkey`, `hub-images/pull-secret`, `cluster/compliant-dev-infra/kubeadmin` | Secrets Manager | Stored |
+| File integrity, tlshd memory | oac-apps [#198](https://github.com/CCI-MOC/oac-apps/pull/198), [#258](https://github.com/CCI-MOC/oac-apps/pull/258) | Merged 2026-11-19; FIO on all six nodes |
+| registry.redhat.io refuses `rhacm2/thanos-rhel9` and `rhacs-central-db-rhel9` | larsks (MOC's Red Hat account) | Open since 2026-11-19 12:30 ET, on oac-dev-infra too; holds ACS (2.8 stage B) and stage C |
 
 ---
 
@@ -664,6 +666,33 @@ StorageClass (2.6).
 oc apply -f $CB/stage-b.yaml
 oc -n stackrox rollout status deploy/central --timeout=30m
 ```
+
+**On 2026-11-19:** stage A went on with `nfs-tls` added (2.6), and both
+suites were DONE (NON-COMPLIANT, as expected) within 30 minutes. Stage B:
+every app Synced except two.
+
+- `nist-test-namespace-guardrails-app` stays OutOfSync: its values name
+  `compliant-dev-workload0` and `klusterlet-compliant-dev-workload0`, which
+  do not exist while workload0 is held back (#254). It clears in section 4.
+- ACS Central's database could not pull its image (the registry row in the
+  status table), so the init bundle waits.
+
+**The pull secret has to reach the add-on images, not just OpenShift's.**
+The install only pulls OpenShift itself, so a pull secret from an account
+without ACM and ACS entitlements installs fine and fails later, one image
+at a time, as "denied: Token rejected by upstream registry". Check before
+stage B, from any node (the images are the ones that failed on 2026-11-19):
+
+```
+oc debug node/<a worker> -- chroot /host bash -c '
+  for i in rhacm2/thanos-rhel9:v2.17 advanced-cluster-security/rhacs-central-db-rhel9:5.0.0; do
+    podman pull -q --authfile /var/lib/kubelet/config.json registry.redhat.io/$i >/dev/null && echo "ok   $i" || echo "FAIL $i"
+  done'
+```
+
+Any FAIL: the account behind `hub-images/pull-secret` needs those
+subscriptions (MOC's Red Hat account: larsks), or a pull secret from one
+that has them.
 
 Then the hub's ACS init bundle. It is a credential: never commit it, and
 delete the file once applied.
