@@ -826,8 +826,23 @@ oc -n stackrox get central                                             # Central
 oc get validatingadmissionpolicybinding compliant-hosted-clusters -o jsonpath='{.spec.validationActions}{"\n"}'   # ["Deny"]
 ```
 
+**`verify.sh` on the hub passes** (MOC-issues #777), with every FAIL
+fixed or recorded as known. The hub holds workload0's control plane and
+data, so it is shown hardened before workload0 goes on it:
+
+```
+KUBECONFIG=$HUB ../tests/verify.sh          # the hub variant, #777
+```
+
+It checks what 2.3 to 2.8 set up: FIPS, TLS (T-13, T-15), scans (T-03,
+T-04), ACS, the registry allowlist, SCCs, etcd backups, file integrity,
+and, new for the hub, LUKS and Tang on every disk, OAuth token timeouts,
+chrony, the API audit profile, USBGuard and the admission policies on
+Deny. The workload0 PR (restoring its hosted-clusters entry, section 4)
+can be opened while this is written; it waits for two approvals anyway.
+
 The hub's own scans are not clean yet (2.9); the workload cluster does not
-depend on them. `auditWriters.clusters` in the hub's audit-logging values
+depend on those remaining rules. `auditWriters.clusters` in the hub's audit-logging values
 needs `compliant-dev-workload0` (nist-dev-infra's lists
 `nist-dev-workload0` on the test branch).
 
