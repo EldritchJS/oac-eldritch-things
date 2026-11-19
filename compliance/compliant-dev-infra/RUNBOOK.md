@@ -778,7 +778,7 @@ Upstream: oac-apps `docs/workload-cluster-deployment.md`. Why each step:
 ### 4.1 Workers
 
 jetty's two Lenovo SD665-N V3s, `MOC-R4PCC02U15` and `U16` (4 x H100
-each), wiped and on workload0's VLANs (section 1, step 4), booted from
+each), on workload0's VLANs (ansible-switches #151) and out of ESI, booted from
 **this hub's** discovery ISO:
 
 ```
@@ -786,8 +786,28 @@ export KUBECONFIG=$HUB
 oc get infraenv -n hardware-inventory hardware-inventory -o jsonpath='{.status.isoDownloadURL}{"\n"}'
 ```
 
-Boot each from that ISO (BMC virtual media). When they appear, approve
-and label them:
+**Before anything else**, restore workload0's hosted-clusters entry in
+oac-apps (`hosted-clusters/compliant-dev-infra/compliant-dev-workload0/values.yaml`,
+from the parent of oac-apps #254). #254 removed it because Argo started
+workload0's control plane as soon as the hub was bootstrapped.
+
+**Wipe the disks first.** ESI's cleaning failed on both SD665s (2026-11-18:
+#151 moved their ports mid-clean) and they left ESI, so their disks still
+hold jetty's data. Boot the discovery ISO, and before approving, on each
+(`ssh core@<ip>` with the cluster key):
+
+```
+lsblk -d -o NAME,SIZE,MODEL,SERIAL        # every disk, including the boot one
+for d in $(lsblk -dn -o NAME -e 7,11); do
+  sudo wipefs -a /dev/$d && sudo blkdiscard -f /dev/$d
+done
+```
+
+Keep the `lsblk` output for the compliance record. The discovery ISO runs
+from memory, so wiping the boot disk is fine. Then reboot into the ISO
+again so the agent re-reads the empty disks.
+
+When they appear, approve and label them:
 
 ```
 oc -n hardware-inventory get agents                        # both listed
