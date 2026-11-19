@@ -147,7 +147,7 @@ the ACS init bundles, and the COSI buckets for Loki and ACM observability.
 | FlashBlade realms | MOC-issues #789, everpure-moc [#38](https://github.com/CCI-MOC/everpure-moc/pull/38) | Done 2026-11-19: both realms, CA-marked certificates, all three secrets |
 | `cluster/compliant-dev-infra/sshkey`, `hub-images/pull-secret`, `cluster/compliant-dev-infra/kubeadmin` | Secrets Manager | Stored |
 | File integrity, tlshd memory | oac-apps [#198](https://github.com/CCI-MOC/oac-apps/pull/198), [#258](https://github.com/CCI-MOC/oac-apps/pull/258) | Merged 2026-11-19; FIO on all six nodes |
-| registry.redhat.io refuses `rhacm2/thanos-rhel9` and `rhacs-central-db-rhel9` | larsks (MOC's Red Hat account) | Open since 2026-11-19 12:30 ET, on oac-dev-infra too; holds ACS (2.8 stage B) and stage C |
+| registry.redhat.io refuses `rhacm2/thanos-rhel9` and `rhacs-central-db-rhel9` | Red Hat | Cleared by itself about 19:30 UTC 2026-11-19, after about six hours, on oac-dev-infra too; no change on our side |
 
 ---
 
@@ -729,13 +729,32 @@ drains (stage C took the API away for 10 minutes the first time, before
 stops reporting for more than 10 minutes while its node answers can be
 restarted: `oc debug node/<node> -- chroot /host systemctl restart kubelet`.
 
+**On 2026-11-19** both pools were paused, stage C applied (379
+MachineConfigs), and both unpaused together at 13:28: one master and one
+worker at a time, about 10 minutes each, all done by 14:05. Every node
+came back unlocked by Tang, with `fips=1 audit=1 nousb pti=on`; etcd
+stayed 3/3. No `nr_cpus=40` was needed. USBGuard runs on the masters only
+(`99-master-usbguard-enable`); the workers have `nousb`, which turns USB
+off in the kernel.
+
 **Stage E**, audit logging: Loki on a COSI bucket, and the forwarder.
 Needs 2.7.
 
 ```
 oc apply -f $CB/stage-e.yaml
 oc -n openshift-logging get lokistack,clusterlogforwarder     # Ready
+for p in $(oc -n openshift-logging get pods -o name | grep distributor); do
+  oc -n openshift-logging logs $p --since=5m | grep -c 'write operation failed'
+done                                                          # 0, once caught up
 ```
+
+The hub's own API servers audit at `WriteRequestBodies` into Loki's `audit`
+tenant. At its defaults (2 MB/s, 256 kB lines) Loki refused about 110
+pushes a minute and dropped lines holding whole ConfigMaps (2026-11-19,
+about 18 lines lost before the fix). The hub's audit-logging values now
+give `audit` the same limits as `application` (fork branch, after
+`f64e414`). Loki takes about 10 minutes to come up; the collectors buffer
+until then.
 
 ### 2.9 What the hub does not pass yet
 
