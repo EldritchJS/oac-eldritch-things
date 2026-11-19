@@ -578,6 +578,30 @@ KUBECONFIG=$HUB oc -n nfs-tls get pods          # tlshd Running on all three nod
 
 If `pure-fb-nfsv4` is missing, re-sync `hub-portworx` (2.5).
 
+**What it took on 2026-11-19:**
+
+- **The realm certificate.** The realm playbook gives the realm the
+  FlashBlade's self-signed certificate (`CA:FALSE`). Replace it first with
+  a CA-marked one (BUILD.md I8's `openssl` command, key generated where it
+  is imported), through the FlashBlade API with an admin token, then put
+  the `.crt` in `cluster/compliant-dev-infra/nfs-tls-ca` and in the proxy
+  values (oac-apps #257). workload0's realm got its certificate the same
+  day.
+- **tlshd before the StorageClass.** Volumes that waited since the install
+  (Prometheus, assisted-service, Perses) bind the moment `pure-fb-nfsv4`
+  exists. nfs-tls went on first, with stage A (2.8): stage A's file plus
+  `- component: nfs-tls`, so stage B keeps it.
+- **A stuck sync.** `hub-portworx`'s sync from before #257 waited forever
+  on nist-dev-infra's NNCPs (`NoMatchingNode`). End it and sync main:
+  ```
+  oc -n openshift-gitops patch applications.argoproj.io hub-portworx --type merge -p '{"status":{"operationState":{"phase":"Terminating"}}}'
+  oc -n openshift-gitops patch applications.argoproj.io hub-portworx --type merge -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"prune":true,"revision":"main"}}}'
+  ```
+- **tlshd OOMKilled.** On s1d, with four volumes waiting, tlshd hit its
+  256Mi limit three times (`mount.nfs: No such process` on every pending
+  mount) before the backlog drained. The limit is 1Gi since oac-apps
+  #258 (on the test branch at once).
+
 `nfs-over-tls` comes from the fork's nfs-tls values, kept for the volumes
 created on it on 2026-10-19 (ACS's databases, the etcd backups, COO's
 Perses). A new hub sets `storageClass.enabled: false` there instead.
@@ -595,6 +619,13 @@ oc -n portworx logs deploy/pure-cosi-driver --all-containers | grep -i -m5 realm
 
 Wrong realm or endpoint values fail quietly: the only sign is pods
 waiting for their bucket (BUILD.md I8).
+
+On 2026-11-19 the bucket was Ready at once, but ACM observability's ten
+Thanos pods could not pull `registry.redhat.io/rhacm2/thanos-rhel9`:
+"denied: Token rejected by upstream registry". The same pull failed from
+oac-dev-infra, with another pull secret, and other `rhacm2` images pulled
+fine, so it was Red Hat's registry, not this hub. Nothing in 2.8 needs
+Thanos.
 
 ### 2.8 The compliance stages, from the fork
 
