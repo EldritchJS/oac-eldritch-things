@@ -58,6 +58,7 @@ broke, rather than hoping.
 
 ```sh
 export KUBECONFIG=/path/to/kubeadmin-jetty    # see ../JETTY.md § Prerequisites
+                                              # or any hub, e.g. ~/kubeadmin-compliant-dev-infra (#777)
 
 ./verify.sh                  # everything (read-only, ~2 min)
 ./verify.sh -t t06,t07       # just the GPU checks
@@ -79,14 +80,20 @@ they flag things needing a human, not broken things.
 | T-05 | RHACS healthy | Central + SecuredCluster Available, all pods ready, collector on every node. |
 | T-06 | GPU container modality | Node advertises `nvidia.com/gpu`, host driver Running. |
 | T-07 | GPU passthrough modality | Node advertises the device resource, `vfio-manager` Running, **host driver absent**, and `permittedHostDevices` present on **both** HCO and the KubeVirt CR. |
-| T-10 | Registry allowlist | Compares registries in use against `allowedRegistries`. Prevents the `ocp-allowed-registries` foot-gun. |
+| T-10 | Registry allowlist | Compares every image in use (containers and init containers) against `allowedRegistries`, by whole reference, so path-scoped entries (`quay.io/openshift-release-dev`) count. Prevents the `ocp-allowed-registries` foot-gun. |
 | T-11 | SCC exceptions known | The 10 privileged SCCs are the expected NVIDIA/KubeVirt set — a *new* one fails the test. |
-| T-13 | Storage traffic encrypted | `tlshd` Ready on every eligible node, `nfs-over-tls` requests `xprtsec=tls`, and reports the TLS-vs-cleartext mount ratio. **The only check for this** — no scanner inspects CSI mount options. |
+| T-13 | Storage traffic encrypted | `tlshd` Ready on every eligible node, every NFS StorageClass (one with `nfsvers` or the `pure_file` backend) requests `xprtsec=tls`, and reports the TLS-vs-cleartext mount ratio. **The only check for this** — no scanner inspects CSI mount options. |
 | T-14 | etcd backups running | CronJob present and not suspended, newest **successful** job ≤ `BACKUP_MAX_AGE_HOURS` (26) old, backup PV `Retain`. Reads job completion times, not `lastSuccessfulTime`, so manual runs count. No scanner checks for backups at all. |
 | T-15 | Effective TLS | Handshakes against the API server, ingress, OAuth and every kubelet (`../lib/tls-probe.py`). PASS only if TLS 1.3 and TLS 1.2 ECDHE+AES-GCM are accepted and TLS 1.0/1.1, CBC, ChaCha20 and static-RSA are **refused by the server**. A probe that could not be made is a WARN, never a PASS. Config checks cannot see this; only a handshake shows what FIPS actually leaves on offer. |
 | T-16 | File integrity monitoring | The `all-nodes` FileIntegrity is Active, every node's AIDE result is `Succeeded`, and the `file-integrity` alert rule exists. FAIL names the node; an intended change needs a per-node re-init (see `manifests/20-*`). Negative-tested with a canary file in `/etc` on a master. |
 | T-17 | No GPU claimed (billing) | GPUs on MOC are billed while claimed. FAILs on any non-terminal pod requesting an `nvidia.com/*` resource (pending included), any Deployment/StatefulSet/DaemonSet/Job/CronJob template requesting one (a template at 0 replicas claims tomorrow), any VM/VMI with a GPU or host device, and any GPU node whose own allocation count is non-zero. `GPU_CLAIM_ALLOW_NS=<regex>` downgrades approved namespaces to WARN; the GPU operator's seconds-long CUDA validator is always a WARN. Logic in `../lib/gpu-claims.py`; negative-tested offline with synthetic objects (no real GPU claimed). |
 | T-18 | Operators claim FIPS support | Every installed operator's CSV must carry `features.operators.openshift.io/fips-compliant=true`, or be listed in `operator-fips-accepted.txt`, which makes it a WARN (a recorded gap needing a decision). Any other unflagged operator FAILs, so a new one cannot slip in. The Compliance Operator's scans do not look at installed operators. Record and decisions: `operator-fips-inventory.md`. Negative-tested by dropping an entry from the list. |
+| T-19 | Local disks encrypted (3.13.16) | Every LUKS device on every node is LUKS2 with at least one Tang binding, and no disk or partition holds an unencrypted filesystem (boot and EFI partitions excepted). |
+| T-20 | OAuth token lifetime (3.1.11) | OAuth access tokens expire within 24 hours, and an inactivity timeout is set. |
+| T-21 | Clocks synchronised (3.3.7) | chronyd active and `timedatectl` reports NTP synchronised on every node. |
+| T-22 | API audit and forwarding (3.3.1) | The API audit profile is `WriteRequestBodies` or `AllRequestBodies`; the ClusterLogForwarder with the audit input is Ready; Loki dropping lines for size FAILs, rate-limit refusals WARN. |
+| T-23 | USB storage blocked (3.8.7) | `nousb` on the kernel command line or USBGuard active, on every node. |
+| T-24 | Hub admission policies | The `compliant-hosted-clusters` and `flashblade-nfs-tls` bindings are on `Deny`. SKIP on a cluster that is not a hub. |
 | T-12 | GPU switch is delegated & constrained | `gpu-modality-switcher` can patch only the GPU nodes (verified by SubjectAccessReview), cannot touch masters or delete nodes, and the admission policy exists. WARNs while the policy is non-enforcing. |
 
 ### Unit tests — no cluster needed
@@ -121,7 +128,10 @@ lockout protection is not protection.
 
 ## Baseline
 
-`baseline-fail-counts.txt` records expected compliance FAIL counts per scan.
+`baseline-fail-counts.txt` records jetty's expected compliance FAIL counts
+per scan; any other cluster uses `baseline-<cluster>.txt`, named from its API
+host (compliant-dev-infra: `baseline-compliant-dev-infra.txt`, 2026-11-19,
+5 FAILs from 3 known rules; see its RUNBOOK section 2.9).
 T-03 fails if any scan regresses above it. **Re-save it after each remediation
 stage**, once you have confirmed the new numbers are the ones you wanted:
 

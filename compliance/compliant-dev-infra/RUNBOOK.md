@@ -733,9 +733,20 @@ restarted: `oc debug node/<node> -- chroot /host systemctl restart kubelet`.
 MachineConfigs), and both unpaused together at 13:28: one master and one
 worker at a time, about 10 minutes each, all done by 14:05. Every node
 came back unlocked by Tang, with `fips=1 audit=1 nousb pti=on`; etcd
-stayed 3/3. No `nr_cpus=40` was needed. USBGuard runs on the masters only
-(`99-master-usbguard-enable`); the workers have `nousb`, which turns USB
-off in the kernel.
+stayed 3/3. No `nr_cpus=40` was needed. USBGuard then ran on the masters
+only (`99-master-usbguard-enable`), and the worker scan failed
+`service-usbguard-enabled`. The worker copy turns it on (each worker
+reboots once, about 20 minutes each; 2026-11-19, 22:09 to 23:12):
+
+```
+oc apply -f $RB/usbguard-enable-worker-machineconfig.yaml
+oc wait mcp/worker --for=condition=Updated --timeout=90m
+```
+
+After any MachineConfig roll, AIDE can flag the last node to reboot for
+the machine-config daemon's own files (u16 after stage C, s3b after
+this). Re-initialise that node (`file-integrity` chart values have the
+command) and check again.
 
 **Stage E**, audit logging: Loki on a COSI bucket, and the forwarder.
 Needs 2.7.
@@ -782,9 +793,17 @@ APPLY=1 $RB/route-rate-limits.sh    # annotates them
 Re-run it after any operator upgrade: an operator can drop the
 annotations.
 
-**4 distinct rules still fail** (rescan, 2026-10-27): 4 in moderate, 3
-of them also in CIS, none in the three node scans. Remove
-rows as fixes land.
+**On this hub (2026-11-19):** after stage C, the worker USBGuard
+MachineConfig and `route-rate-limits.sh` (13 routes), **3 distinct rules
+fail**, all known: `kubeadmin-removed` and
+`configure-network-policies-namespaces` (both scans), and
+`cluster-wide-proxy-set`. `api-server-encryption-provider-cipher` passes
+(etcd encryption from 2.2). All eight node scans pass. These are the
+baseline in `tests/baseline-compliant-dev-infra.txt`.
+
+On the first build, **4 distinct rules still failed** (rescan,
+2026-10-27): 4 in moderate, 3 of them also in CIS, none in the three
+node scans. Remove rows as fixes land.
 With everything in the Status column done, only the two POA&M items
 remain.
 
@@ -860,6 +879,27 @@ chrony, the API audit profile, USBGuard and the admission policies on
 Deny. The workload0 PR (restoring its hosted-clusters entry, section 4)
 can be opened while this is written; it waits for two approvals anyway.
 
+**Passed 2026-11-19, 23:58 UTC: 73 PASS, 0 FAIL, 5 WARN, 4 SKIP** (the
+GPU tests; the hub has no GPUs). The first run had 6 FAILs, fixed as
+follows:
+
+| Test | Failure | Fix |
+|---|---|---|
+| T-10 (4) | Each allowlisted registry reported as missing | A bug in the check: it compared hostnames with path-scoped allowlist entries (`quay.io/openshift-release-dev`). It now compares whole image references; all 214 images match |
+| T-14 | No backup yet; then the backup PV was `Delete` and the job's `cli` image was 4.22.14's | Ran a backup by hand; patched the PV to `Retain` (the manifest says to after it binds; missed here); set the 4.22.22 `cli` digest in the fork's etcd-backup values |
+| T-16 | AIDE flagged u16's `/etc/coredns/Corefile` | Rewritten by its stage C reboot; re-initialised u16 |
+
+The worker scan's `service-usbguard-enabled` FAIL was fixed by the worker
+USBGuard MachineConfig (2.8). The compliance evidence PVs were also
+`Delete`; all eight are now `Retain`. The WARNs are known: the FIPS
+validation record needs re-review for this RHCOS and its OpenSSL provider
+build (#781), and three operators claim no FIPS support, each accepted
+with a reason in the test.
+
+The storage network's DHCP put its DNS server in every worker's
+resolv.conf: oac-apps [#261](https://github.com/CCI-MOC/oac-apps/pull/261)
+turns that and its default route off on every cluster.
+
 The hub's own scans are not clean yet (2.9); the workload cluster does not
 depend on those remaining rules. `auditWriters.clusters` in the hub's audit-logging values
 needs `compliant-dev-workload0` (nist-dev-infra's lists
@@ -875,13 +915,30 @@ Upstream: oac-apps `docs/workload-cluster-deployment.md`. Why each step:
 ### 4.1 Workers
 
 jetty's two Lenovo SD665-N V3s, `MOC-R4PCC02U15` and `U16` (4 x H100
-each), on workload0's VLANs (ansible-switches #151) and out of ESI, booted from
-**this hub's** discovery ISO:
+each, BMCs 10.2.19.115 and .116), on workload0's VLANs (ansible-switches
+#151) and out of ESI, booted from **this hub's** discovery ISO:
 
 ```
 export KUBECONFIG=$HUB
 oc get infraenv -n hardware-inventory hardware-inventory -o jsonpath='{.status.isoDownloadURL}{"\n"}'
 ```
+
+The XCC will not mount that URL itself: it rejects the hub's Let's
+Encrypt certificate, even with the chain imported. What worked
+(2026-11-19): open each BMC's web console, download the ISO, and mount
+it with "Mount media from client" (keep the tab open until the Agent
+registers). Then a one-time CD boot over Redfish:
+
+```
+curl -sk -u "$BU:$BP" -X PATCH https://<bmc>/redfish/v1/Systems/1 -H 'Content-Type: application/json' \
+  -d '{"Boot":{"BootSourceOverrideTarget":"Cd","BootSourceOverrideMode":"UEFI","BootSourceOverrideEnabled":"Once"}}'
+curl -sk -u "$BU:$BP" -X POST https://<bmc>/redfish/v1/Systems/1/Actions/ComputerSystem.Reset \
+  -H 'Content-Type: application/json' -d '{"ResetType":"On"}'     # or ForceRestart if on
+```
+
+At POST, "Platform secure boot fuse is enabled but CPU 1, 2 are unfused"
+is informational; do not fuse (it cannot be undone). The node sits at
+UEFI DXE INIT for several minutes before GRUB.
 
 **Before anything else**, restore workload0's hosted-clusters entry in
 oac-apps (`hosted-clusters/compliant-dev-infra/compliant-dev-workload0/values.yaml`,
@@ -901,21 +958,26 @@ done
 ```
 
 Keep the `lsblk` output for the compliance record. The discovery ISO runs
-from memory, so wiping the boot disk is fine. Then reboot into the ISO
-again so the agent re-reads the empty disks.
+from memory, so wiping the boot disk is fine. Then `sudo systemctl restart
+agent.service` (no reboot needed) so the agent re-reads the empty disks.
 
-When they appear, approve and label them:
+Approve and label them, picked by product name:
 
 ```
 oc -n hardware-inventory get agents                        # both listed
 for a in $(oc -n hardware-inventory get agents -o name); do
-  h=$(oc -n hardware-inventory get $a -o jsonpath='{.spec.hostname}')
-  case $h in <the two SD665s' hostnames>)   # TODO: read them from the agents
+  p=$(oc -n hardware-inventory get $a -o jsonpath='{.status.inventory.systemVendor.productName}')
+  case $p in *SD665*)
     oc -n hardware-inventory patch $a --type merge -p '{"spec":{"approved":true}}'
     oc -n hardware-inventory label $a --overwrite massopen.cloud/cluster=compliant-dev-workload0 openstack/resource-class=lenovo-sd665nv3-h100
   esac
 done
 ```
+
+**Done 2026-11-19** (MOC-issues #787): both registered (10.20.20.152 and
+.153), each with a 960 GB Micron 7450 and a 7.68 TB Samsung, both wiped
+and discarded, both approved and labelled, both disks eligible. The
+`lsblk` records are in `~/work/drafts/sd665-wipe/`.
 
 The storage NIC's `never-default` setting (`enp163s0np0`) is in the
 `hypervisor` NodePool's values (oac-apps #248), as for nist-dev-workload0

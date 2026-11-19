@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# jetty verification harness — compliance + GPU + virtualisation.
+# Verification harness — compliance + GPU + virtualisation. Written for
+# jetty; runs on any standalone cluster or hub (compliant-dev-infra,
+# MOC-issues #777). GPU tests skip on clusters without GPUs.
 #
 # READ-ONLY. Every check here inspects state; none mutates the cluster.
 # The mutating test (GPU switch turnaround, T-08) is a separate script:
@@ -16,11 +18,13 @@
 #   ./verify.sh -l               # list tests
 #   ./verify.sh --save-baseline  # record current FAIL counts as the baseline
 #
+# The baseline is per cluster: baseline-<cluster>.txt (jetty's is
+# baseline-fail-counts.txt), <cluster> from the API server's hostname.
+#
 # Exit: 0 all passed, 1 one or more FAILed. WARN/SKIP do not fail the run.
 set -uo pipefail
 
 cd "$(dirname "$0")" || exit 2
-BASELINE_FILE="${BASELINE_FILE:-./baseline-fail-counts.txt}"
 DEVICE_RESOURCE="${DEVICE_RESOURCE:-}"   # passthrough resource; read from each node when empty
 export DEVICE_RESOURCE
 GPU_NS=nvidia-gpu-operator
@@ -361,9 +365,13 @@ run_t10() {
   hdr "T-10  Registry allowlist sanity"
   local allowed
   allowed=$(jp image.config.openshift.io cluster "" '{.spec.registrySources.allowedRegistries[*]}')
-  local inuse
-  inuse=$(oc get pods -A -o jsonpath='{range .items[*]}{range .spec.containers[*]}{.image}{"\n"}{end}{end}' 2>/dev/null \
-          | sed 's|/.*||' | sort -u | grep -v '^$')
+  # Allowlist entries may be scoped by path (quay.io/openshift-release-dev,
+  # docker.io/portworx), so compare whole image references, not hostnames.
+  # docker.io/<name> is docker.io/library/<name>.
+  local images inuse
+  images=$(oc get pods -A -o jsonpath='{range .items[*]}{range .spec.containers[*]}{.image}{"\n"}{end}{range .spec.initContainers[*]}{.image}{"\n"}{end}{end}' 2>/dev/null \
+          | grep -v '^$' | sort -u)
+  inuse=$(echo "$images" | sed 's|/.*||' | sort -u)
   info "registries in use: $(echo "$inuse" | tr '\n' ' ')"
   if [ -z "$allowed" ]; then
     warn "allowedRegistries is UNSET (compliance check ocp-allowed-registries FAILs)"
@@ -372,12 +380,22 @@ run_t10() {
     return
   fi
   info "allowlist: $allowed"
-  local missing=0
-  for r in $inuse; do
-    case " $allowed " in *" $r "*) ok "$r allowed" ;;
-      *) bad "$r IS IN USE BUT NOT ALLOWLISTED"; missing=$((missing+1)) ;; esac
-  done
-  [ "$missing" = "0" ] && ok "every in-use registry is allowlisted"
+  local bad_imgs
+  bad_imgs=$(echo "$images" | python3 -c '
+import sys
+allowed = sys.argv[1].split()
+for img in sys.stdin.read().split():
+    ref = img
+    parts = ref.split("/")
+    if parts[0] == "docker.io" and len(parts) == 2:
+        ref = "docker.io/library/" + parts[1]
+    ok = any(ref == a or ref.startswith(a + "/") or ref.startswith(a + ":") or ref.startswith(a + "@") for a in allowed)
+    if not ok: print(img)' "$allowed")
+  if [ -z "$bad_imgs" ]; then
+    ok "every image in use ($(echo "$images" | wc -l | tr -d ' ')) matches an allowlist entry"
+  else
+    while read -r i; do bad "IN USE BUT NOT ALLOWLISTED: $i"; done <<< "$bad_imgs"
+  fi
 }
 
 # --------------------------------------------------------------- T-11 ------
@@ -481,14 +499,22 @@ run_t13() {
     bad "tlshd not Ready: ${have:-0}/${want:-0} — TLS mounts will fail"
   fi
 
-  # 2. the StorageClass that asks for it
-  local mo
-  mo=$(jp sc nfs-over-tls "" '{.mountOptions[*]}')
-  case "$mo" in
-    *xprtsec=tls*) ok "StorageClass nfs-over-tls requests xprtsec=tls" ;;
-    "")            bad "StorageClass nfs-over-tls is missing" ;;
-    *)             bad "StorageClass nfs-over-tls lacks xprtsec=tls (got: $mo)" ;;
-  esac
+  # 2. every NFS StorageClass asks for it (jetty: nfs-over-tls; hubs:
+  #    pure-fb-nfsv4). NFS here means nfsvers in mountOptions, or Portworx's
+  #    pure_file backend. A cleartext class is FAIL: anything can use it.
+  local scs line name mo nfs_scs=0
+  scs=$(oc get sc -o jsonpath='{range .items[*]}{.metadata.name}|{.mountOptions}|{.parameters.backend}{"\n"}{end}' 2>/dev/null)
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    name=${line%%|*}; mo=$(echo "$line" | cut -d'|' -f2)
+    case "$mo|${line##*|}" in *nfsvers*|*"|pure_file") ;; *) continue ;; esac
+    nfs_scs=$((nfs_scs+1))
+    case "$mo" in
+      *xprtsec=tls*) ok "StorageClass $name requests xprtsec=tls" ;;
+      *)             bad "StorageClass $name is NFS without xprtsec=tls (mountOptions: ${mo:-none})" ;;
+    esac
+  done <<< "$scs"
+  [ "$nfs_scs" = 0 ] && bad "no NFS StorageClass found"
 
   # 3. what is actually mounted, per worker. Cleartext mounts are EXPECTED
   #    until existing PVCs are migrated -- mountOptions are immutable, so
@@ -575,7 +601,7 @@ print(int((datetime.datetime.now(datetime.timezone.utc)-t).total_seconds()//3600
   elif [ "$img" = "$cur" ]; then
     ok "backup job image is the current release's cli image"
   else
-    warn "backup job image is not the current release's cli — refresh the digest in manifests/15-etcd-backup.yaml"
+    warn "backup job image is not the current release's cli — refresh the digest in manifests/15-etcd-backup.yaml, or the etcd-backup chart's values"
     info "job: ${img##*@}"; info "now: ${cur##*@}"
   fi
 
@@ -755,17 +781,186 @@ EOF
   ok "$nok operators flagged fips-compliant=true"
 }
 
+# ------------------------------------------------------------ node probe ---
+# One debug pod per node gathers what T-19, T-21 and T-23 read, so each node
+# is visited once. Cached for the run; retried, as in T-01.
+NODE_CACHE=""
+NODE_PROBE='
+udevadm settle 2>/dev/null
+for d in $(lsblk -rpno NAME,FSTYPE | awk "\$2==\"crypto_LUKS\"{print \$1}"); do
+  v=$(cryptsetup luksDump "$d" 2>/dev/null | awk "/^Version:/{print \$2; exit}")
+  t=$(clevis luks list -d "$d" 2>/dev/null | grep -c tang)
+  echo "LUKS=$d v=$v tang=$t"
+done
+lsblk -rpno NAME,TYPE,FSTYPE,LABEL | awk "(\$2==\"disk\"||\$2==\"part\") && \$3!=\"\" && \$3!=\"crypto_LUKS\" && \$4!=\"boot\" && \$4!=\"EFI-SYSTEM\" {print \"PLAIN=\"\$1\" \"\$3}"
+echo "CHRONYD=$(systemctl is-active chronyd 2>/dev/null)"
+echo "NTPSYNC=$(timedatectl show -p NTPSynchronized --value 2>/dev/null)"
+echo "NOUSB=$(tr " " "\n" </proc/cmdline | grep -cx nousb)"
+echo "USBGUARD=$(systemctl is-active usbguard 2>/dev/null)"
+echo END=1
+'
+node_probe() {
+  [ -z "$NODE_CACHE" ] && NODE_CACHE=$(mktemp -d)
+  local f="$NODE_CACHE/$1" attempt
+  if ! grep -q '^END=1' "$f" 2>/dev/null; then
+    for attempt in 1 2 3; do
+      oc debug "node/$1" -n default --quiet -- chroot /host /bin/bash -c "$NODE_PROBE" 2>/dev/null | tr -d '\r' > "$f"
+      grep -q '^END=1' "$f" && break
+      [ "$attempt" -lt 3 ] && sleep 5
+    done
+  fi
+  grep -q '^END=1' "$f" && cat "$f"
+}
+is_hosted() { [ "$(jp infrastructure cluster "" '{.status.controlPlaneTopology}')" = External ]; }
+
+# --------------------------------------------------------------- T-19 ------
+# Encryption at rest on local disks (3.13.16). Every filesystem a node holds
+# is inside LUKS2 with a Tang binding, except /boot and the EFI partition,
+# which RHCOS never encrypts. On compliant-dev-infra: root, etcd and the
+# LVM Storage disks (MOC-issues #672, #811).
+run_t19() {
+  hdr "T-19  Local disks encrypted: LUKS2, unlocked by Tang (3.13.16)"
+  is_hosted && { skip "hosted cluster: its workers' disks are the hypervisor's"; return; }
+  local n out luks bad_n
+  for n in $(oc get nodes -o jsonpath='{.items[*].metadata.name}'); do
+    out=$(node_probe "$n") || { bad "$n  could not run the node probe"; continue; }
+    luks=$(echo "$out" | grep -c '^LUKS=')
+    bad_n=$(echo "$out" | grep '^LUKS=' | grep -v -E 'v=2 tang=[1-9]' | sed 's/^LUKS=//' | tr '\n' ' ')
+    local plain; plain=$(echo "$out" | sed -n 's/^PLAIN=//p' | tr '\n' ' ')
+    if [ "$luks" = 0 ]; then bad "$n  no LUKS devices"
+    elif [ -n "$bad_n" ]; then bad "$n  not LUKS2 with Tang: $bad_n"
+    elif [ -n "$plain" ]; then bad "$n  unencrypted filesystem(s): $plain"
+    else ok "$n  $luks LUKS2 device(s), all bound to Tang; no unencrypted filesystems"; fi
+  done
+}
+
+# --------------------------------------------------------------- T-20 ------
+# Session limits (3.1.11, 3.13.9): OAuth tokens expire and time out when
+# idle. On a hosted cluster they are set on the HostedCluster, on the hub.
+run_t20() {
+  hdr "T-20  OAuth token lifetime and idle timeout (3.1.11)"
+  is_hosted && { skip "hosted cluster: set on its HostedCluster (spec.configuration.oauth), check on the hub"; return; }
+  local age idle
+  age=$(jp oauth cluster "" '{.spec.tokenConfig.accessTokenMaxAgeSeconds}')
+  idle=$(jp oauth cluster "" '{.spec.tokenConfig.accessTokenInactivityTimeout}')
+  [ -n "$age" ] && [ "$age" -le 86400 ] && ok "access tokens expire after ${age}s" \
+    || bad "accessTokenMaxAgeSeconds '${age:-unset}' (want <= 86400)"
+  [ -n "$idle" ] && ok "idle timeout $idle" || bad "accessTokenInactivityTimeout unset"
+}
+
+# --------------------------------------------------------------- T-21 ------
+# Time sync (3.3.7): audit records are only comparable if clocks agree.
+# timedatectl, not chronyc: a debug pod cannot reach chronyd's socket
+# ("506 Cannot talk to daemon").
+run_t21() {
+  hdr "T-21  Clocks synchronised (3.3.7)"
+  is_hosted && { skip "hosted cluster: no debug pods"; return; }
+  local n out d sync
+  for n in $(oc get nodes -o jsonpath='{.items[*].metadata.name}'); do
+    out=$(node_probe "$n") || { bad "$n  could not run the node probe"; continue; }
+    d=$(echo "$out" | sed -n 's/^CHRONYD=//p'); sync=$(echo "$out" | sed -n 's/^NTPSYNC=//p')
+    [ "$d" = active ] && [ "$sync" = yes ] && ok "$n  chronyd active, NTP synchronised" \
+      || bad "$n  chronyd ${d:-unknown}, NTPSynchronized=${sync:-unknown}"
+  done
+}
+
+# --------------------------------------------------------------- T-22 ------
+# Audit logging (3.3.1, 3.3.2): the API servers log request bodies, and the
+# logs leave the cluster for Loki. No scanner checks that Loki accepts them;
+# on 2026-11-19 it refused about 110 pushes a minute until its audit tenant
+# limits were raised.
+run_t22() {
+  hdr "T-22  API audit profile and forwarding (3.3.1)"
+  local prof; prof=$(jp apiserver cluster "" '{.spec.audit.profile}')
+  case "$prof" in
+    WriteRequestBodies|AllRequestBodies) ok "API audit profile $prof" ;;
+    *) bad "API audit profile '${prof:-Default}' (want WriteRequestBodies)" ;;
+  esac
+  if ! oc get ns openshift-logging >/dev/null 2>&1; then bad "no openshift-logging: audit logs are not forwarded"; return; fi
+  local clf ready
+  clf=$(oc get clusterlogforwarder -n openshift-logging -o jsonpath='{range .items[*]}{.metadata.name}:{.spec.pipelines[*].inputRefs}{"\n"}{end}' 2>/dev/null | grep '"audit"' | cut -d: -f1 | head -1)
+  [ -z "$clf" ] && { bad "no ClusterLogForwarder with the audit input"; return; }
+  ready=$(jp clusterlogforwarder "$clf" openshift-logging '{.status.conditions[?(@.type=="Ready")].status}')
+  [ "$ready" = True ] && ok "ClusterLogForwarder $clf forwards audit, Ready" || bad "ClusterLogForwarder $clf Ready=$ready"
+  # Over the rate limit: the collector buffers and retries (WARN). Over the
+  # line size limit: the line is dropped, an audit record lost (FAIL).
+  local p logs rate=0 size=0 c
+  for p in $(oc get pods -n openshift-logging -o name 2>/dev/null | grep loki-distributor); do
+    logs=$(oc logs -n openshift-logging "$p" --since=10m 2>/dev/null | grep 'write operation failed')
+    c=$(printf '%s\n' "$logs" | grep -c 'rate limit exceeded'); rate=$((rate+c))
+    c=$(printf '%s\n' "$logs" | grep -c 'max entry size'); size=$((size+c))
+  done
+  if oc get lokistack -n openshift-logging -o name 2>/dev/null | grep -q .; then
+    [ "$size" = 0 ] && ok "no audit lines dropped for size in the last 10 minutes" \
+      || bad "$size audit line(s) over Loki's line size limit in the last 10 minutes: dropped"
+    [ "$rate" = 0 ] && ok "Loki under its rate limit in the last 10 minutes" \
+      || warn "Loki over its rate limit $rate time(s) in the last 10 minutes; the collector retries (a scan's results can burst)"
+  else
+    info "no LokiStack here: forwarded to a remote Loki, not checked"
+  fi
+}
+
+# --------------------------------------------------------------- T-23 ------
+# Removable media (3.8.7): stage C boots every node with `nousb`; USBGuard
+# runs on the masters (99-master-usbguard-enable). Either one blocks USB
+# storage; a node with neither FAILs.
+run_t23() {
+  hdr "T-23  USB storage blocked (3.8.7)"
+  is_hosted && { skip "hosted cluster: no debug pods"; return; }
+  local n out nousb guard
+  for n in $(oc get nodes -o jsonpath='{.items[*].metadata.name}'); do
+    out=$(node_probe "$n") || { bad "$n  could not run the node probe"; continue; }
+    nousb=$(echo "$out" | sed -n 's/^NOUSB=//p'); guard=$(echo "$out" | sed -n 's/^USBGUARD=//p')
+    if [ "$nousb" = 1 ] || [ "$guard" = active ]; then ok "$n  nousb=$nousb usbguard=${guard:-absent}"
+    else bad "$n  USB not blocked: no nousb, usbguard ${guard:-absent}"; fi
+  done
+}
+
+# --------------------------------------------------------------- T-24 ------
+# A compliant hub refuses non-compliant hosted clusters and cleartext
+# FlashBlade storage (MOC-issues #752). Warn-only policies do not count.
+run_t24() {
+  hdr "T-24  Hub admission policies enforce (Deny)"
+  if ! oc get crd hostedclusters.hypershift.openshift.io >/dev/null 2>&1; then skip "not a hub (no HostedCluster API)"; return; fi
+  local b act
+  for b in compliant-hosted-clusters flashblade-nfs-tls; do
+    act=$(jp validatingadmissionpolicybinding "$b" "" '{.spec.validationActions}')
+    case "$act" in
+      *Deny*) ok "$b: $act" ;;
+      "")     bad "$b: binding missing" ;;
+      *)      bad "$b: $act (not enforcing)" ;;
+    esac
+  done
+}
+
 # ---------------------------------------------------------------- main -----
 command -v oc >/dev/null || { echo "oc not found" >&2; exit 2; }
 oc whoami >/dev/null 2>&1 || { echo "not logged in (set KUBECONFIG)" >&2; exit 2; }
 
+# api.<cluster>.<domain>:6443 -> <cluster>
+CLUSTER=$(oc whoami --show-server | sed -E 's|^https://api\.([^.]+)\..*|\1|')
+if [ -z "${BASELINE_FILE:-}" ]; then
+  if [ "$CLUSTER" = jetty ]; then BASELINE_FILE=./baseline-fail-counts.txt
+  else BASELINE_FILE="./baseline-$CLUSTER.txt"; fi
+fi
+
 printf '%sverification%s  —  %s  —  %s\n' "$B" "$N" "$(oc whoami --show-server)" "$(date -u '+%Y-%m-%d %H:%M UTC')"
 
-ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12 t13 t14 t15 t16 t17 t18"
+ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12 t13 t14 t15 t16 t17 t18 t19 t20 t21 t22 t23 t24"
+# No GPUs and no GPU Operator: the GPU tests have nothing to check.
+HAS_GPU=0
+{ oc get ns "$GPU_NS" >/dev/null 2>&1 || [ -n "$(oc get nodes -l nvidia.com/gpu.present=true -o name 2>/dev/null)" ]; } && HAS_GPU=1
 RUN="${ONLY:-$ALL}"
 for t in ${RUN//,/ }; do
+  case "$t" in t06|t07|t12|t17)
+    if [ "$HAS_GPU" = 0 ]; then
+      [ -z "$ONLY" ] && { hdr "$(echo "$t" | tr t T)  (GPU)"; skip "no GPU nodes or GPU Operator on this cluster"; }
+      continue
+    fi ;;
+  esac
   if declare -f "run_$t" >/dev/null; then "run_$t"; else echo "no such test: $t" >&2; fi
 done
+[ -n "${NODE_CACHE:-}" ] && rm -rf "$NODE_CACHE"
 
 printf '\n%s--------------------------------------------------%s\n' "$B" "$N"
 printf '%sPASS %d%s   %sFAIL %d%s   %sWARN %d%s   SKIP %d\n' "$G" "$PASS" "$N" "$R" "$FAIL" "$N" "$Y" "$WARN" "$N" "$SKIP"
