@@ -507,6 +507,11 @@ The rendered config name changes a minute or two after `apply`. If the
 kernel arguments do not show `nr_cpus=40`, wait and look again before
 unpausing.
 
+**On this hub (2026-11-18):** the R440 masters have 48 threads, so only
+USBGuard was applied (each master rebooted once, about 30 minutes).
+`systemctl is-enabled usbguard` reports no such unit until stage C
+installs the extension; that is expected.
+
 ### 2.4 The service account issuer and OIDC keys, before anything uses AWS
 
 The install templates cannot set `serviceAccountIssuer`, so the script
@@ -520,7 +525,10 @@ cd ~/oat/oac-apps
 KUBECONFIG=$HUB AWS_PROFILE=$CO CLUSTER_NAME=compliant-dev-infra bootstrap/setup-oidc.sh -f
 ```
 
-Answer yes when it asks to set the issuer. **Check:**
+Answer yes when it asks to set the issuer. If an upload fails with
+"Token has expired and refresh failed" right after `aws sso login`, the
+login reused an expired portal session: `aws sso logout`, then log in
+again. **Check:**
 
 ```
 KUBECONFIG=$HUB oc get authentication cluster -o jsonpath='{.spec.serviceAccountIssuer}{"\n"}'
@@ -532,8 +540,13 @@ KUBECONFIG=$HUB oc get co kube-apiserver                     # Available, not Pr
 
 ### 2.5 Bootstrap ArgoCD
 
+First install the OpenShift GitOps operator and its ArgoCD instance
+(`setup-gitops.sh`, about 5 minutes); the bootstrap Application needs its
+CRDs. Then the bootstrap:
+
 ```
 cd ~/oat/oac-apps
+KUBECONFIG=$HUB bootstrap/setup-gitops.sh
 helm template bootstrap ./bootstrap --set hubName=compliant-dev-infra | KUBECONFIG=$HUB oc apply -f -
 ```
 
