@@ -1150,9 +1150,9 @@ cluster's control-plane checks read the hub). Baseline saved
   (APPLY=1) after creating any hosted cluster.
 - Found on the hub: AIDE failed on all three workers. LVM Storage wrote
   `/etc/lvm/archive/*` and `/etc/lvm/backup/vg0` when it made workload0's
-  etcd volumes. Re-initialised (2026-11-20). **TODO:** exclude those paths
-  (a custom AIDE config in the file-integrity chart), or every new LVM
-  Storage volume fails AIDE.
+  etcd volumes. Re-initialised (2026-11-20). oac-apps #264 excludes those
+  paths (`fileIntegrity.extraExcludes`, set for this hub); until it merges,
+  every new LVM Storage volume fails AIDE again.
 - **TODO, first:** T-19, the SD665s' disks are **not encrypted**
   (3.13.16): the Agent install wrote plain XFS. oac-apps #263 lets a
   NodePool's machineConfigs carry Ignition `luks` and `filesystems`; the
@@ -1161,10 +1161,16 @@ cluster's control-plane checks read the hub). Baseline saved
   `rd.neednet=1`) then go in its NodePool and both nodes are reinstalled.
   **Blocked:** workload0's network (VLAN 220, gateway 10.20.20.1) cannot
   reach Tang; the hub's (219) can. Asked naved on #810 (2026-11-20).
-- **TODO:** T-14, nothing backs up workload0's etcd, which runs on the hub
-  (`etcd-0..2` in `clusters-compliant-dev-workload0`); the hub's
-  etcd-backup covers only its own. HyperShift has no backup resource here;
-  Red Hat's method is `etcdctl snapshot save` in an etcd pod, copied off.
+- Fixed 2026-11-20: T-14, workload0's etcd (`etcd-0..2` in
+  `clusters-compliant-dev-workload0`, on the hub) had no backup. The fork's
+  etcd-backup chart now takes `hostedClusters`: per cluster, a CronJob in
+  the hub's `etcd-backup` namespace (`etcd-backup-<cluster>`, 03:00 UTC)
+  runs `etcdctl snapshot save` in a ready etcd pod, streams it to its own
+  volume and checks the hash; 136 MB, 14 kept. No privileges: exec in
+  `clusters-<cluster>` only, and the namespace's egress now allows the API.
+  Patch each new backup PV to Retain, as for the hub's. A restore also
+  needs the cluster's Secret encryption key, which the hub's own backup
+  holds (`<cluster>-etcd-encryption-key` in `clusters`).
 - T-04 (raw scan results) and T-13 (NFS over TLS) wait for Portworx on
   workload0; it has no StorageClass yet.
 - The tailoring rationales in the hosted-clusters compliance values say

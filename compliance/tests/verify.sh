@@ -584,10 +584,29 @@ run_t14() {
     if [ -z "${HUB_KUBECONFIG:-}" ]; then
       skip "hosted cluster: etcd runs on the hub; set HUB_KUBECONFIG to check its backups"; return
     fi
-    local cj
-    cj=$( { hub_oc get cronjob -n "$HCP_NS" -o name 2>/dev/null; hub_oc get cronjob -n "$ns" -o name 2>/dev/null | grep -i -- "$CLUSTER"; } | grep -i etcd | head -1)
-    if [ -n "$cj" ]; then ok "hub has $cj for this cluster's etcd"
-    else bad "no backup of this cluster's etcd on the hub (etcd in $HCP_NS; the hub's etcd-backup covers only its own)"; fi
+    # The etcd-backup chart's hostedClusters: CronJob etcd-backup-<cluster>
+    # in the hub's etcd-backup namespace.
+    local cj="etcd-backup-$CLUSTER" newest age_h
+    if ! hub_oc get cronjob "$cj" -n "$ns" >/dev/null 2>&1; then
+      bad "no backup of this cluster's etcd on the hub: no CronJob $ns/$cj (etcd in $HCP_NS; list the cluster in the etcd-backup chart's hostedClusters)"
+      return
+    fi
+    ok "hub CronJob $ns/$cj ($(hub_oc get cronjob "$cj" -n "$ns" -o jsonpath='{.spec.schedule}'))"
+    newest=$(hub_oc get jobs -n "$ns" -o jsonpath='{range .items[?(@.status.succeeded==1)]}{.metadata.name}{" "}{.status.completionTime}{"\n"}{end}' 2>/dev/null \
+      | awk -v p="$cj" 'index($1, p)==1 {print $2}' | sort | tail -1)
+    if [ -z "$newest" ]; then bad "no successful backup of this cluster's etcd on record"; return; fi
+    age_h=$(python3 -c "
+import datetime
+t=datetime.datetime.strptime('$newest','%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=datetime.timezone.utc)
+print(int((datetime.datetime.now(datetime.timezone.utc)-t).total_seconds()//3600))")
+    [ "$age_h" -le "$BACKUP_MAX_AGE_HOURS" ] \
+      && ok "newest successful backup ${age_h}h old (<= ${BACKUP_MAX_AGE_HOURS}h)" \
+      || bad "newest successful backup ${age_h}h old (> ${BACKUP_MAX_AGE_HOURS}h) — backups have stopped"
+    local pv rp
+    pv=$(hub_oc get pvc "$cj" -n "$ns" -o jsonpath='{.spec.volumeName}' 2>/dev/null)
+    rp=$(hub_oc get pv "$pv" -o jsonpath='{.spec.persistentVolumeReclaimPolicy}' 2>/dev/null)
+    [ "$rp" = Retain ] && ok "backup PV reclaim policy Retain" \
+      || bad "backup PV ${pv:-?} reclaim policy '${rp:-?}' — deleting the PVC deletes the backups (patch it to Retain)"
     return
   fi
   if ! oc get cronjob etcd-backup -n "$ns" >/dev/null 2>&1; then
@@ -601,7 +620,9 @@ run_t14() {
   # Newest SUCCESSFUL job of any origin. Not .status.lastSuccessfulTime: a
   # manual `oc create job --from=cronjob/...` run does not update it.
   local newest age_h
-  newest=$(oc get jobs -n "$ns" -o jsonpath='{range .items[?(@.status.succeeded==1)]}{.status.completionTime}{"\n"}{end}' 2>/dev/null | grep . | sort | tail -1)
+  # Only the hub's own: hosted clusters' backups run in this namespace too.
+  # `oc create job --from=cronjob/etcd-backup` sets the same owner.
+  newest=$(oc get jobs -n "$ns" -o jsonpath='{range .items[?(@.status.succeeded==1)]}{.metadata.ownerReferences[0].name}{" "}{.status.completionTime}{"\n"}{end}' 2>/dev/null | awk '$1=="etcd-backup"{print $2}' | sort | tail -1)
   if [ -z "$newest" ]; then
     bad "no successful backup job on record"
     return
@@ -615,7 +636,7 @@ print(int((datetime.datetime.now(datetime.timezone.utc)-t).total_seconds()//3600
     || bad "newest successful backup ${age_h}h old (> ${BACKUP_MAX_AGE_HOURS}h) — backups have stopped"
 
   local failed
-  failed=$(oc get jobs -n "$ns" -o jsonpath='{range .items[?(@.status.failed)]}{.metadata.name}{"\n"}{end}' 2>/dev/null | grep -c . || true)
+  failed=$(oc get jobs -n "$ns" -o jsonpath='{range .items[?(@.status.failed)]}{.metadata.ownerReferences[0].name}{"\n"}{end}' 2>/dev/null | grep -c '^etcd-backup$' || true)
   [ "${failed:-0}" -gt 0 ] && warn "$failed failed backup job(s) retained — check: oc get jobs -n $ns" \
     || true
 
