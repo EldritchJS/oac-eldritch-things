@@ -55,6 +55,8 @@ spec:
                 - component: rhacs
                 - component: namespace-guardrails-app
                 - component: audit-logging
+                # tlshd, before Portworx's first volume (oac-apps #269).
+                - component: nfs-tls
   # A cluster that leaves the placement, even for a moment (on 2026-10-22,
   # a hub master's NotReady spell), has its Applications deleted. Without
   # this, Argo then deletes everything they installed, credentials applied

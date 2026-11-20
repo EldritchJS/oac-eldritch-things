@@ -1153,18 +1153,40 @@ cluster's control-plane checks read the hub). Baseline saved
   etcd volumes. Re-initialised (2026-11-20). oac-apps #264 excludes those
   paths (`fileIntegrity.extraExcludes`, set for this hub); until it merges,
   every new LVM Storage volume fails AIDE again.
-- **TODO, first:** T-19, the SD665s' disks are **not encrypted**
-  (3.13.16): the Agent install wrote plain XFS. oac-apps #263 lets a
-  NodePool's machineConfigs carry Ignition `luks` and `filesystems`; the
-  values for workload0 (root on `/dev/disk/by-partlabel/root`, LUKS2,
-  aes-xts-plain64, pbkdf2, Tang 172.16.1.1 with the hub's thumbprint,
-  `rd.neednet=1`) then go in its NodePool and both nodes are reinstalled.
-  Tang is reachable from workload0's network since 2026-11-20 (naved,
-  #810), and named `tang.massopen.cloud` (moc-dns #41); workload0 binds to
-  the name (branch `workload0-root-luks`). **TODO:** the hub's disks are
-  bound to 172.16.1.1: add a binding to the name on each (`clevis luks
-  bind ... tang '{"url":"http://tang.massopen.cloud:80",...}'`), then
-  remove the old one, one disk at a time.
+- Fixed 2026-11-20: T-19, disk encryption. oac-apps #263 (chart: a
+  pool's machineConfigs may carry Ignition `luks` and `filesystems`),
+  #265 (workload0: LUKS2, aes-xts-plain64, pbkdf2, Tang
+  `tang.massopen.cloud`, `rd.neednet=1`; replicas 0) and #266 (replicas
+  2). Both SD665s reinstalled 17:12 to 18:10; T-19 passes. What it took:
+  - Scaling to 0 hung on the drain: with both nodes going, each held the
+    last copy of pods under a disruption budget, and the NodePool's
+    `nodeDrainTimeout` is 0 (wait forever). Annotating both Machines with
+    `machine.cluster.x-k8s.io/exclude-node-draining` released them; the
+    Agents then rebooted into discovery by themselves (reclaim), so the
+    discovery ISO was not needed.
+  - One node came up with CRI-O failing: `nodeip-configuration` had
+    recorded 10.20.20.153 (the NIC's lease) before `br-ex` took over and
+    got .154. Fix on the node: remove `/run/nodeip-configuration/*`,
+    restart `nodeip-configuration`, then `crio` and `kubelet`. A DHCP
+    reservation per MAC would prevent it.
+  - On the other node, multus crash-looped (`pthread_create failed`):
+    about 70 pod network requests at once, each a Go CNI plugin starting
+    a thread per CPU (512) inside multus's pod, passed the pod limit of
+    4096 processes. Unblocked by raising that pod's cgroup `pids.max` to
+    65536 on the node. **TODO:** `podPidsLimit` for this pool, oac-apps
+    #268 (chart) then a values change; until then a reboot can repeat it.
+  - AIDE on a fresh node flags `/etc/hosts`, which node-resolver writes
+    after AIDE's first snapshot. Re-initialise once after a reinstall.
+- 18:12 verify: 32 PASS, 2 FAIL (T-04 waiting on Portworx; AIDE, then
+  re-initialised and clean at 18:21). Hub 18:00: 72 PASS, 0 FAIL.
+- Storage, in progress: oac-apps #261 merged 18:24 (no default route or
+  DNS from the storage network; all four clusters' bridges re-applied).
+  #269 adds workload0's Portworx and the storage registries its images
+  need; `workload-stage-d.yaml` adds nfs-tls (tlshd, CA in
+  `cluster/compliant-dev-workload0/nfs-tls-ca`, stored 2026-11-20). After
+  #269: rawResultStorage on (T-04), and T-13 should pass.
+- workload0's disks are bound to the name only; the hub's to the name and
+  172.16.1.1 (rebound in place with `clevis luks edit`, 2026-11-20).
 - Fixed 2026-11-20: T-14, workload0's etcd (`etcd-0..2` in
   `clusters-compliant-dev-workload0`, on the hub) had no backup. The fork's
   etcd-backup chart now takes `hostedClusters`: per cluster, a CronJob in
