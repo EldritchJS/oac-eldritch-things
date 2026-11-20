@@ -1247,7 +1247,7 @@ oac-apps changes.
      node label needed.
    - `nfd-operator`: `enableTaints: false`. Every node is a GPU node, so
      the taint would leave platform pods Pending.
-2. HyperConverged, by hand (**TODO** openshift-virtualization chart values):
+2. HyperConverged, by hand until oac-apps #273 (openshift-virtualization chart values) merges:
    ```
    oc patch hyperconverged -n openshift-cnv kubevirt-hyperconverged --type=merge -p \
      '{"spec":{"virtualization":{"permittedHostDevices":{"pciHostDevices":[{"pciDeviceSelector":"10DE:2330","resourceName":"nvidia.com/GH100_H100_SXM5_80GB","externalResourceProvider":true}]},"liveUpdateConfiguration":{"maxHotplugRatio":1}}}}'
@@ -1255,7 +1255,7 @@ oac-apps changes.
    `maxHotplugRatio: 1`: at the default 4, QEMU refuses GPUs to VMs over
    63 vCPUs.
 3. `modprobe vfio_iommu_type1` on each node, by hand (**TODO** a NodePool
-   MachineConfig loading it at boot; a reboot drops it). The GPU
+   MachineConfig loading it at boot, oac-apps #272; a reboot drops it). The GPU
    Operator's VFIO manager loads `vfio-pci` but not this backend.
 4. About a minute after the operator is Succeeded, each node advertises
    `nvidia.com/GH100_H100_SXM5_80GB: 4` and every H100 is on `vfio-pci`.
