@@ -1130,28 +1130,48 @@ were applied 00:34 to 00:56. What went wrong, and the fixes:
 | One ACS collector in CrashLoopBackOff (exit 137) | 1Gi limit; 512 CPUs per node, per-CPU eBPF buffers; the other sat at 971Mi | 3Gi limit in workload0's rhacs values (fork, to push) |
 
 **First verify on workload0 (01:18): 19 PASS, 6 FAIL, 6 WARN, 9 SKIP.**
+After the fixes below, **01:50: 28 PASS, 4 FAIL, 5 WARN, 8 SKIP**, run as
+`HUB_KUBECONFIG=~/kubeadmin-compliant-dev-infra ./verify.sh` (a hosted
+cluster's control-plane checks read the hub). Baseline saved
+(`tests/baseline-compliant-dev-workload0.txt`: hosted-ocp4-moderate 1,
+`cluster-wide-proxy-set`, as on the hub).
 
-- **TODO, first:** the SD665s' disks are **not encrypted** (T-19, 3.13.16):
-  the Agent install wrote plain XFS. verify.sh had skipped T-19 on every
-  hosted cluster; it now skips only KubeVirt ones. The fix is a LUKS2 +
-  Tang MachineConfig in the `hypervisor` NodePool's values, then a
-  reinstall of both (wipe, discovery boot, about an hour). workload0 is
-  empty, so now is the cheap time.
-- **TODO:** T-03 (openshift-apiserver audit path), T-05 (Central) and
-  T-14 (etcd backups) look for what a hosted cluster runs on the hub.
-  verify.sh should check those on the hub side for a hosted cluster.
+- Fixed: the 7 scan FAILs came to 1. `patch-operator` had no guardrails
+  (the hub's NetworkPolicies and quota, webhook checked with a server dry
+  run) and is exempt from the Deployment limits rule as on the hub; the
+  `kubevirt-controller` SCC (OpenShift Virtualization) is added to the
+  capabilities allowlist in both hosted profiles (fork `5233931`).
+- Fixed: verify.sh checks a hosted cluster's openshift-apiserver audit
+  path, Central and etcd backups on the hub, in `clusters-<cluster>`; it
+  skips them without `HUB_KUBECONFIG`. T-19 skips only KubeVirt clusters.
+- Found and fixed on the hub: HyperShift adds `ignition-server`,
+  `konnectivity-server` and `oauth` routes in `clusters-<cluster>`, which
+  failed the hub's `routes-rate-limit`. Re-run `route-rate-limits.sh`
+  (APPLY=1) after creating any hosted cluster.
+- Found on the hub: AIDE failed on all three workers. LVM Storage wrote
+  `/etc/lvm/archive/*` and `/etc/lvm/backup/vg0` when it made workload0's
+  etcd volumes. Re-initialised (2026-11-20). **TODO:** exclude those paths
+  (a custom AIDE config in the file-integrity chart), or every new LVM
+  Storage volume fails AIDE.
+- **TODO, first:** T-19, the SD665s' disks are **not encrypted**
+  (3.13.16): the Agent install wrote plain XFS. oac-apps #263 lets a
+  NodePool's machineConfigs carry Ignition `luks` and `filesystems`; the
+  values for workload0 (root on `/dev/disk/by-partlabel/root`, LUKS2,
+  aes-xts-plain64, pbkdf2, Tang 172.16.1.1 with the hub's thumbprint,
+  `rd.neednet=1`) then go in its NodePool and both nodes are reinstalled.
+  **Blocked:** workload0's network (VLAN 220, gateway 10.20.20.1) cannot
+  reach Tang; the hub's (219) can. Asked naved on #810 (2026-11-20).
+- **TODO:** T-14, nothing backs up workload0's etcd, which runs on the hub
+  (`etcd-0..2` in `clusters-compliant-dev-workload0`); the hub's
+  etcd-backup covers only its own. HyperShift has no backup resource here;
+  Red Hat's method is `etcdctl snapshot save` in an etcd pod, copied off.
 - T-04 (raw scan results) and T-13 (NFS over TLS) wait for Portworx on
   workload0; it has no StorageClass yet.
-- **TODO:** 7 scan FAILs against nist-dev-workload0's 1:
-  `configure-network-policies-namespaces` and
-  `scc-limit-container-allowed-capabilities` (both profiles),
-  `resource-requests-limits-in-deployment`, `resource-requests-quota`,
-  `cluster-wide-proxy-set`. Likely the namespaces nist did not have
-  (OpenShift Virtualization, patch-operator, rhacs-operator); not yet
-  looked at. No baseline saved until they are.
 - The tailoring rationales in the hosted-clusters compliance values say
   "checked on the hub, 2026-10-22/23": that was nist-dev-infra. **TODO:**
-  re-check them on this hub.
+  re-check them on this hub. The hub has HyperShift's
+  `auditlogpersistenceconfigs` CRD, which may end the audit-retention
+  exception (`auditRetention`); not looked at.
 
 workload0's admin kubeconfig is `~/kubeadmin-compliant-dev-workload0`
 (break-glass; also pushed to Secrets Manager). Day to day:

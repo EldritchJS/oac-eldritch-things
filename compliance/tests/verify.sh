@@ -233,8 +233,18 @@ print(int((datetime.datetime.now(datetime.timezone.utc)-t).total_seconds()//3600
   # the control. ocp4-openshift-api-server-audit-log-path (OCPBUGS-126610):
   # the content reads the wrong ConfigMap; this reads the right one.
   local oas_path
-  oas_path=$(oc get configmap config -n openshift-apiserver -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
-    | python3 -c 'import json,sys; print((json.load(sys.stdin).get("apiServerArguments",{}).get("audit-log-path") or [""])[0])' 2>/dev/null)
+  if is_hosted; then
+    # HyperShift: the config is YAML in the hub's control plane namespace.
+    if [ -z "${HUB_KUBECONFIG:-}" ]; then
+      skip "hosted cluster: openshift-apiserver runs on the hub; set HUB_KUBECONFIG to check its audit-log-path"
+      return
+    fi
+    oas_path=$(hub_oc get configmap openshift-apiserver -n "$HCP_NS" -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
+      | python3 -c 'import sys,yaml; print(((yaml.safe_load(sys.stdin) or {}).get("apiServerArguments",{}).get("audit-log-path") or [""])[0])' 2>/dev/null)
+  else
+    oas_path=$(oc get configmap config -n openshift-apiserver -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
+      | python3 -c 'import json,sys; print((json.load(sys.stdin).get("apiServerArguments",{}).get("audit-log-path") or [""])[0])' 2>/dev/null)
+  fi
   [ "$oas_path" = "/var/log/openshift-apiserver/audit.log" ] \
     && ok "openshift-apiserver audit-log-path set ($oas_path) — checked here; scanner rule disabled (OCPBUGS-126610)" \
     || bad "openshift-apiserver audit-log-path is '${oas_path:-unset}', expected /var/log/openshift-apiserver/audit.log"
@@ -260,7 +270,13 @@ run_t04() {
 run_t05() {
   hdr "T-05  RHACS healthy"
   local c s
-  c=$(jp central stackrox-central-services "$ACS_NS" '{.status.conditions[?(@.type=="Available")].status}')
+  if is_hosted; then
+    # Central is the hub's; this cluster runs only the SecuredCluster.
+    c=$(hub_oc get central stackrox-central-services -n "$ACS_NS" -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null)
+    [ -z "${HUB_KUBECONFIG:-}" ] && c="unknown (hosted: set HUB_KUBECONFIG to check the hub's Central)"
+  else
+    c=$(jp central stackrox-central-services "$ACS_NS" '{.status.conditions[?(@.type=="Available")].status}')
+  fi
   s=$(jp securedcluster stackrox-secured-cluster-services "$ACS_NS" '{.status.conditions[?(@.type=="Available")].status}')
   [ "$c" = "True" ] && ok "Central Available" || bad "Central Available=$c"
   [ "$s" = "True" ] && ok "SecuredCluster Available" || bad "SecuredCluster Available=$s"
@@ -561,6 +577,19 @@ run_t13() {
 run_t14() {
   hdr "T-14  etcd backups are running (CP-9)"
   local ns=etcd-backup
+  if is_hosted; then
+    # A hosted cluster's etcd runs on the hub, in $HCP_NS. Look there for
+    # anything that backs it up: a CronJob in that namespace, or one in the
+    # hub's etcd-backup namespace naming this cluster.
+    if [ -z "${HUB_KUBECONFIG:-}" ]; then
+      skip "hosted cluster: etcd runs on the hub; set HUB_KUBECONFIG to check its backups"; return
+    fi
+    local cj
+    cj=$( { hub_oc get cronjob -n "$HCP_NS" -o name 2>/dev/null; hub_oc get cronjob -n "$ns" -o name 2>/dev/null | grep -i -- "$CLUSTER"; } | grep -i etcd | head -1)
+    if [ -n "$cj" ]; then ok "hub has $cj for this cluster's etcd"
+    else bad "no backup of this cluster's etcd on the hub (etcd in $HCP_NS; the hub's etcd-backup covers only its own)"; fi
+    return
+  fi
   if ! oc get cronjob etcd-backup -n "$ns" >/dev/null 2>&1; then
     bad "no etcd-backup CronJob in $ns — etcd is not being backed up"
     info "See ../manifests/15-etcd-backup.yaml"
@@ -813,6 +842,11 @@ node_probe() {
 }
 is_hosted() { [ "$(jp infrastructure cluster "" '{.status.controlPlaneTopology}')" = External ]; }
 
+# A hosted cluster's control plane (API servers, etcd) and its ACS Central
+# run on the hub: those checks read the hub, through HUB_KUBECONFIG, in the
+# hosted control plane namespace clusters-<cluster>.
+hub_oc() { [ -n "${HUB_KUBECONFIG:-}" ] || return 1; KUBECONFIG="$HUB_KUBECONFIG" oc "$@"; }
+
 # --------------------------------------------------------------- T-19 ------
 # Encryption at rest on local disks (3.13.16). Every filesystem a node holds
 # is inside LUKS2 with a Tang binding, except /boot and the EFI partition,
@@ -941,8 +975,10 @@ run_t24() {
 command -v oc >/dev/null || { echo "oc not found" >&2; exit 2; }
 oc whoami >/dev/null 2>&1 || { echo "not logged in (set KUBECONFIG)" >&2; exit 2; }
 
-# api.<cluster>.<domain>:6443 -> <cluster>
-CLUSTER=$(oc whoami --show-server | sed -E 's|^https://api\.([^.]+)\..*|\1|')
+# api.<cluster>.<domain>:6443 -> <cluster>; a hosted cluster's kubeconfig
+# may name api-internal-<cluster>.<hcp domain> instead.
+CLUSTER=$(oc whoami --show-server | sed -E 's#^https://api(\.|-internal-)([^.]+)\..*#\2#')
+HCP_NS="clusters-$CLUSTER"
 if [ -z "${BASELINE_FILE:-}" ]; then
   if [ "$CLUSTER" = jetty ]; then BASELINE_FILE=./baseline-fail-counts.txt
   else BASELINE_FILE="./baseline-$CLUSTER.txt"; fi

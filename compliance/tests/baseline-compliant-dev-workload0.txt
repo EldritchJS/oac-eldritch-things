@@ -1,0 +1,5 @@
+hosted-ocp4-cis 0
+hosted-ocp4-moderate 1
+ocp4-cis-node-worker 0
+ocp4-moderate-node-worker 0
+rhcos4-moderate-worker 0
