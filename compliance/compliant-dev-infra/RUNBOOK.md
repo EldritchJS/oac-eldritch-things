@@ -1,7 +1,8 @@
 # Building compliant-dev-infra and its workload cluster
 
-*Runbook, draft (2026-11-17). Not yet run. Open items are marked
-**TODO**.*
+*Runbook (2026-11-17), run 2026-11-18 to 20: the hub is built and passes
+verify.sh (section 3); workload0 is built and hardened, with its open
+items in 4.6. Open items are marked **TODO**.*
 
 compliant-dev-infra is a new compliant hub, with R440s as its control
 plane and three pool FC430s as its workers, built from the
@@ -879,7 +880,7 @@ chrony, the API audit profile, USBGuard and the admission policies on
 Deny. The workload0 PR (restoring its hosted-clusters entry, section 4)
 can be opened while this is written; it waits for two approvals anyway.
 
-**Passed 2026-11-19, 23:58 UTC: 73 PASS, 0 FAIL, 5 WARN, 4 SKIP** (the
+**Passed 2026-11-19, 23:40 UTC: 73 PASS, 0 FAIL, 5 WARN, 4 SKIP** (the
 GPU tests; the hub has no GPUs). The first run had 6 FAILs, fixed as
 follows:
 
@@ -1113,6 +1114,48 @@ A new operator namespace on a hosted cluster brings the quota and limits
 failures with it, until its guardrails are added.
 
 Archive the first results as the cluster's baseline.
+
+### 4.6 What happened on this build (2026-11-19 and 20)
+
+oac-apps #260 merged at 23:43; the control plane was available at 23:49
+and both SD665s joined at 00:26 (4.22.22, FIPS on both). Stages A to D
+were applied 00:34 to 00:56. What went wrong, and the fixes:
+
+| Problem | Cause | Fix |
+|---|---|---|
+| Agents stuck "insufficient": ignition not downloadable | The hub's `router-hosted-clusters` Service got 10.20.19.200 from MetalLB's default pool, not its pinned 10.20.19.10: the Service and the pinned pool were created in the same second at bootstrap (both sync wave 1 in `hcp-config`), and MetalLB never moves an assigned address | Deleted the Service; the ingress operator recreated it and it took 10.20.19.10. **TODO:** an `hcp-config` PR putting the pool in an earlier wave |
+| Ingress certificate not issued | cert-manager tried its Route 53 role before the OIDC keys were uploaded (4.3), then backed off | Deleted the challenge; issued at once |
+| `namespace-guardrails-app` and `cluster-observability-operator` apps Unknown | Helm release names over 53 characters (`compliant-dev-workload0-...`) | `releaseName: "{{component}}"` in the four workload stage files, and for main in a branch, `managed-apps-release-name` (`~/oat/oac-apps-release-name`, with a unit test; no chart uses `.Release.Name`, and all 11 render the same). **TODO:** open that PR |
+| Guardrails sync failed | `grafana-operator` (gone, #742) and `-compute-upgrade` (NodePool "compute" on nist; here "hypervisor", and the namespace exists only during a rollout) | Removed from the fork values (`4306466`) |
+| One ACS collector in CrashLoopBackOff (exit 137) | 1Gi limit; 512 CPUs per node, per-CPU eBPF buffers; the other sat at 971Mi | 3Gi limit in workload0's rhacs values (fork, to push) |
+
+**First verify on workload0 (01:18): 19 PASS, 6 FAIL, 6 WARN, 9 SKIP.**
+
+- **TODO, first:** the SD665s' disks are **not encrypted** (T-19, 3.13.16):
+  the Agent install wrote plain XFS. verify.sh had skipped T-19 on every
+  hosted cluster; it now skips only KubeVirt ones. The fix is a LUKS2 +
+  Tang MachineConfig in the `hypervisor` NodePool's values, then a
+  reinstall of both (wipe, discovery boot, about an hour). workload0 is
+  empty, so now is the cheap time.
+- **TODO:** T-03 (openshift-apiserver audit path), T-05 (Central) and
+  T-14 (etcd backups) look for what a hosted cluster runs on the hub.
+  verify.sh should check those on the hub side for a hosted cluster.
+- T-04 (raw scan results) and T-13 (NFS over TLS) wait for Portworx on
+  workload0; it has no StorageClass yet.
+- **TODO:** 7 scan FAILs against nist-dev-workload0's 1:
+  `configure-network-policies-namespaces` and
+  `scc-limit-container-allowed-capabilities` (both profiles),
+  `resource-requests-limits-in-deployment`, `resource-requests-quota`,
+  `cluster-wide-proxy-set`. Likely the namespaces nist did not have
+  (OpenShift Virtualization, patch-operator, rhacs-operator); not yet
+  looked at. No baseline saved until they are.
+- The tailoring rationales in the hosted-clusters compliance values say
+  "checked on the hub, 2026-10-22/23": that was nist-dev-infra. **TODO:**
+  re-check them on this hub.
+
+workload0's admin kubeconfig is `~/kubeadmin-compliant-dev-workload0`
+(break-glass; also pushed to Secrets Manager). Day to day:
+`oc login --web https://api-internal-compliant-dev-workload0.hcp-int.nist.int.massopen.cloud:6443`.
 
 ---
 

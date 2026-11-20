@@ -64,6 +64,10 @@ spec:
         targetRevision: compliant-dev-infra-test
         path: "charts/{{component}}"
         helm:
+          # Helm caps release names at 53 characters; <cluster>-nist-test-
+          # <component> passes it for compliant-dev-workload0. No chart here
+          # uses .Release.Name, so this changes nothing deployed.
+          releaseName: "{{component}}"
           ignoreMissingValueFiles: true
           valueFiles:
             - "/values/compliant-dev-infra/hosted-clusters/{{component}}.yaml"

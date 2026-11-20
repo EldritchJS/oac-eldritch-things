@@ -820,7 +820,11 @@ is_hosted() { [ "$(jp infrastructure cluster "" '{.status.controlPlaneTopology}'
 # LVM Storage disks (MOC-issues #672, #811).
 run_t19() {
   hdr "T-19  Local disks encrypted: LUKS2, unlocked by Tang (3.13.16)"
-  is_hosted && { skip "hosted cluster: its workers' disks are the hypervisor's"; return; }
+  # KubeVirt workers' disks are volumes on the hypervisor cluster, checked
+  # there. Agent (bare-metal) workers have their own disks: test them.
+  if is_hosted && [ "$(oc get infrastructure cluster -o jsonpath='{.status.platformStatus.type}' 2>/dev/null)" = KubeVirt ]; then
+    skip "KubeVirt hosted cluster: its workers' disks are the hypervisor's"; return
+  fi
   local n out luks bad_n
   for n in $(oc get nodes -o jsonpath='{.items[*].metadata.name}'); do
     out=$(node_probe "$n") || { bad "$n  could not run the node probe"; continue; }
