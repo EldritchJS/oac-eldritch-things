@@ -5,6 +5,6 @@
 # see operator-fips-inventory.md.
 cluster-observability-operator  images pass check-payload; CSV flag wrong, to correct with the COO team
 portworx-operator               vendor gap: Pure's tentative FIPS PX-CSI is 1H2027; in the storage path
-gpu-operator-certified          under review: ask NVIDIA
+gpu-operator-certified          subscription gap: NVIDIA's FIPS builds need NVIDIA AI Enterprise, which MOC does not have; GPUs are why the clusters exist
 patch-operator                  under review: its Patches can become ACM ConfigurationPolicies (tested on jetty; draft oac-apps #234 for node-labels)
 group-sync-operator             not needed on compliant hubs (Keycloak groups claim); runs only on oac-dev-infra

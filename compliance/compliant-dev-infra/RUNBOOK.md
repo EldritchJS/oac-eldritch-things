@@ -1231,6 +1231,47 @@ workload0's admin kubeconfig is `~/kubeadmin-compliant-dev-workload0`
 (break-glass; also pushed to Secrets Manager). Day to day:
 `oc login --web https://api-internal-compliant-dev-workload0.hcp-int.nist.int.massopen.cloud:6443`.
 
+### 4.7 GPU passthrough (MOC-issues #787)
+
+workload0's H100s go to KubeVirt VMs only (andalusia's workers, #788).
+Tested 2026-11-20 from the fork; the by-hand steps below are **TODO**
+oac-apps changes.
+
+1. NFD and the GPU Operator, from the fork, on workload0 only:
+   `oc apply -f workload-gpu-test.yaml` on the hub. Not the
+   `massopen.cloud/feature-gpu` label: that placement also installs RHOAI,
+   serverless, service mesh and Kueue, and starts the operator in
+   container mode, which claims the GPUs. Values on the branch:
+   - `nvidia-gpu-operator`: `sandboxWorkloads` on, `defaultWorkload:
+     vm-passthrough` (a new chart value; it was fixed at container). No
+     node label needed.
+   - `nfd-operator`: `enableTaints: false`. Every node is a GPU node, so
+     the taint would leave platform pods Pending.
+2. HyperConverged, by hand (**TODO** openshift-virtualization chart values):
+   ```
+   oc patch hyperconverged -n openshift-cnv kubevirt-hyperconverged --type=merge -p \
+     '{"spec":{"virtualization":{"permittedHostDevices":{"pciHostDevices":[{"pciDeviceSelector":"10DE:2330","resourceName":"nvidia.com/GH100_H100_SXM5_80GB","externalResourceProvider":true}]},"liveUpdateConfiguration":{"maxHotplugRatio":1}}}}'
+   ```
+   `maxHotplugRatio: 1`: at the default 4, QEMU refuses GPUs to VMs over
+   63 vCPUs.
+3. `modprobe vfio_iommu_type1` on each node, by hand (**TODO** a NodePool
+   MachineConfig loading it at boot; a reboot drops it). The GPU
+   Operator's VFIO manager loads `vfio-pci` but not this backend.
+4. About a minute after the operator is Succeeded, each node advertises
+   `nvidia.com/GH100_H100_SXM5_80GB: 4` and every H100 is on `vfio-pci`.
+5. `../vms/gpu/test-gpu-vm.sh` with `NAMESPACE=gpu-test GPU_COUNT=1`
+   (claims a billable GPU while it runs; deletes the VM on exit):
+   tiers 1-3 passed, 15.52 GB/s host-to-device, as on jetty. Delete the
+   namespace after.
+6. Scan fallout, fixed on the fork (52514ec): quotas for
+   `nvidia-gpu-operator` and `openshift-nfd`; the operator's DaemonSets
+   (no limits) and its nine `nvidia-*` SCCs (all capabilities) join the
+   vendor exemptions. NFD makes `/etc/kubernetes/node-feature-discovery`,
+   so re-initialise AIDE after installing it.
+7. FIPS: `gpu-operator-certified` is accepted in
+   `../tests/operator-fips-accepted.txt` (WARN): NVIDIA's FIPS builds need
+   an NVIDIA AI Enterprise subscription, which MOC does not have.
+
 ---
 
 ## 5. Known failures, and what to do

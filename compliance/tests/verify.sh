@@ -295,15 +295,28 @@ run_t05() {
 }
 
 # --------------------------------------------------------------- T-06 ------
+# A GPU node's modality: its nvidia.com/gpu.workload.config label, else the
+# ClusterPolicy's default (sandboxWorkloads.defaultWorkload when sandbox
+# workloads are on, container otherwise). compliant-dev-workload0 sets
+# vm-passthrough as the default and labels no node.
+gpu_mode() {
+  local m; m=$(jp node "$1" "" '{.metadata.labels.nvidia\.com/gpu\.workload\.config}')
+  if [ -z "$m" ]; then
+    local sb; sb=$(oc get clusterpolicy -o jsonpath='{.items[0].spec.sandboxWorkloads.enabled}/{.items[0].spec.sandboxWorkloads.defaultWorkload}' 2>/dev/null)
+    case "$sb" in true/?*) m=${sb#true/} ;; *) m=container ;; esac
+  fi
+  echo "$m"
+}
+
 run_t06() {
   hdr "T-06  GPU container modality"
   local found=0
   for n in $(oc get nodes -o name 2>/dev/null | sed 's|node/||'); do
     local mode cap
-    mode=$(jp node "$n" "" '{.metadata.labels.nvidia\.com/gpu\.workload\.config}')
     cap=$(jp node "$n" "" '{.status.capacity.nvidia\.com/gpu}')
     [ -z "$cap" ] && continue           # no GPUs on this node at all
-    [ -n "$mode" ] && [ "$mode" != "container" ] && continue
+    mode=$(gpu_mode "$n")
+    [ "$mode" != "container" ] && continue
     found=1
     local alloc; alloc=$(jp node "$n" "" '{.status.allocatable.nvidia\.com/gpu}')
     [ -n "$alloc" ] && [ "$alloc" != "0" ] \
@@ -324,7 +337,8 @@ run_t07() {
   hdr "T-07  GPU VM-passthrough modality"
   local found=0 seen=""
   for n in $(oc get nodes -o name 2>/dev/null | sed 's|node/||'); do
-    local mode; mode=$(jp node "$n" "" '{.metadata.labels.nvidia\.com/gpu\.workload\.config}')
+    [ -z "$(jp node "$n" "" '{.metadata.labels.nvidia\.com/gpu\.present}')" ] && continue
+    local mode; mode=$(gpu_mode "$n")
     [ "$mode" != "vm-passthrough" ] && continue
     found=1
     # The sandbox device plugin advertises the card under its model name
