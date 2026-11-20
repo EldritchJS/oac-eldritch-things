@@ -1179,12 +1179,34 @@ cluster's control-plane checks read the hub). Baseline saved
     after AIDE's first snapshot. Re-initialise once after a reinstall.
 - 18:12 verify: 32 PASS, 2 FAIL (T-04 waiting on Portworx; AIDE, then
   re-initialised and clean at 18:21). Hub 18:00: 72 PASS, 0 FAIL.
-- Storage, in progress: oac-apps #261 merged 18:24 (no default route or
-  DNS from the storage network; all four clusters' bridges re-applied).
-  #269 adds workload0's Portworx and the storage registries its images
-  need; `workload-stage-d.yaml` adds nfs-tls (tlshd, CA in
-  `cluster/compliant-dev-workload0/nfs-tls-ca`, stored 2026-11-20). After
-  #269: rawResultStorage on (T-04), and T-13 should pass.
+- Storage, done 2026-11-20 (20:50 verify: 38 PASS, 0 FAIL, 5 WARN).
+  oac-apps #261 merged 18:24 (no default route or DNS from storage; all
+  clusters' bridges re-applied except oac-prod-workload0's moc-r4pcc04u12,
+  MOC-issues #822). #269 (Portworx, object-storage-proxy, and the storage
+  registries for hosted clusters; applied without a node roll) and #270
+  (the ClusterSecretStore served only openshift-config; added portworx,
+  object-storage-proxy, nfs-tls). On the test branch: tlshd in
+  `workload-stage-d.yaml`, CA in `cluster/compliant-dev-workload0/nfs-tls-ca`;
+  rawResultStorage on, with `nodeSelector` worker and the chart's master
+  key nulled (hosted clusters have no masters, so the result servers sat
+  Pending); portworx added to the limits exemption, as on the hub; quotas
+  for the reinstall's `assisted-installer` and
+  `compliant-dev-workload0-hypervisor-upgrade` namespaces. What it took:
+  - Argo gave up on tlshd's DaemonSet while its secret could not sync;
+    re-sync the nfs-tls app after #270.
+  - Volumes made before tlshd ran (Prometheus, Perses) recovered by
+    themselves once it did. The six VM boot images were made as Block in
+    the minutes before CDI's StorageProfile applied; Block mounts without
+    `xprtsec=tls` and the realm refuses it. Deleting the DataVolumes let
+    the DataImportCrons remake them as Filesystem.
+  - A changed ScanSetting reaches existing scans only if the suites are
+    remade: `oc delete compliancesuite --all` (the bindings recreate them).
+  - AIDE flags the in-place config writes (`policy.json`,
+    `registries.conf`, `/etc/machine-config-daemon/`); re-initialise after.
+  - **Accepted (baseline CIS 1, moderate 2):**
+    `configure-network-policies-namespaces` for portworx,
+    object-storage-proxy and the two reinstall namespaces, as on the hub.
+    **TODO:** policies from ACS's observed flows.
 - workload0's disks are bound to the name only; the hub's to the name and
   172.16.1.1 (rebound in place with `clevis luks edit`, 2026-11-20).
 - Fixed 2026-11-20: T-14, workload0's etcd (`etcd-0..2` in
