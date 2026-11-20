@@ -224,6 +224,22 @@ come, replace this.
   level 1. It names hardware and firmware versions, so it most likely covers
   data at rest, not the network protocols. The 140-2 certificate #3345 is
   historical. FlashArray's module is #4937.
+- **#5000 in detail** (security policy v1.2, 2025-04-02, read 2026-11-20):
+  a hardware module, the flash controller chip (PMC Flashtec NVMe2016,
+  PM8607B1-F3EI, firmware 2.10), not Purity, so Purity//FB upgrades do not
+  affect it. AES-256-XTS only, approved mode only, nothing to configure;
+  Purity loads the keys (key management is outside the boundary). The
+  check that the validated version is in use is `wssdtool dump` on the
+  controller (`Chip version: NVMe2016.B1`, `Firmware Version: 2.10.27`),
+  not a `pureuser` command.
+- **On moc-pure-fb-01:** data-at-rest encryption enabled, AES-256-XTS
+  (`purearray encryption list --data-at-rest`, naved001, 2026-06-15,
+  CCI-MOC/ops-issues#1742). **Assumed** (2026-11-20, to confirm with Pure)
+  that its flash controllers are the NVMe2016.B1 at 2.10.27, so #5000
+  covers it. On that basis FlashBlade is the at-rest control (800-171
+  3.13.16, 3.13.11) for everything stored there, VM disks included:
+  andalusia's workers, which have no local disks, need no LUKS. Watch the
+  sunset date (2027-04-16).
 - **Also a registry problem:** with `platform-hardening`'s allowed registries
   on, the `docker.io` and `registry.k8s.io` images would be refused, so PX-CSI
   would not install on a compliant cluster as it stands.

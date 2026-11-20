@@ -88,7 +88,9 @@ effect), but "approved algorithms in FIPS mode" is not "validated module".
 The FlashBlade's end has no validated module either: Pure confirmed
 (2026-11-13) that no FIPS certification covers its data in transit, NFS over
 TLS or the management API; its certificate #5000 covers data at rest only
-([operator-fips-inventory.md](operator-fips-inventory.md), Portworx).
+([operator-fips-inventory.md](operator-fips-inventory.md), Portworx: on moc-pure-fb-01
+it is enabled, ops-issues #1742; that #5000's controller and firmware
+are the ones there is assumed, to confirm with Pure).
 Its algorithms can be limited, though: a FlashBlade TLS policy that
 disables `TLS_CHACHA20_POLY1305_SHA256` leaves only AES-GCM suites, on NFS
 over TLS as well as management (Pure, 2026-11-13). That matches what the
