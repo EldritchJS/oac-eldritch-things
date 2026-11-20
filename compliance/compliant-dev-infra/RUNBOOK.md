@@ -1159,8 +1159,12 @@ cluster's control-plane checks read the hub). Baseline saved
   values for workload0 (root on `/dev/disk/by-partlabel/root`, LUKS2,
   aes-xts-plain64, pbkdf2, Tang 172.16.1.1 with the hub's thumbprint,
   `rd.neednet=1`) then go in its NodePool and both nodes are reinstalled.
-  **Blocked:** workload0's network (VLAN 220, gateway 10.20.20.1) cannot
-  reach Tang; the hub's (219) can. Asked naved on #810 (2026-11-20).
+  Tang is reachable from workload0's network since 2026-11-20 (naved,
+  #810), and named `tang.massopen.cloud` (moc-dns #41); workload0 binds to
+  the name (branch `workload0-root-luks`). **TODO:** the hub's disks are
+  bound to 172.16.1.1: add a binding to the name on each (`clevis luks
+  bind ... tang '{"url":"http://tang.massopen.cloud:80",...}'`), then
+  remove the old one, one disk at a time.
 - Fixed 2026-11-20: T-14, workload0's etcd (`etcd-0..2` in
   `clusters-compliant-dev-workload0`, on the hub) had no backup. The fork's
   etcd-backup chart now takes `hostedClusters`: per cluster, a CronJob in
