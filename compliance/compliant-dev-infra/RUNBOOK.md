@@ -1272,6 +1272,47 @@ oac-apps changes.
    `../tests/operator-fips-accepted.txt` (WARN): NVIDIA's FIPS builds need
    an NVIDIA AI Enterprise subscription, which MOC does not have.
 
+### 4.8 andalusia (MOC-issues #788)
+
+A KubeVirt hosted cluster whose one worker VM runs on workload0 with four
+H100s, as oac-dev-workload2 runs on oac-dev-workload1. oac-apps
+[#275](https://github.com/CCI-MOC/oac-apps/pull/275), open 2026-11-21:
+
+- Hub `hcp-config`: workload0 under `hypervisorClusters`. The hub writes
+  `compliant-dev-workload0-kubeconfig` in `clusters` from Secrets Manager
+  (`cluster/compliant-dev-infra/hostedcluster/compliant-dev-workload0/kubeadmin`,
+  property `adminKubeconfig`), which workload0's PushSecret keeps current.
+- workload0: `hypervisor-cluster.yaml` lists andalusia (namespace
+  `clusters-andalusia`); `metallb.yaml` pins andalusia's ingress at
+  10.20.20.11 for that namespace only. workload0's own router keeps its
+  pool (10.20.20.10) and L2Advertisement from the hosted-ingress app.
+- andalusia: API 10.20.19.14 (hub pool), FIPS from the hub default, one
+  VM with 64 vCPUs, 128Gi and a 300Gi `pure-fb-nfsv4` disk, 4 H100s, no
+  pinned node. No disk encryption in the guest: the FlashBlade encrypts
+  at rest (CMVP #5000).
+
+Not yet, each a **TODO**:
+
+- MOC SSO: needs a moc-keycloak client; kubeadmin only until then.
+- `qosClass: Guaranteed` (dedicated host CPUs): needs the static CPU
+  manager on workload0, oac-apps #268.
+- 10.20.20.11 does not answer ping; not yet confirmed outside VLAN 220's
+  DHCP range.
+
+After it merges:
+
+1. Watch `oc -n clusters get hostedcluster,nodepool andalusia` on the hub
+   and `oc -n clusters-andalusia get vm,vmi` on workload0. The VM needs
+   `vfio_iommu_type1` loaded on its node (4.7 step 3, until #272).
+2. GPU Operator inside andalusia in container mode: add andalusia to
+   `workload-gpu-test.yaml`, with values that leave `sandboxWorkloads`
+   off and NFD taints off.
+3. `HUB_KUBECONFIG=~/kubeadmin-compliant-dev-infra` verify.sh and the
+   scans on andalusia; GPU acceptance checks with the AI UAT Harness
+   (Ahmed Sanaullah).
+4. Re-scan workload0: `clusters-andalusia` is a new namespace there and
+   may need a quota and NetworkPolicy to keep its baseline.
+
 ---
 
 ## 5. Known failures, and what to do
