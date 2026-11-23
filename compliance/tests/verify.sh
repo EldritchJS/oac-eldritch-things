@@ -398,6 +398,27 @@ for k, v in a.items():
     case "$kv" in *"$r"*) ok "KubeVirt CR permits $r" ;;
       *) bad "KubeVirt CR does NOT permit $r (got '$kv') — HCO propagation broken" ;; esac
   done
+
+  # Each running VM's libvirt domain must be persistent. After a
+  # `virtctl restart`, virt-handler's clean-up of the old instance can
+  # undefine the new domain (same name); the VM keeps running but every
+  # later disk hot-plug fails, e.g. a KubeVirt hosted cluster's new PVCs
+  # (andalusia, 2026-11-23; runbook 4.8). Read-only: virsh dominfo.
+  local ns vm pod pers
+  while read -r ns vm; do
+    [ -n "$vm" ] || continue
+    pod=$(oc get pods -n "$ns" -l "kubevirt.io/created-by=$(jp vmi "$vm" "$ns" '{.metadata.uid}')" \
+      -o jsonpath='{.items[?(@.status.phase=="Running")].metadata.name}' 2>/dev/null | awk '{print $1}')
+    [ -n "$pod" ] || { warn "VM $ns/$vm: no running virt-launcher found"; continue; }
+    pers=$(oc exec -n "$ns" "$pod" -c compute -- sh -c \
+      'virsh -c "qemu+unix:///session?socket=/var/run/libvirt/virtqemud-sock" dominfo 1 2>/dev/null' \
+      2>/dev/null | awk '/^Persistent:/{print $2}')
+    case "$pers" in
+      yes) ok "VM $ns/$vm: libvirt domain persistent" ;;
+      no)  bad "VM $ns/$vm: libvirt domain transient — disk hot-plug will fail; stop, wait, start (runbook 4.8)" ;;
+      *)   warn "VM $ns/$vm: could not read the domain's persistence" ;;
+    esac
+  done < <(oc get vmi -A -o jsonpath='{range .items[?(@.status.phase=="Running")]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null)
 }
 
 # --------------------------------------------------------------- T-10 ------
