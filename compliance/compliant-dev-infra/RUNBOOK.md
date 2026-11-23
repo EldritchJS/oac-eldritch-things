@@ -1289,7 +1289,9 @@ oac-apps changes.
 
 A KubeVirt hosted cluster whose one worker VM runs on workload0 with four
 H100s, as oac-dev-workload2 runs on oac-dev-workload1. oac-apps
-[#275](https://github.com/CCI-MOC/oac-apps/pull/275), open 2026-11-21:
+[#275](https://github.com/CCI-MOC/oac-apps/pull/275), merged 2026-11-23
+after #276's reboots; control plane Available and the VM running on
+`a0-88-c2-27-c0-d4` within 10 minutes:
 
 - Hub `hcp-config`: workload0 under `hypervisorClusters`. The hub writes
   `compliant-dev-workload0-kubeconfig` in `clusters` from Secrets Manager
@@ -1325,6 +1327,14 @@ After it merges:
    (Ahmed Sanaullah).
 4. Re-scan workload0: `clusters-andalusia` is a new namespace there and
    may need a quota and NetworkPolicy to keep its baseline.
+
+verify.sh on workload0 from now on: the VM holds `c0-d4`'s four GPUs, which
+T-17 (billing) would FAIL. On compliant-dev-workload0 `GPU_CLAIM_ALLOW_NS`
+defaults to `^clusters-andalusia$`, so the VM, its pod and the node's
+allocation WARN instead; set `GPU_CLAIM_ALLOW_NS=` (empty) to get the old
+behaviour. Run it with `HUB_KUBECONFIG`, or T-05 FAILs on the hub's Central.
+First run with andalusia up (2026-11-23): PASS 49, FAIL 0 after the T-17
+change; scans match the baseline.
 
 ---
 

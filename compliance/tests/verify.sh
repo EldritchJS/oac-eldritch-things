@@ -764,7 +764,8 @@ run_t16() {
 # No GPU claimed (billing). GPUs on MOC are charged while claimed by user
 # pods, so any claim -- or anything that could claim one later (a template
 # scaled to zero, a CronJob, a VM with a GPU) -- FAILs unless its namespace
-# is listed in GPU_CLAIM_ALLOW_NS (regex), which downgrades it to WARN.
+# is listed in GPU_CLAIM_ALLOW_NS (regex), which downgrades it to WARN
+# (on compliant-dev-workload0 it defaults to andalusia's namespace).
 # Also cross-checks each GPU node's own allocation count.
 # Logic: ../lib/gpu-claims.py.
 run_t17() {
@@ -777,6 +778,25 @@ run_t17() {
   oc get vm,vmi -A -o json > "$vms" 2>/dev/null || echo '{"items":[]}' > "$vms"
 
   out=$(python3 ../lib/gpu-claims.py "$pods" "$wl" "$vms" "${GPU_CLAIM_ALLOW_NS:-}")
+  # GPUs held per node by running pods in allowed namespaces, "node count".
+  local allowed
+  allowed=$(python3 - "$pods" "${GPU_CLAIM_ALLOW_NS:-}" <<'PY'
+import json, re, sys
+allow = re.compile(sys.argv[2]) if sys.argv[2] else None
+held = {}
+for p in json.load(open(sys.argv[1]))["items"]:
+    if not allow or p["status"].get("phase") != "Running" \
+            or not allow.search(p["metadata"]["namespace"]):
+        continue
+    for c in p["spec"].get("containers", []):
+        for r, v in c.get("resources", {}).get("requests", {}).items():
+            if r.startswith("nvidia.com/"):
+                n = p["spec"].get("nodeName", "-")
+                held[n] = held.get(n, 0) + int(v)
+for n, v in held.items():
+    print(n, v)
+PY
+)
   rm -rf "$d"
   if [ -z "$out" ]; then
     ok "no pod, workload template or VM requests a GPU"
@@ -790,11 +810,20 @@ run_t17() {
   fi
 
   # The nodes' own view: allocated nvidia.com/* per GPU node, from kubelet's
-  # accounting (describe), independent of the pod scan above.
+  # accounting (describe), independent of the pod scan above. A node whose
+  # whole allocation is held by allowed namespaces' pods WARNs, not FAILs.
+  local total mine
   for n in $(oc get nodes -l nvidia.com/gpu.present=true -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
     alloc=$(oc describe node "$n" 2>/dev/null | sed -n '/Allocated resources/,/Events/p' \
       | awk '$1 ~ /^nvidia\.com\// && $2 != "0" {printf "%s=%s ", $1, $2}')
-    [ -z "$alloc" ] && ok "$n: 0 GPUs allocated" || bad "$n: GPUs allocated: $alloc"
+    if [ -z "$alloc" ]; then ok "$n: 0 GPUs allocated"; continue; fi
+    total=$(printf '%s' "$alloc" | tr ' ' '\n' | awk -F= 'NF==2{s+=$2} END{print s+0}')
+    mine=$(printf '%s\n' "$allowed" | awk -v n="$n" '$1==n{print $2}')
+    if [ "${mine:-0}" -ge "$total" ]; then
+      warn "$n: GPUs allocated, all to allowed namespaces: $alloc"
+    else
+      bad "$n: GPUs allocated: $alloc(${mine:-0} of them to allowed namespaces)"
+    fi
   done
 }
 
@@ -1025,6 +1054,11 @@ oc whoami >/dev/null 2>&1 || { echo "not logged in (set KUBECONFIG)" >&2; exit 2
 # may name api-internal-<cluster>.<hcp domain> instead.
 CLUSTER=$(oc whoami --show-server | sed -E 's#^https://api(\.|-internal-)([^.]+)\..*#\2#')
 HCP_NS="clusters-$CLUSTER"
+# compliant-dev-workload0 is a GPU hypervisor: andalusia's worker VM holds
+# its node's GPUs by design (runbook 4.8). Elsewhere nothing is allowed.
+if [ -z "${GPU_CLAIM_ALLOW_NS+x}" ] && [ "$CLUSTER" = compliant-dev-workload0 ]; then
+  GPU_CLAIM_ALLOW_NS='^clusters-andalusia$'
+fi
 if [ -z "${BASELINE_FILE:-}" ]; then
   if [ "$CLUSTER" = jetty ]; then BASELINE_FILE=./baseline-fail-counts.txt
   else BASELINE_FILE="./baseline-$CLUSTER.txt"; fi
