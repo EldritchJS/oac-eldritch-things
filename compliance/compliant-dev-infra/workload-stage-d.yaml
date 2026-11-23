@@ -31,7 +31,7 @@
 # CA come from the hub's audit-writers policy (audit-logging on the hub,
 # auditWriters.clusters), so the cluster must be listed there first.
 # No reboots.
-# Later: tlshd with Portworx.
+# Then tlshd (nfs-tls), for the Portworx clusters only.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -55,7 +55,19 @@ spec:
                 - component: rhacs
                 - component: namespace-guardrails-app
                 - component: audit-logging
-                # tlshd, before Portworx's first volume (oac-apps #269).
+    # tlshd, before Portworx's first volume (oac-apps #269): only on the
+    # clusters that mount the FlashBlade over NFS. andalusia does not; its
+    # disks come through workload0.
+    - matrix:
+        generators:
+          - clusterDecisionResource:
+              configMapRef: acm-placement
+              labelSelector:
+                matchLabels:
+                  cluster.open-cluster-management.io/placement: portworx-clusters
+              requeueAfterSeconds: 180
+          - list:
+              elements:
                 - component: nfs-tls
   # A cluster that leaves the placement, even for a moment (on 2026-10-22,
   # a hub master's NotReady spell), has its Applications deleted. Without
