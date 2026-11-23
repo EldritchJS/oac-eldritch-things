@@ -1336,6 +1336,21 @@ behaviour. Run it with `HUB_KUBECONFIG`, or T-05 FAILs on the hub's Central.
 First run with andalusia up (2026-11-23): PASS 49, FAIL 0 after the T-17
 change; scans match the baseline.
 
+andalusia's own first verify (2026-11-23) needed, on the fork: its name in
+the hub's etcd-backup `hostedClusters` and audit-logging
+`auditWriters.clusters`; `securedCluster.clusterName` for rhacs, then its
+ACS init bundle as in Stage B; its scan results on
+`kubevirt-csi-infra-default` (it has no `pure-fb-nfsv4`; that class lands
+on workload0's `pure-fb-nfsv4`), after which the Pending result PVCs had
+to be deleted and the scans re-run; guardrails without `metallb-system`
+and, until oac-apps #281, `external-secrets`; and nfs-tls left out
+(stage D now sends it only to `portworx-clusters`). AIDE's first run
+flags the GPU Operator's `/etc/crio/crio.conf.d/99-nvidia.conf`:
+re-initialise once the operator is up. T-15 cannot reach the worker's
+kubelet (it is on workload0's pod network) and WARNs; probed from a pod
+in `clusters-andalusia` on workload0 it offers TLS 1.3 and 1.2 GCM and
+refuses CBC.
+
 ---
 
 ## 5. Known failures, and what to do

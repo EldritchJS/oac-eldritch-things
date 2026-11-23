@@ -715,6 +715,11 @@ run_t15() {
     while IFS=$'\t' read -r _ probe result detail; do
       case "$probe:$result" in
         tls13:ACCEPTED|tls12-gcm:ACCEPTED) ;;
+        # A KubeVirt worker's address is on its hypervisor's pod network,
+        # which this machine cannot reach: no handshake is not a TLS fault.
+        # Probed from a pod on the hypervisor instead (runbook 4.8).
+        tls13:ERROR|tls12-gcm:ERROR)
+          case "$name" in kubelet/*) errs="$errs $probe" ;; *) fails="$fails $probe($result)" ;; esac ;;
         tls13:*|tls12-gcm:*)   fails="$fails $probe($result)" ;;
         *:REFUSED) ;;
         *:ACCEPTED)            fails="$fails $probe(ACCEPTED: $detail)" ;;
