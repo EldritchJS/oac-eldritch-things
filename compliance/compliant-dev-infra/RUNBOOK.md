@@ -1370,7 +1370,26 @@ KUBECONFIG=$W0 virtctl start andalusia-gpu-wdwff-td9ls -n clusters-andalusia
 
 Check: `virsh dominfo 1` in the launcher's compute container
 (`-c "qemu+unix:///session?socket=/var/run/libvirt/virtqemud-sock"`) says
-`Persistent: yes`. After any restart, re-initialise AIDE on andalusia
+`Persistent: yes`. Then, on the hub, clear the Machine's failure: the stop
+makes CAPI record "VMI has reached a permanent finalized state", which never
+clears by itself. The Machine stays `Failed`, so HCCO marks andalusia's
+ingress endpoint on workload0 not ready, MetalLB stops announcing
+10.20.20.11, and the console and apps are unreachable (2026-11-23). The
+NodePool's autoRepair is off, so nothing replaces the VM meanwhile.
+
+```
+KUBECONFIG=$HUB oc patch machine.cluster.x-k8s.io -n clusters-andalusia \
+  andalusia-gpu-wdwff-td9ls --subresource=status --type=json \
+  -p '[{"op":"remove","path":"/status/failureReason"},{"op":"remove","path":"/status/failureMessage"}]'
+```
+
+HCCO's machine controller then marks the endpoint ready within seconds; if
+the endpoint slice is missing, restart `hosted-cluster-config-operator` in
+`clusters-andalusia` on the hub to recreate it. HCCO's "router-nodeport-default
+not found" errors are expected: andalusia publishes its router as a
+LoadBalancer, not through HyperShift's NodePort passthrough.
+
+After any restart, re-initialise AIDE on andalusia
 (the GPU driver rebuild changes files) and expect the GPUs back in about
 10 minutes.
 
@@ -1389,6 +1408,7 @@ with oac-apps #281 and moc-aws #87, after uploading its OIDC documents
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| A KubeVirt hosted cluster's console and apps unreachable after its VM was stopped and started: the LoadBalancer IP not announced, its endpoint slice on the hypervisor `ready=false` | The stop left the CAPI Machine `Failed` ("VMI has reached a permanent finalized state"), which never clears; HCCO marks the endpoint not ready | Remove the Machine's `status.failureReason` and `failureMessage` (4.8) |
 | A KubeVirt worker's new PVCs never attach: pods in ContainerCreating with FailedAttachVolume, the volumes at `MountedToPod` on the hypervisor, virt-handler logging "transient domains do not have any persistent config" | After `virtctl restart`, virt-handler's clean-up of the old VMI undefined the new domain (same name); the VM runs transient and libvirt refuses persistent hot-plug | Stop the VM, wait until its launcher and hp-volume pods are gone, start it (4.8). Volumes requested meanwhile attach at boot |
 | A new hosted cluster's ACM add-ons crash-loop ("dial tcp 172.33.0.1:443: i/o timeout"), cluster-proxy down, every Argo app for it Unknown | namespace-guardrails-app applied `allow-egress-hub-routes` (an Egress policy, so the namespace was isolated) before `allow-egress-api-dns`; the agents lost the API server, cluster-proxy with them, and Argo could not finish (andalusia, 2026-11-23) | Render the namespace's policies from the fork (`helm template` with the app's value files) and `oc apply` them with the cluster's admin kubeconfig; restart the add-on pods. Fixed in the fork (`allow-egress-api-dns` in wave -1); the library on oac-apps main needs the same |
 | moc-aws apply fails: "Please check .well-known/openid-configuration" | The OIDC documents were not uploaded yet | Upload (2.4 or 4.3), re-run the apply |
