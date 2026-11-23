@@ -1351,12 +1351,45 @@ kubelet (it is on workload0's pod network) and WARNs; probed from a pod
 in `clusters-andalusia` on workload0 it offers TLS 1.3 and 1.2 GCM and
 refuses CBC.
 
+**Restarting andalusia's VM.** Never `virtctl restart`: on KubeVirt
+(CNV 4.22.16) virt-handler's clean-up of the old instance runs after the
+new one has started and undefines the libvirt domain by name, which both
+share ("Domain started", "Domain undefined", "Signaled vmi deletion" in the
+same millisecond in the new virt-launcher's log). The VM keeps running as a
+transient domain, and every later hot-plug fails with "transient domains do
+not have any persistent config": andalusia's new PVCs stop at
+`MountedToPod` on workload0 and their pods sit in ContainerCreating
+(2026-11-23; the scans' result servers). Instead:
+
+```
+KUBECONFIG=$W0 virtctl stop andalusia-gpu-wdwff-td9ls -n clusters-andalusia
+KUBECONFIG=$W0 oc wait -n clusters-andalusia vmi/andalusia-gpu-wdwff-td9ls --for=delete
+# until no virt-launcher-andalusia or hp-volume pods are left
+KUBECONFIG=$W0 virtctl start andalusia-gpu-wdwff-td9ls -n clusters-andalusia
+```
+
+Check: `virsh dominfo 1` in the launcher's compute container
+(`-c "qemu+unix:///session?socket=/var/run/libvirt/virtqemud-sock"`) says
+`Persistent: yes`. After any restart, re-initialise AIDE on andalusia
+(the GPU driver rebuild changes files) and expect the GPUs back in about
+10 minutes.
+
+Also andalusia-specific (2026-11-23): its use notice
+(`andalusia/platform-hardening.yaml`) and guardrails for its own namespaces
+(`andalusia`, `open-cluster-management-andalusia`), `nvidia-gpu-operator`,
+`openshift-nfd` and `external-secrets`, or the scan's
+`banner-or-login-template-set`, `openshift-motd-exists` and
+`resource-requests-quota` FAIL. External secrets and certificates came
+with oac-apps #281 and moc-aws #87, after uploading its OIDC documents
+(`setup-oidc.sh -f -n` with `CLUSTER_NAME=andalusia`).
+
 ---
 
 ## 5. Known failures, and what to do
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| A KubeVirt worker's new PVCs never attach: pods in ContainerCreating with FailedAttachVolume, the volumes at `MountedToPod` on the hypervisor, virt-handler logging "transient domains do not have any persistent config" | After `virtctl restart`, virt-handler's clean-up of the old VMI undefined the new domain (same name); the VM runs transient and libvirt refuses persistent hot-plug | Stop the VM, wait until its launcher and hp-volume pods are gone, start it (4.8). Volumes requested meanwhile attach at boot |
 | A new hosted cluster's ACM add-ons crash-loop ("dial tcp 172.33.0.1:443: i/o timeout"), cluster-proxy down, every Argo app for it Unknown | namespace-guardrails-app applied `allow-egress-hub-routes` (an Egress policy, so the namespace was isolated) before `allow-egress-api-dns`; the agents lost the API server, cluster-proxy with them, and Argo could not finish (andalusia, 2026-11-23) | Render the namespace's policies from the fork (`helm template` with the app's value files) and `oc apply` them with the cluster's admin kubeconfig; restart the add-on pods. Fixed in the fork (`allow-egress-api-dns` in wave -1); the library on oac-apps main needs the same |
 | moc-aws apply fails: "Please check .well-known/openid-configuration" | The OIDC documents were not uploaded yet | Upload (2.4 or 4.3), re-run the apply |
 | AWS rejects the cluster's tokens after a rebuild | `setup-oidc.sh` without `-f` kept the old cluster's keys in S3 | Run it again with `-f` |
