@@ -371,6 +371,16 @@ for k, v in a.items():
     else
       ok "$n host driver absent (correct)"
     fi
+    # The operator binds the cards to vfio-pci, but QEMU also needs the
+    # vfio_iommu_type1 backend, which comes from a NodePool MachineConfig
+    # (oac-apps #272), not the operator. Without it the node still
+    # advertises its GPUs and only a VM's start fails.
+    local probe; probe=$(node_probe "$n")
+    case "$(printf '%s\n' "$probe" | sed -n 's/^VFIO_IOMMU_TYPE1=//p')" in
+      1) ok "$n vfio_iommu_type1 loaded" ;;
+      0) bad "$n vfio_iommu_type1 NOT loaded — GPU VMs will not start (oac-apps #272)" ;;
+      *) bad "$n could not run the node probe for vfio_iommu_type1" ;;
+    esac
   done
   [ "$found" = "0" ] && { skip "no node currently in vm-passthrough modality"; return; }
 
@@ -861,6 +871,7 @@ echo "CHRONYD=$(systemctl is-active chronyd 2>/dev/null)"
 echo "NTPSYNC=$(timedatectl show -p NTPSynchronized --value 2>/dev/null)"
 echo "NOUSB=$(tr " " "\n" </proc/cmdline | grep -cx nousb)"
 echo "USBGUARD=$(systemctl is-active usbguard 2>/dev/null)"
+echo "VFIO_IOMMU_TYPE1=$([ -d /sys/module/vfio_iommu_type1 ] && echo 1 || echo 0)"
 echo END=1
 '
 node_probe() {

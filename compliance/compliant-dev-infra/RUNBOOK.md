@@ -1257,6 +1257,11 @@ oac-apps changes.
 3. `modprobe vfio_iommu_type1` on each node, by hand (**TODO** a NodePool
    MachineConfig loading it at boot, oac-apps #272; a reboot drops it). The GPU
    Operator's VFIO manager loads `vfio-pci` but not this backend.
+   So passthrough needs two pieces from two places: the binding from the
+   operator and the module from git. Without the module the node still
+   advertises its GPUs and only a VM's start fails, so verify.sh T-07
+   checks `/sys/module/vfio_iommu_type1` on each passthrough node (asked
+   by schwesig on #272).
 4. About a minute after the operator is Succeeded, each node advertises
    `nvidia.com/GH100_H100_SXM5_80GB: 4` and every H100 is on `vfio-pci`.
 5. `../vms/gpu/test-gpu-vm.sh` with `NAMESPACE=gpu-test GPU_COUNT=1`
