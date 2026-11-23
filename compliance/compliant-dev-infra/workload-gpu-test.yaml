@@ -5,7 +5,8 @@
 # installs RHOAI, serverless, service mesh and Kueue, and starts the GPU
 # Operator in container mode, which would claim the GPUs for pods.
 # Values on the branch: values/compliant-dev-infra/compliant-dev-workload0/
-# {nfd-operator,nvidia-gpu-operator}.yaml (sandbox workloads, vm-passthrough).
+# {nfd-operator,nvidia-gpu-operator}.yaml (sandbox workloads, vm-passthrough),
+# and values/compliant-dev-infra/andalusia/ (container mode, inside its VM).
 # Still by hand for this test, each to become an oac-apps change:
 # HyperConverged permittedHostDevices and maxHotplugRatio 1
 # (openshift-virtualization chart), and vfio_iommu_type1 at boot (a NodePool
@@ -24,6 +25,13 @@ spec:
             component: nfd-operator
           - name: compliant-dev-workload0
             server: https://cluster-proxy-addon-user.multicluster-engine.svc.cluster.local:9092/compliant-dev-workload0
+            component: nvidia-gpu-operator
+          # andalusia (MOC-issues #788): the H100s in its worker VM, for pods.
+          - name: andalusia
+            server: https://cluster-proxy-addon-user.multicluster-engine.svc.cluster.local:9092/andalusia
+            component: nfd-operator
+          - name: andalusia
+            server: https://cluster-proxy-addon-user.multicluster-engine.svc.cluster.local:9092/andalusia
             component: nvidia-gpu-operator
   syncPolicy:
     preserveResourcesOnDeletion: true
