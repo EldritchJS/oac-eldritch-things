@@ -547,6 +547,14 @@ run_t13() {
 
   # 1. the daemon that answers the kernel's handshake upcall
   if ! oc get ds tlshd -n "$ns" >/dev/null 2>&1; then
+    # nfs-tls goes only to Portworx clusters (FlashBlade NFS); elsewhere
+    # there is no NFS to encrypt. Needs HUB_KUBECONFIG to tell.
+    local pwx
+    pwx=$(hub_oc get managedcluster "$CLUSTER" -o jsonpath='{.metadata.labels.massopen\.cloud/feature-portworx}' 2>/dev/null)
+    if hub_oc get managedcluster "$CLUSTER" >/dev/null 2>&1 && [ "$pwx" != true ]; then
+      skip "not a Portworx cluster (no massopen.cloud/feature-portworx on the hub): no FlashBlade NFS, so no tlshd"
+      return
+    fi
     warn "tlshd DaemonSet absent in $ns — NFS over TLS is not deployed"
     info "Any mount with xprtsec=tls then fails: 'mount.nfs: No such process'"
     return
@@ -748,10 +756,40 @@ run_t15() {
       esac
     done < <(printf '%s\n' "$out" | awk -F'\t' -v n="$name" '$1==n')
     if [ -n "$fails" ]; then bad "$name:$fails"
+    elif [ -n "$errs" ] && [[ "$name" == kubelet/* ]] && kubevirt_kubelet_tls "${name#kubelet/}"; then :
     elif [ -n "$errs" ]; then warn "$name: could not probe$errs"
     else ok "$name: TLS 1.3 + 1.2 AES-GCM only (1.0/1.1, CBC, ChaCha20, static RSA refused)"
     fi
   done
+}
+
+# A KubeVirt worker's kubelet is only reachable from its hypervisor's pod
+# network, so probe it from a pod in the hosted cluster's infra namespace
+# there. The hypervisor's kubeconfig: INFRA_KUBECONFIG, else
+# ~/kubeadmin-<name> after the hub's infraKubeConfigSecret
+# (<name>-kubeconfig). Returns 1, leaving the WARN, when it cannot probe.
+kubevirt_kubelet_tls() {
+  local node=$1 pid ins sec ikc ip out
+  pid=$(jp node "$node" "" '{.spec.providerID}')
+  case "$pid" in kubevirt://*) ;; *) return 1 ;; esac
+  ins=$(hub_oc get hostedcluster -A -o jsonpath="{range .items[?(@.metadata.name==\"$CLUSTER\")]}{.spec.platform.kubevirt.credentials.infraNamespace}{end}" 2>/dev/null)
+  sec=$(hub_oc get hostedcluster -A -o jsonpath="{range .items[?(@.metadata.name==\"$CLUSTER\")]}{.spec.platform.kubevirt.credentials.infraKubeConfigSecret.name}{end}" 2>/dev/null)
+  ikc=${INFRA_KUBECONFIG:-${sec:+$HOME/kubeadmin-${sec%-kubeconfig}}}
+  [ -n "$ins" ] && [ -n "$ikc" ] && [ -r "$ikc" ] || return 1
+  ip=$(jp node "$node" "" '{.status.addresses[?(@.type=="InternalIP")].address}')
+  out=$(KUBECONFIG="$ikc" oc run "verify-tls-$$" -n "$ins" --rm -i --restart=Never --quiet \
+    --image=registry.access.redhat.com/ubi9/ubi:latest --command -- sh -c '
+      t() { openssl s_client -brief -connect "$1:10250" $2 </dev/null 2>&1 | grep -q "CONNECTION ESTABLISHED" && echo ACCEPTED || echo REFUSED; }
+      echo "tls13 $(t "$0" -tls1_3)"
+      echo "tls12-gcm $(t "$0" "-tls1_2 -cipher ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384")"
+      echo "tls12-cbc $(t "$0" "-tls1_2 -cipher ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES128-SHA")"
+    ' "$ip" 2>/dev/null)
+  case "$out" in *"tls13 "*) ;; *) return 1 ;; esac
+  if [[ "$out" == *"tls13 ACCEPTED"* && "$out" == *"tls12-gcm ACCEPTED"* && "$out" == *"tls12-cbc REFUSED"* ]]; then
+    ok "kubelet/$node: TLS 1.3 + 1.2 AES-GCM, CBC refused (probed from $ins on the hypervisor)"
+  else
+    bad "kubelet/$node: $(echo $out) (probed from $ins on the hypervisor)"
+  fi
 }
 
 # --------------------------------------------------------------- T-16 ------
