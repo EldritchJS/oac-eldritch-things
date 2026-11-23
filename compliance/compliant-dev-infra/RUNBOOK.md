@@ -1342,6 +1342,7 @@ change; scans match the baseline.
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| A new hosted cluster's ACM add-ons crash-loop ("dial tcp 172.33.0.1:443: i/o timeout"), cluster-proxy down, every Argo app for it Unknown | namespace-guardrails-app applied `allow-egress-hub-routes` (an Egress policy, so the namespace was isolated) before `allow-egress-api-dns`; the agents lost the API server, cluster-proxy with them, and Argo could not finish (andalusia, 2026-11-23) | Render the namespace's policies from the fork (`helm template` with the app's value files) and `oc apply` them with the cluster's admin kubeconfig; restart the add-on pods. Fixed in the fork (`allow-egress-api-dns` in wave -1); the library on oac-apps main needs the same |
 | moc-aws apply fails: "Please check .well-known/openid-configuration" | The OIDC documents were not uploaded yet | Upload (2.4 or 4.3), re-run the apply |
 | AWS rejects the cluster's tokens after a rebuild | `setup-oidc.sh` without `-f` kept the old cluster's keys in S3 | Run it again with `-f` |
 | An Argo app keeps failing with an error your fix already removed | Argo retries a failed sync at the commit it started with (five times, about 15 minutes) | Wait for the retries to end, or terminate the operation |
