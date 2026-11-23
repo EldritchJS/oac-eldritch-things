@@ -1174,7 +1174,15 @@ cluster's control-plane checks read the hub). Baseline saved
     a thread per CPU (512) inside multus's pod, passed the pod limit of
     4096 processes. Unblocked by raising that pod's cgroup `pids.max` to
     65536 on the node. **TODO:** `podPidsLimit` for this pool, oac-apps
-    #268 (chart) then a values change; until then a reboot can repeat it.
+    #268 (chart, merged 2026-11-23) then oac-apps #276 (values, 65536);
+    until #276 a reboot can repeat it. It did on 2026-11-23: the roll for
+    #268 and #272 stalled for an hour. The first node came back with multus
+    crash-looping, about 30 pods stuck in ContainerCreating, and the
+    second node's drain waited on their replacements. kubelet resets the
+    pod's `pids.max` to 4096 at each container restart, so a single write
+    does not hold: rewrite it in a loop (every half second, for ten
+    minutes) from `oc debug node/<node>` across multus's next restart.
+    `pids.events` showed 28818 hits of the limit.
   - AIDE on a fresh node flags `/etc/hosts`, which node-resolver writes
     after AIDE's first snapshot. Re-initialise once after a reinstall.
 - 18:12 verify: 32 PASS, 2 FAIL (T-04 waiting on Portworx; AIDE, then
