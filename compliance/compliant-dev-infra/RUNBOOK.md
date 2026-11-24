@@ -784,7 +784,9 @@ oc -n openshift-compliance get compliancecheckresults -l compliance.openshift.io
 Archive the first results as the hub's baseline.
 
 Then the route rate limits, which the scan asks for on every route
-outside `openshift-*`. Report first, then apply:
+outside `openshift-*`. Since 2026-11-24 the platform-hardening chart's
+`routeAnnotations` ACM policies set and keep them (4.8); the script is for
+a hub without them. Report first, then apply:
 
 ```
 $RB/route-rate-limits.sh            # lists each route "missing" a limit
@@ -816,7 +818,7 @@ Fixed so far, from 19 (moderate) and 7 (CIS):
 | `audit-log-forwarding-uses-tls` | A scanner false positive: a `lokiStack` output has no url. Tailored (`325ad26`) |
 | `resource-requests-limits-in-daemonset`, `-statefulset` | Operator-owned namespaces exempted, rationale `vendorLimits` (`8490e2c`) |
 | `ocp-allowed-registries`*, `-for-import`*, and the node scan's `reject-unsigned-images-by-default` | A registry allowlist from an inventory of every image reference on the hub (`1c277e3`). All 248 running images matched it; the change reloaded CRI-O on each master, without reboots. The COSI controller comes from a staging registry at a release-candidate tag: a supply-chain gap to record. Confirmed passing 2026-10-25. The allowlist left `openshift-samples` Degraded (it wants a bare `quay.io` when `samplesRegistry` is empty); `imageConfig.samplesRegistry: registry.redhat.io` fixed it (fork `75773f6`, 2026-10-26) |
-| `routes-rate-limit` | `route-rate-limits.sh`, above. Confirmed passing 2026-10-25 |
+| `routes-rate-limit` | `route-rate-limits.sh`, above. Confirmed passing 2026-10-25. Since 2026-11-24 the `route-rate-limits` ACM policy (4.8) |
 | `ingress-controller-certificate` | A Let's Encrypt wildcard apps certificate from `cluster-certificates` (oac-apps [#184](https://github.com/CCI-MOC/oac-apps/pull/184), 2026-10-26). The API certificate stays off: agents and kubeconfigs trust the current CA. workload0's audit forwarder pinned the hub's old ingress CA and stopped verifying; it now uses system trust (`forwarder.remote.hubIngressCA: false`, fork `9c2cbca`) |
 | `default-ingress-ca-replaced` | Tailored, rationale `ingressCert` (fork `329a866`): the rule wants a custom CA in `proxy/cluster`, and a publicly issued certificate needs none |
 | `idp-is-configured`*, `oauth-or-oauthclient-inactivity-timeout`, `-token-maxage` | MOC SSO (`mocsso`) with 24-hour tokens and a 10-minute inactivity timeout: moc-keycloak [#55](https://github.com/CCI-MOC/moc-keycloak/pull/55), then oac-apps [#188](https://github.com/CCI-MOC/oac-apps/pull/188) (2026-10-26). An `oc` login through OAuth, kubeadmin's too, now expires after 10 idle minutes; the admin kubeconfig does not |
@@ -1147,7 +1149,9 @@ cluster's control-plane checks read the hub). Baseline saved
 - Found and fixed on the hub: HyperShift adds `ignition-server`,
   `konnectivity-server` and `oauth` routes in `clusters-<cluster>`, which
   failed the hub's `routes-rate-limit`. Re-run `route-rate-limits.sh`
-  (APPLY=1) after creating any hosted cluster.
+  (APPLY=1) after creating any hosted cluster. Superseded 2026-11-24: the
+  `route-rate-limits` ACM policy covers new routes (andalusia's had been
+  missed, 4.8).
 - Found on the hub: AIDE failed on all three workers. LVM Storage wrote
   `/etc/lvm/archive/*` and `/etc/lvm/backup/vg0` when it made workload0's
   etcd volumes. Re-initialised (2026-11-20). oac-apps #264 excludes those
