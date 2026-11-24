@@ -1351,27 +1351,73 @@ kubelet (it is on workload0's pod network) and WARNs; probed from a pod
 in `clusters-andalusia` on workload0 it offers TLS 1.3 and 1.2 GCM and
 refuses CBC.
 
-**Restarting andalusia's VM.** Never `virtctl restart`: on KubeVirt
-(CNV 4.22.16) virt-handler's clean-up of the old instance runs after the
-new one has started and undefines the libvirt domain by name, which both
-share ("Domain started", "Domain undefined", "Signaled vmi deletion" in the
-same millisecond in the new virt-launcher's log). The VM keeps running as a
-transient domain, and every later hot-plug fails with "transient domains do
-not have any persistent config": andalusia's new PVCs stop at
-`MountedToPod` on workload0 and their pods sit in ContainerCreating
-(2026-11-23; the scans' result servers). Instead:
+**andalusia's VM starts as a transient domain.** On every start, stop/start
+or restart alike, the libvirt domain ends up transient, and every later
+hot-plug fails with "transient domains do not have any persistent config":
+andalusia's new PVCs stop at `MountedToPod` on workload0 and their pods sit
+in ContainerCreating (2026-11-23; the scans' result servers, perses-0).
+Cause (CNV 4.22.16): QEMU takes about 19 s to start this VM (VFIO pins all
+128Gi), longer than virt-handler's SyncVMI call waits. The call times out;
+on the retry virt-handler sees the VMI still `Scheduled` with the domain
+`Shutoff`, treats it as shut down and signals deletion ("Signaled deletion
+for", vm.go:1711). The launcher runs that delete as soon as the start
+finishes, so its log shows "Domain started", "Domain undefined" and
+"Signaled vmi deletion" in the same millisecond. The guest keeps running.
+Small or 1-GPU test VMs start in under a second and are not affected.
+Stop/start does not fix it (an earlier read of `Persistent: yes` was taken
+before the start). Workaround, after every start
+(worked 2026-11-23 23:51: the pending volume attached within a minute and
+perses-0 started): re-define the running domain from its live XML.
 
 ```
-KUBECONFIG=$W0 virtctl stop andalusia-gpu-wdwff-td9ls -n clusters-andalusia
-KUBECONFIG=$W0 oc wait -n clusters-andalusia vmi/andalusia-gpu-wdwff-td9ls --for=delete
-# until no virt-launcher-andalusia or hp-volume pods are left
-KUBECONFIG=$W0 virtctl start andalusia-gpu-wdwff-td9ls -n clusters-andalusia
+L=$(KUBECONFIG=$W0 oc -n clusters-andalusia get pod -l kubevirt.io=virt-launcher -o name)
+KUBECONFIG=$W0 oc -n clusters-andalusia exec $L -c compute -- sh -c '
+V="virsh -c qemu+unix:///session?socket=/var/run/libvirt/virtqemud-sock"
+$V dumpxml 1 > /var/run/kubevirt-private/live.xml && $V define /var/run/kubevirt-private/live.xml
+$V dominfo 1 | grep Persistent'
 ```
+
+Fix: back the VM with 1Gi hugepages, oac-apps
+[#287](https://github.com/CCI-MOC/oac-apps/pull/287) (merged 2026-11-24):
+workload0's `91-hugepages-1g` reserves 136 × 1Gi pages per node at boot,
+and andalusia's `hugepages: 1Gi` patches the VM through HyperShift's
+`kubevirt-vm-jsonpatch` NodePool annotation. The VM now starts in 5 to 7 s,
+with no SyncVMI timeout and a persistent domain. #287's roll stalled on the
+VM (below); after it, both nodes report `hugepages-1Gi: 136Gi`.
 
 Check: `virsh dominfo 1` in the launcher's compute container
 (`-c "qemu+unix:///session?socket=/var/run/libvirt/virtqemud-sock"`) says
-`Persistent: yes`. Then, on the hub, clear the Machine's failure: the stop
-makes CAPI record "VMI has reached a permanent finalized state", which never
+`Persistent: yes`; `no` (verify.sh T-07 FAILs) means the VM started without
+hugepages, so run the workaround above.
+
+verify.sh after #287's roll (2026-11-24 02:35, scans from 01:01, before
+the roll): workload0 49/1, andalusia 33/1, both the hosted-ocp4-moderate
+count over baseline and none from #287. workload0 (5, baseline 2):
+`resource-requests-quota` (`clusters-andalusia`), `route-ip-whitelist` and
+`routes-rate-limit` (HyperShift's `default-ingress-passthrough` route in
+`clusters-andalusia`), all from andalusia's arrival, as step 4 above
+expected: **TODO** quota and route annotations, or accept. andalusia (3,
+baseline 2): `resource-requests-quota` for the harness's `uat-project` and
+`uat-runner`, gone once they are deleted after the GPU tests.
+
+**A workload0 node roll stalls on andalusia's VM.** The VM is not
+live-migratable and its eviction strategy is `External`: KubeVirt only sets
+`EvictionRequested` and leaves the eviction to CAPK on the hub. CAPK fails
+every few seconds ("failed to add the capk.cluster.x-k8s.io/vmi-deletion-grace-time
+annotation to the KubeVirtMachine ... no matches for kind \"KubevirtMachine\"").
+The kind exists on the hub, not on workload0, so CAPK seems to send that
+update to workload0. The node then stays cordoned for good
+(oac-apps #287's roll, 2026-11-24). Delete the VMI by hand: the VM
+(`runStrategy: Always`) starts it again on the other node, which needs free
+GPUs and hugepages. Then clear the Machine's failure as below ("The
+Machine's VM pod is marked for eviction due to infra node drain").
+
+```
+KUBECONFIG=$W0 oc -n clusters-andalusia delete vmi <vm>
+```
+
+**After stopping andalusia's VM** (or deleting its VMI), clear the Machine's failure on the hub:
+`virtctl stop` makes CAPI record "VMI has reached a permanent finalized state", which never
 clears by itself. The Machine stays `Failed`, so HCCO marks andalusia's
 ingress endpoint on workload0 not ready, MetalLB stops announcing
 10.20.20.11, and the console and apps are unreachable (2026-11-23). The
@@ -1409,7 +1455,7 @@ with oac-apps #281 and moc-aws #87, after uploading its OIDC documents
 | Symptom | Cause | Fix |
 |---|---|---|
 | A KubeVirt hosted cluster's console and apps unreachable after its VM was stopped and started: the LoadBalancer IP not announced, its endpoint slice on the hypervisor `ready=false` | The stop left the CAPI Machine `Failed` ("VMI has reached a permanent finalized state"), which never clears; HCCO marks the endpoint not ready | Remove the Machine's `status.failureReason` and `failureMessage` (4.8) |
-| A KubeVirt worker's new PVCs never attach: pods in ContainerCreating with FailedAttachVolume, the volumes at `MountedToPod` on the hypervisor, virt-handler logging "transient domains do not have any persistent config" | After `virtctl restart`, virt-handler's clean-up of the old VMI undefined the new domain (same name); the VM runs transient and libvirt refuses persistent hot-plug | Stop the VM, wait until its launcher and hp-volume pods are gone, start it (4.8). Volumes requested meanwhile attach at boot |
+| A KubeVirt worker's new PVCs never attach: pods in ContainerCreating with FailedAttachVolume, the volumes at `MountedToPod` on the hypervisor, virt-handler logging "transient domains do not have any persistent config" | The VM's start outlasted virt-handler's SyncVMI timeout (VFIO pinning 128Gi); on the retry virt-handler saw `Scheduled` + `Shutoff`, signalled deletion, and the launcher undefined the just-started domain. libvirt then refuses persistent hot-plug | 1Gi hugepages for the VM (4.8); until then, re-define the running domain from its live XML after each start. Stop/start does not help |
 | A new hosted cluster's ACM add-ons crash-loop ("dial tcp 172.33.0.1:443: i/o timeout"), cluster-proxy down, every Argo app for it Unknown | namespace-guardrails-app applied `allow-egress-hub-routes` (an Egress policy, so the namespace was isolated) before `allow-egress-api-dns`; the agents lost the API server, cluster-proxy with them, and Argo could not finish (andalusia, 2026-11-23) | Render the namespace's policies from the fork (`helm template` with the app's value files) and `oc apply` them with the cluster's admin kubeconfig; restart the add-on pods. Fixed in the fork (`allow-egress-api-dns` in wave -1); the library on oac-apps main needs the same |
 | moc-aws apply fails: "Please check .well-known/openid-configuration" | The OIDC documents were not uploaded yet | Upload (2.4 or 4.3), re-run the apply |
 | AWS rejects the cluster's tokens after a rebuild | `setup-oidc.sh` without `-f` kept the old cluster's keys in S3 | Run it again with `-f` |
