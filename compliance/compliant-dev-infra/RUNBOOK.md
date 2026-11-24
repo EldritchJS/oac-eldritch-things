@@ -1567,6 +1567,10 @@ verify.sh 50/0. The hub 70/2:
   `re-init` annotation takes one node, and setting it again before the
   operator has acted replaces the earlier one.
 
+After #296 merged (22:3x): the hub back at baseline, verify.sh 72/0,
+nist-ocp4-moderate 3 FAIL (proxy, network policies, kubeadmin).
+andalusia is to verify when its VM next runs.
+
 ## 5. Known failures, and what to do
 
 | Symptom | Cause | Fix |
