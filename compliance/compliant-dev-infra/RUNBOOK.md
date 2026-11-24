@@ -1403,10 +1403,16 @@ rescans back at baseline 2 (02:50 and 02:53):
 - workload0 quotas for `clusters-andalusia` and for
   `container-object-storage-system` (COSI, also new since the baseline),
   on the fork test branch (`ce5386a`, `cbcd6eb`).
-- The passthrough route, by hand (HyperShift owns it): `route-rate-limits.sh`
-  and `ip_whitelist` 10.20.0.0/16. workload0's router refuses wildcard
-  routes, so it carries no traffic (andalusia's apps use the LoadBalancer).
-  If HyperShift rewrites it, the nightly scan fails the two route rules again.
+- The passthrough route (HyperShift owns it): rate limits and
+  `ip_whitelist` 10.20.0.0/16. workload0's router refuses wildcard routes,
+  so it carries no traffic (andalusia's apps use the LoadBalancer). First
+  set by hand, then from 04:57 by ACM policies on the hub (platform-hardening
+  `routeAnnotations`, fork test branch `5db3acf`, `ce596fd`):
+  `route-rate-limits` on the hub and workload0, `route-allowlist-vpn` on
+  workload0. They re-apply the annotations if an operator drops them, and
+  cover new routes. They replace `route-rate-limits.sh`, which had missed the
+  hub's `clusters-andalusia` routes (ignition-server, konnectivity-server,
+  oauth, from 11-23).
 - andalusia: a temporary `uat-temporary` quota in each harness namespace,
   then the namespaces deleted after the GPU tests.
 

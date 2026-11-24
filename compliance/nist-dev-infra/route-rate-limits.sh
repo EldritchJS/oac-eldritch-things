@@ -22,6 +22,9 @@
 # route-ip-whitelist is NOT done here: it needs the source ranges people
 # reach the hub from, and a wrong range locks everyone out.
 #
+# Superseded on compliant-dev-infra by the platform-hardening chart's
+# routeAnnotations ACM policies (2026-11-24), which keep the annotations.
+#
 # Usage:
 #   KUBECONFIG=... ./route-rate-limits.sh            # report only
 #   KUBECONFIG=... APPLY=1 ./route-rate-limits.sh    # annotate
