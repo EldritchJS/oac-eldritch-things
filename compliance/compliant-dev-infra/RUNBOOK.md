@@ -1396,9 +1396,31 @@ count over baseline and none from #287. workload0 (5, baseline 2):
 `resource-requests-quota` (`clusters-andalusia`), `route-ip-whitelist` and
 `routes-rate-limit` (HyperShift's `default-ingress-passthrough` route in
 `clusters-andalusia`), all from andalusia's arrival, as step 4 above
-expected: **TODO** quota and route annotations, or accept. andalusia (3,
-baseline 2): `resource-requests-quota` for the harness's `uat-project` and
-`uat-runner`, gone once they are deleted after the GPU tests.
+expected. andalusia (3, baseline 2): `resource-requests-quota` for the
+harness's `uat-project` and `uat-runner`. Fixed the same night, both
+rescans back at baseline 2 (02:50 and 02:53):
+
+- workload0 quotas for `clusters-andalusia` and for
+  `container-object-storage-system` (COSI, also new since the baseline),
+  on the fork test branch (`ce5386a`, `cbcd6eb`).
+- The passthrough route, by hand (HyperShift owns it): `route-rate-limits.sh`
+  and `ip_whitelist` 10.20.0.0/16. workload0's router refuses wildcard
+  routes, so it carries no traffic (andalusia's apps use the LoadBalancer).
+  If HyperShift rewrites it, the nightly scan fails the two route rules again.
+- andalusia: a temporary `uat-temporary` quota in each harness namespace,
+  then the namespaces deleted after the GPU tests.
+
+**GPU tests and stop (2026-11-24).** AI UAT Harness (Ahmed Sanaullah),
+`-t component,chunked-prefill,llm-d-local -p`, run 20261124_024623, 43 min:
+14 of 64 failed (11-23: 19). chunked-prefill passed. component's 5 are
+host-tuning checks a VM can't meet (no cpufreq or cpuidle in the guest, THP)
+with no expected values in the cluster file. llm-d-local's 9 all follow from
+its `header-injector` image, `docker.io/nginx:1.27-alpine`, which the
+registry policy rejects: **TODO** override it with a UBI nginx before the
+next run. Then the harness namespaces were deleted and the VM stopped (03:31)
+so it does not hold the four H100s idle. To bring andalusia back:
+`virtctl start`, then clear the Machine's failure as below if it is `Failed`.
+
 
 **A workload0 node roll stalls on andalusia's VM.** The VM is not
 live-migratable and its eviction strategy is `External`: KubeVirt only sets
