@@ -1416,8 +1416,9 @@ rescans back at baseline 2 (02:50 and 02:53):
 host-tuning checks a VM can't meet (no cpufreq or cpuidle in the guest, THP)
 with no expected values in the cluster file. llm-d-local's 9 all follow from
 its `header-injector` image, `docker.io/nginx:1.27-alpine`, which the
-registry policy rejects: **TODO** override it with a UBI nginx before the
-next run. Then the harness namespaces were deleted and the VM stopped (03:31)
+registry policy rejects. Behind that it would fail anyway: its image bundles
+an opencv that is not FIPS-compatible, so llm-d-local is not expected to
+pass on a FIPS cluster. Then the harness namespaces were deleted and the VM stopped (03:31)
 so it does not hold the four H100s idle. To bring andalusia back:
 `virtctl start`, then clear the Machine's failure as below if it is `Failed`.
 
