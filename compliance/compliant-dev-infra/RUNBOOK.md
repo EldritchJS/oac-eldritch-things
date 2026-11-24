@@ -1543,14 +1543,29 @@ Also found: the hub's route-rate-limits policy listed every route in its
 compliance message (1866 characters), over the 1024 an event allows, so
 its compliance events were rejected (schwesig, #290). Fixed in #290 with
 `customMessage`. ACM's separate "Policy status updated" event still uses
-the default message. **TODO:** when a route policy fails for a reason
-other than a route (an API error), the non-compliant message names no
-route; fall back to the default message.
+the default message. When a route policy fails for a reason other than
+a route (an API error), its message is now ACM's default, cut to 900
+characters (#295).
 
-TPMs (hakasapl, same day): u14 has a TPM 2.0 after enabling it in the
-BIOS; u15's module is being replaced; u16 next. Secure Boot is off on
+TPMs (hakasapl, same day, one master at a time: master pool paused,
+node drained with `--force`, hub and hosted etcd healthy before the
+next): u14 has a TPM 2.0 after enabling it in the BIOS. u15's module was
+replaced, but its CMOS battery is dead, so BIOS settings don't persist
+and it has no TPM yet. u16's TPM was not enabled. Secure Boot is off on
 the R440s: no rule in our scans or in ACS needs it, and with it on u14's
 firmware refused the PCIe SSD's option ROM (UEFI0072).
+
+Checks after all of it (21:12): workload0 at its scan baseline,
+verify.sh 50/0. The hub 70/2:
+- nist-ocp4-moderate 4 FAIL (baseline 3): `resource-requests-quota`, for
+  andalusia's namespaces on the hub, which had no quota since andalusia
+  arrived (11-23); the hosted-cluster chart's machine-limit quota is for
+  agent clusters only. Fix: oac-apps #296.
+- AIDE Failed on u14, u15, u16 and s1d: only
+  `/etc/machine-config-daemon/previous-logs/`, the MachineConfig daemon's
+  logs kept across reboots. Re-initialised one node at a time: the
+  `re-init` annotation takes one node, and setting it again before the
+  operator has acted replaces the earlier one.
 
 ## 5. Known failures, and what to do
 
