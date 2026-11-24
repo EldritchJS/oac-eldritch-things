@@ -91,7 +91,7 @@ is the one that needs the trust.
 | Step | State |
 |---|---|
 | Image built from the cluster's own RHEL entitlement | ✅ `ktls-utils-0.11-3.el9_6` |
-| Pushed to `ghcr.io/eldritchjs/tlshd`, pinned by digest | ✅ |
+| Pushed to `ghcr.io/eldritchjs/tlshd`, pinned by digest (since 2026-11-24 `ghcr.io/cci-moc/tlshd`, built by CCI-MOC/tlshd) | ✅ |
 | `tlshd` DaemonSet on both workers | ✅ 2/2 Ready (since extended to every node — see below) |
 | `nfs-over-tls` StorageClass provisions | ✅ PVC Bound |
 | TLS handshake | ✅ `Handshake with <fb-data-vip> was successful` |

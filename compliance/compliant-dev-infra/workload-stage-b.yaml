@@ -1,3 +1,6 @@
+# RETIRED 2026-11-24: oac-apps main deploys these now (RUNBOOK 4.9).
+# Do not apply: it would create a second set of Applications for the same
+# objects. Kept as the record of how compliant-dev-infra was built.
 # compliant-dev-infra test hub: compliance components for its hosted clusters,
 # stage B. Apply by hand on the hub:
 #   KUBECONFIG=$HOME/kubeadmin-compliant-dev-infra oc apply -f workload-stage-b.yaml

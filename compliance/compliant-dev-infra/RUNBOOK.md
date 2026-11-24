@@ -2,7 +2,8 @@
 
 *Runbook (2026-11-17), run 2026-11-18 to 20: the hub is built and passes
 verify.sh (section 3); workload0 is built and hardened, with its open
-items in 4.6. Open items are marked **TODO**.*
+items in 4.6. Since 2026-11-24 every compliance component comes from
+CCI-MOC/oac-apps main, not the fork (4.9). Open items are marked **TODO**.*
 
 compliant-dev-infra is a new compliant hub, with R440s as its control
 plane and three pool FC430s as its workers, built from the
@@ -632,6 +633,15 @@ Thanos.
 
 ### 2.8 The compliance stages, from the fork
 
+**Retired 2026-11-24.** oac-apps main now deploys all of this to any hub
+with the compliance marker, `hosted-clusters/<hub>/compliance.yaml`: the
+`hub-components-compliance` ApplicationSet (oac-apps #290), with this
+hub's values in `values/compliant-dev-infra/local-cluster/`. For a new
+hub, add the marker and that hub's values; don't apply the stage files,
+which would create a second set of Applications for the same objects.
+What follows is how this hub was built, kept as the record. The cutover
+is in 4.9.
+
 Each stage file updates the same ApplicationSet, `nist-compliance-test`,
 which reads the fork's `compliant-dev-infra-test` branch: upstream oac-apps
 main plus the compliance charts not yet upstream (audit-logging,
@@ -1043,6 +1053,11 @@ KUBECONFIG=$W0 oc get nodes                               # 2 Ready
 
 ### 4.4 The compliance stages, from the fork
 
+**Retired 2026-11-24.** oac-apps main's `compliance-clusters`
+ApplicationSet (#291) deploys these to every hosted cluster of a
+compliant hub, with values in `values/compliant-dev-infra/hosted-clusters/`
+and `values/compliant-dev-infra/<cluster>/`. Kept as the record; see 4.9.
+
 These update the ApplicationSet `nist-compliance-test-managed` on the
 hub, which deploys to every managed cluster. Apply in order:
 
@@ -1246,8 +1261,11 @@ workload0's admin kubeconfig is `~/kubeadmin-compliant-dev-workload0`
 ### 4.7 GPU passthrough (MOC-issues #787)
 
 workload0's H100s go to KubeVirt VMs only (andalusia's workers, #788).
-Tested 2026-11-20 from the fork; the by-hand steps below are **TODO**
-oac-apps changes.
+Tested 2026-11-20 from the fork. Since 2026-11-24, NFD and the GPU
+Operator come from main's `compliance-gpu-clusters` ApplicationSet
+(oac-apps #292, #294): a compliant hub's cluster gets them when
+`values/<hub>/<cluster>/nvidia-gpu-operator.yaml` exists, so
+`workload-gpu-test.yaml` (step 1) is retired.
 
 1. NFD and the GPU Operator, from the fork, on workload0 only:
    `oc apply -f workload-gpu-test.yaml` on the hub. Not the
@@ -1483,6 +1501,57 @@ with oac-apps #281 and moc-aws #87, after uploading its OIDC documents
 
 ---
 
+### 4.9 Moving onto main (2026-11-24)
+
+The fork's three hand-applied ApplicationSets were replaced by main's
+(MOC-issues #736):
+
+| oac-apps PR | ApplicationSet | Deploys |
+|---|---|---|
+| #284 | (chart) | audit-logging |
+| #290 | `hub-components-compliance` | the hub's nine components, with route-annotation ACM policies in platform-hardening |
+| #291 | `compliance-clusters` | six components to every hosted cluster, nfs-tls to Portworx clusters |
+| #292, #294 | `compliance-gpu-clusters` | NFD and the GPU Operator, to clusters with GPU Operator values |
+| #288 | (andalusia values) | `evictionStrategy: None`, so a workload0 drain shuts andalusia's VM down instead of stalling (#826) |
+
+tlshd moved from a personal registry to `ghcr.io/cci-moc/tlshd`, built by
+CCI-MOC/tlshd's workflow with MOC's RHEL subscription (activation key
+`tlshd-ci`); `ghcr.io/eldritchjs` left both allowed-registry lists.
+
+Cutover, per ApplicationSet: remove the resources finalizer from its
+Applications, delete it with `--cascade=orphan`, delete the
+Applications, then merge. Main's Applications adopted the objects in
+place. #292 went first (16:18 UTC); #288, #290 and #291 at 18:19.
+
+The roll: main's node hardening encodes its files as base64 where the
+fork used URL encoding, so the hub's MachineConfigs and the NodePools'
+ConfigMap changed. Every hub node rebooted once, workload0's two nodes
+updated in place, and andalusia's VM was replaced (then stopped, to free
+the GPUs). It finished at 19:19.
+
+During the roll, from about 18:45 to 18:51, workload0's API was down. A
+power cycle of u14 for TPM work overlapped the MachineConfig reboot of
+u16, leaving the hub one master, so the hub's API went away; the hosted
+etcd members on the hub's workers lost their node heartbeats and
+workload0's etcd lost quorum. It recovered by itself once the nodes were
+back. **Lesson:** hardware work on a hub node waits until a roll is
+finished, and then goes one node at a time: pause the master pool, drain
+the node (`--force` for the control-plane guard pods), wait for etcd to
+be healthy again before the next.
+
+Also found: the hub's route-rate-limits policy listed every route in its
+compliance message (1866 characters), over the 1024 an event allows, so
+its compliance events were rejected (schwesig, #290). Fixed in #290 with
+`customMessage`. ACM's separate "Policy status updated" event still uses
+the default message. **TODO:** when a route policy fails for a reason
+other than a route (an API error), the non-compliant message names no
+route; fall back to the default message.
+
+TPMs (hakasapl, same day): u14 has a TPM 2.0 after enabling it in the
+BIOS; u15's module is being replaced; u16 next. Secure Boot is off on
+the R440s: no rule in our scans or in ACS needs it, and with it on u14's
+firmware refused the PCIe SSD's option ROM (UEFI0072).
+
 ## 5. Known failures, and what to do
 
 | Symptom | Cause | Fix |
@@ -1526,11 +1595,11 @@ Every fix goes through a PR, as during the build:
 
 ## 7. Still open
 
-- The ACS chart is on main ([#181](https://github.com/CCI-MOC/oac-apps/pull/181)), but no ApplicationSet uses it
-  yet; stage B still installs ACS from the fork.
-- **TODO:** the stages come from the fork's `compliant-dev-infra-test` branch.
-  Moving the compliance charts to CCI-MOC/oac-apps main is a separate
-  piece of work; until then the fork is part of the build.
+- Done 2026-11-24: every compliance component, ACS included, comes from
+  oac-apps main (4.9). The fork's `compliant-dev-infra-test` branch is no
+  longer part of the build.
+- **TODO:** oac-apps #234 (node labels with ConfigurationPolicies), the
+  last open upstreaming PR (MOC-issues #736).
 - Hosted etcd is on LVM Storage on the workers (2.11), no longer on NFS.
 - **TODO:** a more reliable home for the Tang server, and a DNS name for
   it so a later move is only a key copy (MOC-issues #810). Every node

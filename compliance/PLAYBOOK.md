@@ -3,6 +3,10 @@
 *Written from the jetty engagement (2026-10-02 → 2026-10-09) to be reused on
 larger clusters. jetty is the worked example; this document is the method.*
 
+On a hub, oac-apps main now deploys all of this as charts (since
+2026-11-24; [NEW-HUB-RUNBOOK.md](NEW-HUB-RUNBOOK.md) 3.7): this document
+is the method behind them.
+
 Status: **draft, reviewed 2026-10-09.** Phase 14 is *pending*: audit
 forwarding, the identity provider and metrics persistence were blocked on
 other people on jetty, and will be written up when they happen.

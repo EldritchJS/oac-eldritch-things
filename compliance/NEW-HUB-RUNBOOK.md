@@ -162,7 +162,14 @@ Done when a BucketClaim is Ready and the COSI driver's log is clean
 
 ### 3.7 Compliance components
 
-Today these come from the fork's `nist-dev-infra-test` branch as stage
+**Since 2026-11-24 these come from oac-apps main:** add
+`hosted-clusters/<hub>/compliance.yaml` (the compliance marker) and the
+hub's values under `values/<hub>/local-cluster/` and
+`values/<hub>/hosted-clusters/`, as compliant-dev-infra has them; the
+`hub-components-compliance`, `compliance-clusters` and
+`compliance-gpu-clusters` ApplicationSets do the rest. What follows is the
+older procedure. Until then these came from the fork's
+`nist-dev-infra-test` branch as stage
 ApplicationSets ([nist-dev-infra/](nist-dev-infra/) `stage-*.yaml`),
 because the compliance charts are not on oac-apps main yet. For a new hub,
 copy those files with the hub's name, and copy NDI's compliance values
@@ -262,8 +269,8 @@ applies to any new pair.
 
 ## 8. Still open
 
-- **TODO:** the compliance charts and stage files live on a fork. Until
-  they are on oac-apps main, a new hub depends on that fork.
+- Done 2026-11-24: the compliance charts and their ApplicationSets are on
+  oac-apps main; a new hub no longer depends on the fork.
 - **TODO:** disk encryption (E6).
 - **TODO:** hosted etcd on FlashBlade NFS is test-only, and it failed on
   2026-10-23 (a stale NFS lock); a supported home for it.

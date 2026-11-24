@@ -740,7 +740,7 @@ input from someone else is done; every row below is waiting on a person.*
 |---|---|---|---|---|
 | D1 | Patch-cadence day counts | Pick the numbers marked **[decide]** (z-stream, minor, own images, exception expiry, review interval) | The written policy half of HIPAA 306(e) / 308(a)(6)(ii); SSP text | [PATCHING.md](PATCHING.md) §1 |
 | D2 | Route IP allowlist (F5) | The source ranges users reach the cluster from (VPN pool, campus) | `route-ip-whitelist` (moderate 8 → 7) | triage entry above; `manifests/23-*` |
-| D3 | Signing key for our image | Who holds a cosign key for `ghcr.io/eldritchjs/tlshd` | Gap #9 for our image: signature-verified at runtime | gap #9 |
+| D3 | Signing key for our image | Who holds a cosign key for `ghcr.io/cci-moc/tlshd` (was `ghcr.io/eldritchjs/tlshd`) | Gap #9 for our image: signature-verified at runtime | gap #9 |
 | D4 | GPU-claim prevention (optional) | Approve: `vms-test` GPU quota → 0, and an admission policy rejecting GPU requests outside an allowlist | Turns T-17's detection into prevention (billing) | T-17 entry above |
 | ~~D5~~ | ~~Old build cleanup~~ | ✅ **Done 2026-10-10**: `tlshd-4`..`-6` deleted, `tlshd-7` (running digest) kept | Removes privileged completed pods from ACS's view | [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md) #2 |
 | D6 | Publish the playbook (optional) | Say where / to whom | — | [PLAYBOOK.md](PLAYBOOK.md) |
