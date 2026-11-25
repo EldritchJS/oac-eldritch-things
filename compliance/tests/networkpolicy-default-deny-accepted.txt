@@ -38,3 +38,11 @@ portworx                                    storage driver, host networking
 compliant-dev-workload0-hypervisor-upgrade  transient, exists only during a NodePool roll
 nvidia-gpu-operator                         vendor DaemonSets, host networking
 openshift-nfd                               vendor operator
+
+# Recorded 2026-11-25, tracked in MOC-issues #832. These are known and
+# explained, not unexamined: each says what is open and why it is not
+# closed yet. They WARN so that a namespace nobody has looked at still
+# FAILs. Remove the line, do not edit the reason, when one is fixed.
+metallb-system                   open both ways. speaker is hostNetwork so policies do not apply to it; controller and the two operator pods are in scope, and ingress to the webhook servers arrives through konnectivity on a hosted cluster, so the rule needs measuring before MetalLB admission is risked
+clusters-andalusia               hub: HyperShift control plane, ingress closed by its four policies, egress open. hypervisor: the KubeVirt VM namespace, open both ways. HyperShift owns and reconciles these, so our policy could conflict on upgrade
+clusters-compliant-dev-workload0 HyperShift control plane, ingress closed by its four policies, egress open; same ownership question as clusters-andalusia
