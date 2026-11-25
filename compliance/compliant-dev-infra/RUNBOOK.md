@@ -590,12 +590,13 @@ was checking. `verify.sh` gained T-25 for it, with
 `networkpolicy-default-deny-accepted.txt` holding the namespaces carried
 under the broad `configure-network-policies-namespaces` gap, which WARN.
 
-**Both clusters now report 3 FAILs from T-25** (the hub 72/3, previously
-72/0), and the three are not alike:
+**Both clusters reported 3 FAILs from T-25** (the hub 72/3, previously
+72/0). `stackrox` was closed the same day by oac-apps #299, so it is
+**2 now, and the hub reads 72/2**. The three were not alike:
 
 | Namespace | Why it is open | Can it be closed now |
 |---|---|---|
-| `stackrox` | the ACS operator ships an ingress policy per pod, so our values deliberately left out a namespace-wide one | **Yes.** Every pod on both clusters is already selected by one of those policies, so a deny-all-ingress adds nothing to the union of allows. oac-apps #299 adds it as a backstop |
+| `stackrox` | the ACS operator ships an ingress policy per pod, so our values deliberately left out a namespace-wide one | **Done**, oac-apps #299. Every pod on both clusters was already selected by one of those policies, so the deny-all-ingress added nothing to the union of allows; ACS stayed healthy through the sync |
 | `metallb-system` | its guardrails entry has a quota only | **No.** The webhook server and controller need ingress from the API server, which for a hosted cluster comes from the hub; closing it without that rule breaks MetalLB admission, and MetalLB publishes `router-default` and andalusia's ingress. The `speaker` pods are `hostNetwork`, so a policy neither affects nor protects them |
 | `clusters-andalusia` | no guardrails entry on the hypervisor | **No.** On the hypervisor this is the VM itself and on the hub andalusia's control plane; needs KubeVirt, CSI and console traffic measured first |
 
@@ -629,9 +630,10 @@ the three real namespaces under thirty-two.
   can be enabled.
 - **TODO:** a more reliable home for the Tang server, and a DNS name for
   it so a later move is only a key copy (MOC-issues #810).
-- **TODO:** MOC-issues #832, the three namespaces with no default-deny;
-  verify.sh T-25 fails on them. `stackrox` is oac-apps #299;
-  `metallb-system` and `clusters-andalusia` need their traffic measured.
+- **TODO:** MOC-issues #832, the two namespaces left with no default-deny,
+  `metallb-system` and `clusters-andalusia`; verify.sh T-25 fails on them
+  and the hub reads 72/2 until their traffic is measured. `stackrox` was
+  closed by oac-apps #299.
 - **TODO:** NetworkPolicies for the hub's namespaces, for the production
   setup (§3), and for workload0's remaining four (§4).
 - **TODO:** `podPidsLimit` for workload0's pool, oac-apps #276.
