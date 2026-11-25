@@ -1,0 +1,41 @@
+# Namespaces accepted without a default-deny NetworkPolicy, for verify.sh
+# T-25. One per line: <namespace> <reason>. A namespace not listed here and
+# without a default-deny FAILs.
+#
+# The broad gap is the Compliance Operator's
+# configure-network-policies-namespaces, carried as an accepted baseline
+# failure on both clusters (NEW-HUB-RUNBOOK 4.14, "TBD for production"):
+# most of these are operator-managed, and a policy written before their
+# traffic is measured cuts a hub component off. ACS's Network Graph records
+# the observed flows to write them from. What is NOT accepted is a
+# namespace whose guardrails values already intend a default-deny but do
+# not produce one; those are MOC-issues #832 and should fail.
+
+andalusia                                   ACM-managed; cluster add-on namespace
+assisted-installer                          ingress denied; egress for image pulls, not yet measured
+cert-manager                                operator-managed, traffic not yet measured
+cert-manager-operator                       operator-managed, traffic not yet measured
+clusters                                    HyperShift-managed
+clusters-compliant-dev-workload0            HyperShift control plane, traffic not yet measured
+compliant-dev-workload0                     ACM-managed ManagedCluster namespace
+container-object-storage-system             COSI, traffic not yet measured
+hardware-inventory                          assisted-service, traffic not yet measured
+hive                                        ACM-managed
+hypershift                                  HyperShift operator
+klusterlet-andalusia                        ACM-managed
+klusterlet-compliant-dev-workload0          ACM-managed
+local-cluster                               ACM-managed
+multicluster-engine                         MCE-managed
+object-storage-proxy                        traffic not yet measured
+open-cluster-management                     ACM-managed
+open-cluster-management-agent               ACM-managed
+open-cluster-management-agent-addon         ACM-managed
+open-cluster-management-global-set          ACM-managed
+open-cluster-management-hub                 ACM-managed
+open-cluster-management-observability       ACM-managed
+open-cluster-management-policies            ACM-managed
+open-cluster-management-addon-observability ACM-managed
+portworx                                    storage driver, host networking
+compliant-dev-workload0-hypervisor-upgrade  transient, exists only during a NodePool roll
+nvidia-gpu-operator                         vendor DaemonSets, host networking
+openshift-nfd                               vendor operator

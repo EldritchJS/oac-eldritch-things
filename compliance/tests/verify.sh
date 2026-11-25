@@ -1111,6 +1111,78 @@ run_t24() {
   done
 }
 
+# A namespace is closed when every pod in it is denied both directions by
+# default: one policy naming both, or a default-deny-ingress beside a
+# default-deny-egress, which is the pair the Kubernetes documentation shows
+# and the pair our guardrails render. Namespaces in
+# networkpolicy-default-deny-accepted.txt WARN (the recorded gap, see
+# NEW-HUB-RUNBOOK 4.14); anything else FAILs. Found missing by the AI UAT
+# Harness, not by this script (MOC-issues #832).
+NP_DEFAULT_DENY_ACCEPTED="${NP_DEFAULT_DENY_ACCEPTED:-./networkpolicy-default-deny-accepted.txt}"
+run_t25() {
+  hdr "T-25  Namespaces have a default-deny NetworkPolicy (SC-7)"
+  local d out
+  d=$(mktemp -d)
+  oc get networkpolicy -A -o json > "$d/np.json" 2>/dev/null || { bad "could not list NetworkPolicies"; rm -rf "$d"; return; }
+  oc get ns -o json > "$d/ns.json" 2>/dev/null || { bad "could not list namespaces"; rm -rf "$d"; return; }
+  out=$(python3 - "$d/ns.json" "$d/np.json" "$NP_DEFAULT_DENY_ACCEPTED" <<'EOF'
+import json, re, sys
+ns_items = json.load(open(sys.argv[1]))["items"]
+np_items = json.load(open(sys.argv[2]))["items"]
+accepted = {}
+try:
+    for line in open(sys.argv[3]):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        name, _, reason = line.partition(" ")
+        accepted[name] = reason.strip()
+except FileNotFoundError:
+    pass
+
+# Accumulate cover per namespace from policies that select every pod and
+# permit nothing; one such policy may name either direction or both.
+cover = {}
+for p in np_items:
+    spec = p.get("spec") or {}
+    sel = spec.get("podSelector") or {}
+    if sel.get("matchLabels") or sel.get("matchExpressions"):
+        continue
+    ns = p["metadata"]["namespace"]
+    seen = cover.setdefault(ns, set())
+    for t in spec.get("policyTypes") or []:
+        if t == "Ingress" and not spec.get("ingress"):
+            seen.add("Ingress")
+        if t == "Egress" and not spec.get("egress"):
+            seen.add("Egress")
+
+for n in sorted(x["metadata"]["name"] for x in ns_items):
+    if re.match(r"^(default|kube-|openshift$|openshift-)", n):
+        continue
+    if (x := next(i for i in ns_items if i["metadata"]["name"] == n))["status"].get("phase") == "Terminating":
+        continue
+    have = cover.get(n, set())
+    if {"Ingress", "Egress"} <= have:
+        continue
+    missing = ", ".join(sorted({"Ingress", "Egress"} - have)) or "both"
+    if n in accepted:
+        print("WARN\t%s: no default-deny (%s); accepted: %s" % (n, missing, accepted[n]))
+    else:
+        print("FAIL\t%s: no default-deny (missing %s)" % (n, missing))
+EOF
+) || { bad "could not evaluate NetworkPolicies"; rm -rf "$d"; return; }
+  rm -rf "$d"
+  local nfail=0
+  while IFS=$'\t' read -r verdict msg; do
+    [ -z "$verdict" ] && continue
+    case "$verdict" in
+      FAIL) bad "$msg"; nfail=$((nfail+1)) ;;
+      WARN) warn "$msg" ;;
+    esac
+  done <<< "$out"
+  [ "$nfail" -eq 0 ] && ok "every namespace outside openshift-*/kube-* is default-denied or accepted"
+}
+
 # ---------------------------------------------------------------- main -----
 command -v oc >/dev/null || { echo "oc not found" >&2; exit 2; }
 oc whoami >/dev/null 2>&1 || { echo "not logged in (set KUBECONFIG)" >&2; exit 2; }
@@ -1131,7 +1203,7 @@ fi
 
 printf '%sverification%s  —  %s  —  %s\n' "$B" "$N" "$(oc whoami --show-server)" "$(date -u '+%Y-%m-%d %H:%M UTC')"
 
-ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12 t13 t14 t15 t16 t17 t18 t19 t20 t21 t22 t23 t24"
+ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12 t13 t14 t15 t16 t17 t18 t19 t20 t21 t22 t23 t24 t25"
 # No GPUs and no GPU Operator: the GPU tests have nothing to check.
 HAS_GPU=0
 { oc get ns "$GPU_NS" >/dev/null 2>&1 || [ -n "$(oc get nodes -l nvidia.com/gpu.present=true -o name 2>/dev/null)" ]; } && HAS_GPU=1

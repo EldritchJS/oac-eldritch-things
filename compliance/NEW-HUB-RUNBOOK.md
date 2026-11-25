@@ -595,7 +595,8 @@ oc -n openshift-compliance get compliancecheckresults -l compliance.openshift.io
 Then `verify.sh`, which checks what the steps above set up: FIPS, TLS,
 the scans, ACS, the registry allowlist, SCCs, etcd backups, file
 integrity, LUKS and Tang on every disk, OAuth token timeouts, chrony, the
-API audit profile, USBGuard, and the admission policies on Deny.
+API audit profile, USBGuard, default-deny NetworkPolicies, and the
+admission policies on Deny.
 
 ```
 cd ~/oat/oac-eldritch-things/compliance/tests

@@ -581,6 +581,30 @@ rather than by disturbing a working one.
 
 ---
 
+### verify.sh T-25, added 2026-11-25
+
+Running Ahmed Sanaullah's compliance branch of the AI UAT Harness on both
+clusters turned up three namespaces with no default-deny NetworkPolicy
+that our guardrails values already intend to close, which nothing of ours
+was checking. `verify.sh` gained T-25 for it, with
+`networkpolicy-default-deny-accepted.txt` holding the namespaces carried
+under the broad `configure-network-policies-namespaces` gap, which WARN.
+
+**Both clusters now report 3 FAILs from T-25** (the hub 72/3, previously
+72/0): `clusters-andalusia` and `metallb-system` have no all-pods policy,
+and `stackrox` denies egress but not ingress. They are real and tracked
+in MOC-issues #832; the counts go back to 0 when that is fixed, not by
+accepting them.
+
+Two of the harness's own checks were wrong and were fixed back to it
+(asanaullah/ai-uat-harness#16): it looked for ClusterLogForwarder in
+`logging.openshift.io`, which Cluster Logging 6 moved to
+`observability.openshift.io`, so it reported that audit logs were not
+forwarded on a cluster that had been forwarding them for five days; and
+it accepted a default-deny only as a single policy naming both
+directions, not as the ingress and egress pair we render, which buried
+the three real namespaces under thirty-two.
+
 ## 8. Still open
 
 - **TODO:** MOC SSO for andalusia, the last open item on MOC-issues
@@ -597,6 +621,8 @@ rather than by disturbing a working one.
   can be enabled.
 - **TODO:** a more reliable home for the Tang server, and a DNS name for
   it so a later move is only a key copy (MOC-issues #810).
+- **TODO:** MOC-issues #832, the three namespaces whose guardrails intend
+  a default-deny but do not produce one; verify.sh T-25 fails on them.
 - **TODO:** NetworkPolicies for the hub's namespaces, for the production
   setup (§3), and for workload0's remaining four (§4).
 - **TODO:** `podPidsLimit` for workload0's pool, oac-apps #276.
