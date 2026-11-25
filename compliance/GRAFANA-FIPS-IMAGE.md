@@ -70,16 +70,34 @@ ENTRYPOINT ["/usr/sbin/grafana", "server", "--homepath=/usr/share/grafana", "--c
 
 ## Building and distributing
 
-- **Built once**, in one place, for every cluster. An OpenShift BuildConfig on
-  the hub (Docker strategy, `etc-pki-entitlement` mounted at
-  `/etc/pki/entitlement`) is the simplest; GitHub Actions would need a Red Hat
-  activation key instead.
-- **Pushed to a private registry**, for example a private quay.io
-  organization. It must be private: the image contains RHEL packages, which our
-  subscription lets us run but not redistribute.
-- **Per cluster:** only a pull secret (External Secrets from AWS Secrets
-  Manager), the registry in the cluster's allowed-registries list when
-  `platform-hardening` is on, and the image name in `user-projects`.
+**Built and published since 2026-11-25** by
+[CCI-MOC/grafana-fips](https://github.com/CCI-MOC/grafana-fips), in the same
+shape as [CCI-MOC/tlshd](https://github.com/CCI-MOC/tlshd): a GitHub Actions
+workflow registers with MOC's Red Hat subscription through BuildKit secret
+mounts, installs the package from RHEL 9 AppStream, then unregisters and
+cleans, so neither the credentials nor the entitlement certificates are in
+any layer. The Containerfile there is this document's, moved off the
+in-cluster BuildConfig form (no `/etc/pki/entitlement` mount) and running as
+UID 1001.
+
+It needs two repository secrets, `RHEL_ORG_ID` and `RHEL_ACTIVATION_KEY`.
+An unset key still passes the Containerfile's `-s` guard, because the
+workflow writes a one-byte file, and the build then fails at
+"Must specify an activation key"; that is what it looks like when the
+secret is missing.
+
+- **Per cluster:** the image name in `user-projects` (`defaultGrafana.image`,
+  pinned by digest) and the registry in the allowed-registries list.
+  `ghcr.io/cci-moc` is already allowed on compliant-dev-infra and its
+  clusters, so oac-apps #297 is only the values file.
+
+**On the image being public.** It holds RHEL packages installed with MOC's
+subscription, and the subscription covers running them, not redistributing
+them, so requiring authentication to pull is the intended end state: make
+the package private and give the clusters a pull secret through External
+Secrets. That is **deferred and recorded as an accepted exception**
+(MOC-issues #780, decided 2026-11-24), as it is for `ghcr.io/cci-moc/tlshd`
+and for larsks' own public tlshd image before it.
 
 ## Fitting it to oac-apps
 

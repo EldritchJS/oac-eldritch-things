@@ -529,6 +529,32 @@ If the SecuredCluster is not Available after 5 minutes, the operator may
 have given up just before the bundle arrived. Nudge it:
 `oc -n stackrox annotate securedcluster stackrox-secured-cluster-services reconcile-nudge=$(date +%s) --overwrite`.
 
+**A cluster registration secret instead, for clusters that do not exist
+yet.** From ACS 5.0 the operator reads a Secret named
+`cluster-registration-secret` (one key, `crs`) in the stackrox namespace,
+runs a `crs` init container in the sensor pod, registers the cluster and
+writes its own certificates. One CRS can onboard many clusters
+(`--max-clusters 0`), so a hub could mint one, keep it in the secret
+store, and let every new cluster register itself instead of someone
+generating a per-cluster init bundle:
+
+```
+oc -n stackrox exec deploy/central -- roxctl central crs generate <name> \
+  --insecure-skip-tls-verify --password "$(oc -n stackrox get secret central-htpasswd \
+  -o go-template='{{index .data "password" | base64decode}}')" \
+  --max-clusters 0 --valid-for 720h --output -
+```
+
+Two things to know before relying on it. **It only works for a cluster
+Central has never seen:** on an already-registered cluster the handshake
+is refused with "forbidden to use a Cluster Registration Certificate for
+already-existing cluster" (tested on andalusia, 2026-11-25), so an
+existing cluster that loses its certificates still needs an init bundle,
+or must be deleted from Central first. And **it expires**: the default is
+24 hours, so `--valid-for` has to cover the build window. Delivering it
+through the secret store, as the rhacs chart's values ask, is not wired
+up yet (MOC-issues #830).
+
 ### 4.12 Record the etcd backup volume outside the hub
 
 So the backup is findable without the hub: patch its PV to `Retain`, look
@@ -841,7 +867,10 @@ cluster (§7), as andalusia runs on compliant-dev-workload0.
   whose later hot-plugs all fail (§9). With them it starts in 5 to 7 s.
 - **`evictionStrategy: None`**, so draining a hypervisor node shuts the
   VM down instead of waiting on CAPK (§9). Leave `autoRepair` off, or it
-  fights a VM parked with `virtctl stop`.
+  fights a VM parked with `virtctl stop`. Tested on 2026-11-25: the drain
+  finished in 54 s, the VM restarted itself on the other node in about
+  40 s, and the CAPI Machine stayed `Running`, so neither the by-hand VMI
+  delete nor the Machine-failure clear below was needed.
 - **Inside the VM cluster:** the GPU Operator in container mode
   (`sandboxWorkloads` off, NFD taints off), from the same values file
   that puts it in `compliance-gpu-clusters`.
@@ -889,8 +918,8 @@ cluster (§7), as andalusia runs on compliant-dev-workload0.
 | A node comes up with CRI-O failing after a reinstall | `nodeip-configuration` recorded the NIC's lease before `br-ex` took over and got another | On the node: remove `/run/nodeip-configuration/*`, restart `nodeip-configuration`, then `crio` and `kubelet`. A DHCP reservation per MAC prevents it |
 | Scaling a NodePool to 0 hangs on the drain | Every node going at once, each holding the last copy of pods under a disruption budget, with `nodeDrainTimeout: 0` (wait forever) | Annotate the Machines with `machine.cluster.x-k8s.io/exclude-node-draining`. The Agents then reboot into discovery by themselves |
 | A KubeVirt worker's new PVCs never attach: pods in ContainerCreating with FailedAttachVolume, the volumes at `MountedToPod` on the hypervisor, virt-handler logging "transient domains do not have any persistent config" | The VM's start outlasted virt-handler's SyncVMI timeout (VFIO pinning all its memory); on the retry virt-handler saw `Scheduled` + `Shutoff`, signalled deletion, and the launcher undefined the just-started domain. libvirt then refuses persistent hot-plug | 1Gi hugepages for the VM (§8). Until then, re-define the running domain from its live XML after each start; stop/start does not help |
-| A hypervisor NodePool roll stalls: the node stays cordoned, CAPK logging "no matches for kind \"KubevirtMachine\"" | The VM is not live-migratable and its eviction strategy is `External`, so CAPK handles the eviction, and seems to send its update to the infra cluster, where the kind does not exist (MOC-issues #826) | `evictionStrategy: None` (§8). On a cluster still set to `External`, delete the VMI by hand, then clear the Machine's failure below |
-| A KubeVirt cluster's console and apps unreachable after its VM was stopped: the LoadBalancer address not announced, its endpoint slice on the hypervisor `ready=false` | The stop left the CAPI Machine `Failed` ("VMI has reached a permanent finalized state"), which never clears; HCCO marks the endpoint not ready | Remove the Machine's `status.failureReason` and `failureMessage` on the hub. HCCO marks the endpoint ready within seconds; if the endpoint slice is missing, restart `hosted-cluster-config-operator` in that cluster's namespace |
+| A hypervisor NodePool roll stalls: the node stays cordoned, CAPK logging "no matches for kind \"KubevirtMachine\"" | The VM is not live-migratable and its eviction strategy is `External`, so CAPK handles the eviction, and seems to send its update to the infra cluster, where the kind does not exist (MOC-issues #826, fixed) | `evictionStrategy: None` (§8), which is how a GPU VM cluster is built now. On a cluster still set to `External`, delete the VMI by hand, then clear the Machine's failure below |
+| A KubeVirt cluster's console and apps unreachable after its VM was stopped: the LoadBalancer address not announced, its endpoint slice on the hypervisor `ready=false` | The stop left the CAPI Machine `Failed` ("VMI has reached a permanent finalized state"), which never clears; HCCO marks the endpoint not ready. Seen with `evictionStrategy: External`; with `None` the Machine stayed `Running` through a stop (2026-11-25) | Remove the Machine's `status.failureReason` and `failureMessage` on the hub. HCCO marks the endpoint ready within seconds; if the endpoint slice is missing, restart `hosted-cluster-config-operator` in that cluster's namespace |
 | AIDE Failed after a roll, a reinstall or a new operator | Expected writes: the machine-config daemon's logs, `/etc/hosts` on a fresh node, LVM Storage's archive files, the GPU Operator's CRI-O drop-in, `policy.json` and `registries.conf` | Re-initialise the affected nodes, one at a time (4.10) |
 
 ```

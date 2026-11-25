@@ -6,11 +6,11 @@
 this build; read that to build a hub, and this to see what this one is
 made of and what went wrong. Open items are marked **TODO**.*
 
-**Where it stands (2026-11-24):** the hub, compliant-dev-workload0 and
-andalusia are built and hardened, every compliance component comes from
-CCI-MOC/oac-apps main, and both the hub and workload0 are at their scan
-baselines (verify.sh 72/0 and 50/0). andalusia's VM is stopped, to leave
-its four H100s free.
+**Where it stands (2026-11-25):** the hub, compliant-dev-workload0 and
+andalusia are built, hardened and verified, every compliance component
+comes from CCI-MOC/oac-apps main, and all three are at their scan
+baselines (verify.sh 72/0, 50/0 and 33/0). andalusia's VM is stopped, to
+leave its four H100s free.
 
 compliant-dev-infra replaced [nist-dev-infra](../nist-dev-infra/), the
 first FIPS test hub (2026-10-15 to 2026-10-28), built from its
@@ -512,10 +512,84 @@ when its VM next runs.
 
 ---
 
-## 7. Still open
+## 7. andalusia verified, and the eviction fix proven (2026-11-25)
 
-- **TODO:** verify andalusia and test a workload0 drain with its VM
-  running, to confirm #288's `evictionStrategy: None` (MOC-issues #826).
+The VM was started at 02:12 for the checks #788 was waiting on, and
+stopped at 02:59; 47 minutes of GPU time.
+
+**It came up clean.** The libvirt domain was **persistent** from a cold
+start, so #287's hugepages hold without the re-define workaround; the
+node was Ready and the HostedCluster Available two minutes after the
+start, with no Machine failure to clear; all 19 Argo apps reached
+Synced/Healthy. The GPU driver rebuilt in about nine minutes, after
+which the node advertised its four H100s.
+
+| Check | Result |
+|---|---|
+| Scans | At baseline: hosted-ocp4-cis 1, hosted-ocp4-moderate 2 |
+| `verify.sh` (with `HUB_KUBECONFIG`) | **33 PASS, 0 FAIL**, 5 WARN, 8 SKIP |
+| `cluster-acceptance.sh --gpu` | **9 PASS, 0 FAIL**: ClusterPolicy ready, 4 GPUs advertised, host driver running, CUDA runs in a pod, no GPU left claimed |
+
+Two things needed a nudge, both expected and both in the procedure:
+AIDE's first run flagged the GPU Operator's
+`/etc/crio/crio.conf.d/99-nvidia.conf` and was re-initialised; and
+`nvidia-dcgm-exporter` crash-looped four times losing a startup race with
+`nvidia-dcgm` ("Failed to connect to remote hostengine"), which left the
+ClusterPolicy `notReady` until it recovered by itself.
+
+### The drain test (MOC-issues #826)
+
+Draining `a0-88-c2-27-c2-d4` on workload0, the node holding the VM, with
+`evictionStrategy: None` from #288:
+
+| | `External` (2026-11-24) | `None` (2026-11-25) |
+|---|---|---|
+| Drain | Stalled 30 minutes, node cordoned indefinitely | **Finished in 54 s** |
+| VM | Had to delete the VMI by hand | Shut down and restarted itself on the other node in about 40 s |
+| CAPI Machine | Went `Failed`, needed clearing by hand | **Stayed `Running`** |
+
+So #288 removes both by-hand steps, not only the stall. The Machine also
+stayed `Running` through the later stop, which used to be the other way
+the failure appeared. KubeVirt's hotplug-volume webhook refused to evict
+a volume pod for a few seconds while the VMI was still alive; it cleared
+by itself. **#826 is closed.**
+
+### Cluster registration secrets, tested and not adopted
+
+The ACS init bundle is applied by hand on every cluster, although the
+rhacs chart's values say credentials should come from the secret store.
+ACS 5.0 has cluster registration secrets, which looked like the way to
+automate it: one reusable secret, and each new cluster registers itself.
+
+Tested on andalusia (certificates backed up first). The operator
+supports it with no prompting: a `crs` init container appeared in the
+sensor pod as soon as `cluster-registration-secret` existed, and it
+reached Central. Central then refused it:
+
+```
+PermissionDenied: not authorized: forbidden to use a Cluster Registration
+Certificate for already-existing cluster "andalusia"
+```
+
+**A CRS onboards a cluster Central has never seen; it cannot re-issue
+certificates for one that is already registered.** andalusia's
+certificates were restored from the backup and it reached Central again
+at 02:42. The approach is sound for new clusters and is written up in
+[../NEW-HUB-RUNBOOK.md](../NEW-HUB-RUNBOOK.md) 4.11; wiring it to the
+secret store is MOC-issues #830, to be tried on the next new cluster
+rather than by disturbing a working one.
+
+---
+
+## 8. Still open
+
+- **TODO:** MOC SSO for andalusia, the last open item on MOC-issues
+  #788. moc-keycloak [#71](https://github.com/CCI-MOC/moc-keycloak/pull/71)
+  adds its OIDC client; once that is applied and the secret is in Secrets
+  Manager, an oac-apps change sets `oauth.mocsso.enabled` and HyperShift
+  drops kubeadmin.
+- **TODO:** deliver the ACS secured-cluster credential from the secret
+  store instead of by hand (MOC-issues #830), on the next new cluster.
 - **TODO:** oac-apps [#234](https://github.com/CCI-MOC/oac-apps/pull/234)
   (node labels with ConfigurationPolicies), the last open upstreaming PR
   (MOC-issues #736).
