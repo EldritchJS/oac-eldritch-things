@@ -124,6 +124,35 @@ Secrets. That is **deferred and recorded as an accepted exception**
 (MOC-issues #780, decided 2026-11-24), as it is for `ghcr.io/cci-moc/tlshd`
 and for larsks' own public tlshd image before it.
 
+## The whole path, run once (2026-11-25)
+
+The image alone is not the question; the `user-projects` wiring from
+MOC-issues #742 had never run on a compliant cluster either. Rendered a
+project with `grafana.enabled: true` from oac-apps main and applied all 17
+objects to compliant-dev-workload0, then deleted them.
+
+| Check | Result |
+|---|---|
+| Pod | **2/2 Running**: Grafana and the oauth-proxy sidecar |
+| Grafana | `/api/health` returns `database: ok` |
+| Cookie secret | ExternalSecret `SecretSynced`; the ClusterGenerator path works |
+| Datasource | `thanos` provisioned, and `/api/ds/query` returns **HTTP 200**, so the service-account token authenticates against Thanos |
+| Dashboard | "Project overview" loaded from the ConfigMap |
+| Route | Created, and the platform-hardening ACM policies put the rate limits **and** the VPN allowlist (`10.20.0.0/16`) on it by themselves, which also shows `routeAnnotations` catching a brand-new route |
+
+Two things this did **not** prove, and neither is a defect:
+
+- **No data came back from the query.** The 200 shows auth and
+  connectivity; the empty result is expected, since the project had no
+  workloads and `kube_pod_info` is a platform metric rather than a
+  user-workload one. Metrics actually flowing still wants a project with
+  something running in it.
+- **The oauth-proxy's HTTP path was not exercised.** The sidecar starts and
+  binds, but a request to the route did not answer within the timeout from
+  a laptop on the VPN, and the browser login flow cannot be driven
+  headlessly anyway. Access control is therefore still unverified end to
+  end.
+
 ## Fitting it to oac-apps
 
 **Decision (2026-11-05): no Grafana operator on compliant clusters.** The
