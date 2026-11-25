@@ -43,12 +43,37 @@ Alternatives considered:
 | Check | Result |
 |---|---|
 | Installs in UBI 9 with the entitlement mounted | Yes |
-| Starts on a FIPS node | Yes; `/api/health` returned `database: ok`, no errors logged |
+| Starts on a FIPS node | Yes; `/api/health` returned `database: ok`, no errors logged. Re-confirmed 2026-11-25 on compliant-dev-workload0 from `ghcr.io/cci-moc/grafana-fips`, run the way the chart runs it: 1/1 Running, readiness probe passing, as UID 1000 in group 0 under the restricted SCC |
 | Uses FIPS crypto | Yes; the running process had RHEL's OpenSSL (`libcrypto.so.3.5.8`) and the OpenSSL FIPS provider (`fips.so`) loaded, provider status `active` |
 | Layout | `/usr/sbin/grafana`, `/etc/grafana/grafana.ini`, `/etc/grafana/provisioning/`, `/usr/share/grafana`, `/var/lib/grafana` |
 
-Red Hat's Go toolchain sends Go's crypto to OpenSSL and turns FIPS mode on
-when the node is in FIPS mode, so no flag is needed.
+Either way no flag is needed: FIPS follows the node. **How it follows the
+node changed between builds**, so check it again whenever the package
+moves.
+
+| | jetty, 2026-11 (`grafana-10.2.6-23.el9_8.7`) | compliant-dev-workload0, 2026-11-25 (`grafana-10.2.6-24.el9_9.9`) |
+|---|---|---|
+| Mechanism | Red Hat's Go toolchain routed Go's crypto to OpenSSL | Go's own FIPS 140-3 Cryptographic Module |
+| Evidence | `libcrypto.so.3.5.8` and `fips.so` loaded, provider `active` | Built with go1.27.3, `GOFIPS140=v1` and `fips140=auto` in the binary; **no** libcrypto or libssl mapped into the running process |
+| Switches on because | the node is in FIPS mode | `fips140=auto` reads the node's FIPS mode (`/proc/sys/crypto/fips_enabled` is 1) |
+
+Both are valid FIPS stories, but they rest on **different CMVP certificates**:
+the RHEL OpenSSL module in the first case, Go's Cryptographic Module in the
+second. **TODO:** record the Go module's certificate in
+[tests/fips-cmvp-certificates.md](tests/fips-cmvp-certificates.md), which
+today only covers RHEL's OpenSSL, and re-check after any package bump. The
+`verify.sh` T-02 WARN about the OpenSSL provider version does not cover a
+binary that no longer uses OpenSSL.
+
+**One trap when testing it by hand.** The RPM's stock `/etc/grafana/grafana.ini`
+leaves `paths.data` commented out, so Grafana falls back to
+`<homepath>/data` = `/usr/share/grafana/data`, which is root-owned and not
+group-writable: a bare `podman run` or `oc run` fails with
+`failed to connect to database: mkdir /usr/share/grafana/data: permission denied`.
+That is not a fault in the image. The RPM's systemd unit passes
+`cfg:default.paths.*`, and the `user-projects` chart does the equivalent by
+mounting its own `grafana.ini` with `data = /var/lib/grafana` and an emptyDir
+there. Test it the way the chart runs it, or the result is misleading.
 
 ## The image
 
