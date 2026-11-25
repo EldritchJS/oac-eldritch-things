@@ -16,7 +16,6 @@ assisted-installer                          ingress denied; egress for image pul
 cert-manager                                operator-managed, traffic not yet measured
 cert-manager-operator                       operator-managed, traffic not yet measured
 clusters                                    HyperShift-managed
-clusters-compliant-dev-workload0            HyperShift control plane, traffic not yet measured
 compliant-dev-workload0                     ACM-managed ManagedCluster namespace
 container-object-storage-system             COSI, traffic not yet measured
 hardware-inventory                          assisted-service, traffic not yet measured

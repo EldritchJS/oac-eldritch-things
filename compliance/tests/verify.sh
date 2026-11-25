@@ -1111,10 +1111,12 @@ run_t24() {
   done
 }
 
-# A namespace is closed when every pod in it is denied both directions by
-# default: one policy naming both, or a default-deny-ingress beside a
-# default-deny-egress, which is the pair the Kubernetes documentation shows
-# and the pair our guardrails render. Namespaces in
+# A namespace is closed when every pod in it is isolated in both
+# directions. A pod selected by any Ingress policy is denied all ingress
+# except what that policy and its siblings allow, so an all-pods policy
+# counts whether or not it carries rules: a zero-rule default-deny, the
+# pair our guardrails render, and HyperShift's all-pods allow policies in
+# a clusters-* namespace all close the direction they name. Namespaces in
 # networkpolicy-default-deny-accepted.txt WARN (the recorded gap, see
 # NEW-HUB-RUNBOOK 4.14); anything else FAILs. Found missing by the AI UAT
 # Harness, not by this script (MOC-issues #832).
@@ -1140,8 +1142,10 @@ try:
 except FileNotFoundError:
     pass
 
-# Accumulate cover per namespace from policies that select every pod and
-# permit nothing; one such policy may name either direction or both.
+# Accumulate cover per namespace from policies that select every pod. A
+# policy that names a direction isolates that direction for every pod it
+# selects, and only what it allows gets through, so its rules do not
+# change whether the direction is closed by default.
 cover = {}
 for p in np_items:
     spec = p.get("spec") or {}
@@ -1151,10 +1155,8 @@ for p in np_items:
     ns = p["metadata"]["namespace"]
     seen = cover.setdefault(ns, set())
     for t in spec.get("policyTypes") or []:
-        if t == "Ingress" and not spec.get("ingress"):
-            seen.add("Ingress")
-        if t == "Egress" and not spec.get("egress"):
-            seen.add("Egress")
+        if t in ("Ingress", "Egress"):
+            seen.add(t)
 
 for n in sorted(x["metadata"]["name"] for x in ns_items):
     if re.match(r"^(default|kube-|openshift$|openshift-)", n):
