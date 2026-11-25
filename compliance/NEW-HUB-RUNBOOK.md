@@ -621,6 +621,15 @@ Rules that used to fail and are now fixed by the charts are listed in
 [compliant-dev-infra/RUNBOOK.md](compliant-dev-infra/RUNBOOK.md); if one
 reappears, that table says what closed it.
 
+**`verify.sh` T-25 looks at the same ground from the other side.** The
+scan rule asks whether a namespace has any NetworkPolicy; T-25 asks
+whether every pod in it is denied both directions by default, which is
+the property that matters. Namespaces under the gap above are listed in
+`tests/networkpolicy-default-deny-accepted.txt` with a reason and WARN;
+anything else fails. Keep that file honest: a namespace belongs in it
+because its traffic has not been measured yet, not because the check is
+inconvenient.
+
 ---
 
 ## 5. Hosted clusters: what the hub needs first
