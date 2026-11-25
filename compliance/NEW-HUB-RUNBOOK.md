@@ -159,7 +159,9 @@ hardware without FIPS.
 - **About 40 cores per control-plane node.** If they have much more than
   about 40 threads, boot them with `nr_cpus=40` (4.4).
 - **Nodes new, or wiped since their last use** (800-171 3.8.3), every
-  disk.
+  disk, **with the record kept**. The procedure and what to save are in
+  6.2; it applies to a hub's own nodes just as much as to a workload
+  cluster's.
 - **A second disk on each master** for etcd, and **on each worker** for
   LVM Storage (the hosted clusters' etcd, 4.13).
 - **Secure Boot off.** Dell R440s with it on would not boot the agent
@@ -687,17 +689,35 @@ console, download the ISO, mount it with "Mount media from client" (keep
 the tab open until the Agent registers), then a one-time CD boot over
 Redfish.
 
-**Wipe the disks before approving**, unless the nodes came clean from
-ESI. The discovery ISO runs from memory, so wiping the boot disk is fine.
-On each (`ssh core@<ip>` with the cluster key):
+**Wipe the disks before approving, and keep the record.** This is by hand
+(decided 2026-11-25): ESI is being moved away from, and RHOSO18's Ironic,
+which would bring automated cleaning back, is still an open evaluation
+(MOC-issues #793). The discovery ISO runs from memory, so wiping the boot
+disk is fine. On each (`ssh core@<ip>` with the cluster key):
 
 ```
-lsblk -d -o NAME,SIZE,MODEL,SERIAL        # keep this output for the compliance record
-for d in $(lsblk -dn -o NAME -e 7,11); do
-  sudo wipefs -a /dev/$d && sudo blkdiscard -f /dev/$d
-done
+{ hostname; date -u
+  echo "== before"; lsblk -d -o NAME,SIZE,MODEL,SERIAL
+  for d in $(lsblk -dn -o NAME -e 7,11); do
+    sudo wipefs -a /dev/$d && sudo blkdiscard -f /dev/$d && echo "wiped and discarded /dev/$d"
+  done
+  echo "== after"; lsblk -d -o NAME,SIZE,MODEL,SERIAL
+  for d in $(lsblk -dn -o NAME -e 7,11); do
+    echo "/dev/$d signatures: $(sudo wipefs /dev/$d | tail -n +2 | wc -l | tr -d ' ') found"
+  done
+} | tee ~/wipe-<node>.txt
 sudo systemctl restart agent.service      # re-read the empty disks; no reboot needed
 ```
+
+**Keep every `wipe-<node>.txt`.** 800-171 3.8.3 wants the sanitization
+record, not just the sanitization, and the record is the part that gets
+forgotten: compliant-dev-infra's own six nodes have none, because the
+wipe was described as a precondition rather than a step with an output
+(the two SD665s that became workload0's workers do, in
+`~/work/drafts/sd665-wipe/`). Note that `blkdiscard` is roughly SP 800-88
+*Clear*; a drive's own sanitize or crypto-erase is *Purge*, which a
+cluster holding CUI may need instead. **TODO:** confirm which level
+applies with the authorizing official.
 
 Approve and label them, picked by product name so no other node is
 caught:
