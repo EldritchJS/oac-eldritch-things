@@ -10,10 +10,13 @@ yet.
 The detail is in the files each row links to. This page is the list that
 brings them together.
 
-**No cluster is under this today.** The compliant test hub,
-`nist-dev-infra`, was retired on 2026-10-28. jetty was reinstalled the
-same day with FIPS on but without its first install's hardening. This is
-the plan for the replacement hub.
+**Three clusters are under this (2026-11-24):** `compliant-dev-infra`,
+`compliant-dev-workload0` and `andalusia`, all from oac-apps main. Their
+build record, baselines and open items are in
+[compliant-dev-infra/RUNBOOK.md](compliant-dev-infra/RUNBOOK.md). The
+earlier test hub, `nist-dev-infra`, was retired on 2026-10-28, and jetty
+was reinstalled the same day with FIPS on but without its first
+install's hardening.
 
 ## 1. What runs by itself
 
@@ -50,7 +53,7 @@ The cadences marked *[decide]* are drafts in [PATCHING.md](PATCHING.md)
 
 | Event | What to do | Detail |
 |---|---|---|
-| Any change to a cluster | Run the checks before and after; the results should match | `tests/cluster-acceptance.sh` on any cluster. `tests/verify.sh` was written for jetty and needs changes for a hub ([BUILD.md](BUILD.md) Part 1 §7) |
+| Any change to a cluster | Run the checks before and after; the results should match | `tests/cluster-acceptance.sh` on any cluster; `tests/verify.sh` on a hub, a hosted cluster (with `HUB_KUBECONFIG`) or a VM cluster, against the baselines in `tests/baseline-*.txt` |
 | A scan failure that self-heal does not fix | Fix it in git: add the remediation to node hardening, change chart values, or record an exception with a reason. One PR each | [BUILD.md](BUILD.md) Part 1 §6, [HUB-SPOKE.md](HUB-SPOKE.md) §5 |
 | A node hardening change merges | Every NodePool on the hub rolls. Merge it at an agreed time, like a maintenance window. A usbguard rule must never go in before its HID allow rule | [BUILD.md](BUILD.md) Part 2 §5, `tests/test-remediation-ordering.sh` |
 | Platform upgrade | Pre-upgrade backup; checks before and after; rescan and compare; rerun ACS `HIPAA_164`; refresh images pinned to the release payload; re-review the FIPS certificate record (T-02) and the privileged-workloads register. Write a dated record | [PLAYBOOK.md](PLAYBOOK.md) Phase 10, [tests/fips-cmvp-certificates.md](tests/fips-cmvp-certificates.md), [PRIVILEGED-WORKLOADS.md](PRIVILEGED-WORKLOADS.md) |
@@ -72,7 +75,7 @@ The cadences marked *[decide]* are drafts in [PATCHING.md](PATCHING.md)
 | Script | For | Changes the cluster? | Status |
 |---|---|---|---|
 | `tests/cluster-acceptance.sh` | Is any cluster set up properly for containers, VMs and GPUs | Only with `--functional` or `--gpu` | Current, any cluster |
-| `tests/verify.sh` | Regression checks for compliance, FIPS, ACS and GPUs | No | Written for jetty's first install, so most tests fail on today's jetty. Needs a hub version |
+| `tests/verify.sh` | Regression checks for compliance, FIPS, ACS and GPUs | No | Current. Runs on a hub, a hosted cluster (`HUB_KUBECONFIG`) or a KubeVirt cluster; most tests fail on today's jetty, which is unhardened |
 | `tests/fips-image-scan.sh` | Do an operator's images use FIPS-capable crypto | A throwaway project, deleted after | Current. Run it on a cluster, never on a laptop |
 | `tests/operator-fips-accepted.txt` | The operators T-18 accepts without the flag, with reasons | - | Current |
 | `tests/etcd-restore-rehearsal.sh` | Does the newest backup restore | One temporary pod | Current. Needs the etcd backup chart |
@@ -105,8 +108,7 @@ Each of these is needed to run a compliant hub day to day.
   needs a disposable cluster.
 - **A single register of exceptions and POA&M items.** They are
   recorded today in several files (the tailored profiles, the accepted
-  operators list, [nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md)
-  2.9).
+  operators list, [NEW-HUB-RUNBOOK.md](NEW-HUB-RUNBOOK.md) 4.14).
 - **File integrity on hosted workers:** not deployed. AIDE runs there
   once an empty directory exists (measured 2026-11-09), but Red Hat does
   not support it until RFE-8168; deploying it would be an SSP workaround.

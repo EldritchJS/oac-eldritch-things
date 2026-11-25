@@ -136,7 +136,7 @@ is rebuilt.
 
 #### B2 steps that differ from nist-dev-infra's build
 
-The full procedure is [compliant-dev-infra/RUNBOOK.md](compliant-dev-infra/RUNBOOK.md)
+The full procedure is [NEW-HUB-RUNBOOK.md](NEW-HUB-RUNBOOK.md)
 (sections 0 to 2), following oac-apps `docs/infra-cluster-deployment.md`.
 Section 0 lists what the new name changes in each repo.
 
@@ -156,7 +156,7 @@ Section 0 lists what the new name changes in each repo.
   threads, boot them with `nr_cpus=40`
   ([nist-dev-infra/nr-cpus-machineconfig.yaml](nist-dev-infra/nr-cpus-machineconfig.yaml)),
   as BUILD.md Part 1 step 1 explains.
-- **The runbook:** [compliant-dev-infra/RUNBOOK.md](compliant-dev-infra/RUNBOOK.md),
+- **The runbook:** [NEW-HUB-RUNBOOK.md](NEW-HUB-RUNBOOK.md),
   drafted from nist-dev-infra's for oac-prod-infra's layout, with etcd encryption from
   install. nist-dev-infra's documents stay as the record of the first
   build.

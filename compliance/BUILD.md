@@ -5,10 +5,11 @@ nist-dev-workload0 through 2026-10-27. Steps that depend on an unfinished
 experiment are marked **to verify** with the experiment number from
 [HUB-SPOKE.md](HUB-SPOKE.md) §7.*
 
-This is the why behind each step. For the steps in order, with who acts and
-an example PR for each, see [NEW-HUB-RUNBOOK.md](NEW-HUB-RUNBOOK.md) (a new
-hub) or [nist-dev-infra/RUNBOOK.md](nist-dev-infra/RUNBOOK.md) (a rebuild of
-nist-dev-infra).
+This is the why behind each step. For the steps in order, with who acts
+and an example PR for each, see
+[NEW-HUB-RUNBOOK.md](NEW-HUB-RUNBOOK.md), the one procedure for a hub and
+its clusters. What happened on the build it came from is in
+[compliant-dev-infra/RUNBOOK.md](compliant-dev-infra/RUNBOOK.md).
 
 The method adds steps to OAC's own procedures. It does not replace them.
 Each part names the upstream document it builds on:
