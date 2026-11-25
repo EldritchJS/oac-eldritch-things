@@ -792,7 +792,12 @@ components as soon as it joins. What is left is per cluster:
    its guardrails are added.
 2. **Its ACS init bundle**, generated on the hub's Central as in 4.11 but
    applied with the cluster's kubeconfig, and
-   `securedCluster.clusterName` set in its rhacs values.
+   `securedCluster.clusterName` set in its rhacs values. This is the
+   by-hand step that MOC-issues #830 is about replacing with delivery
+   through the secret store. **A new cluster is the only place the
+   automated path can be tested**, because a cluster registration secret
+   is refused for a cluster Central already knows (4.11), so it is worth
+   deciding which way to go before registering one rather than after.
 3. **Audit forwarding:** add the cluster to the hub's audit-logging
    `auditWriters.clusters`, and to the hub's etcd-backup
    `hostedClusters`, which gives it a nightly snapshot CronJob on the
@@ -976,6 +981,10 @@ oc patch machine.cluster.x-k8s.io -n clusters-<cluster> <machine> --subresource=
   move is only a key copy (MOC-issues #810). Every node needs Tang at
   every boot.
 - **TODO:** a central audit and alert destination (P9).
+- **TODO:** the ACS init bundle is still applied by hand for the hub and
+  for every hosted cluster (4.11, 6.5); delivering it through the secret
+  store is MOC-issues #830, and it can only be tested while onboarding a
+  cluster Central has not seen before.
 - **TODO:** NetworkPolicies for the hub's namespaces, for production
   (4.14).
 - **TODO:** a decision on each operator without a FIPS claim; a hub runs
