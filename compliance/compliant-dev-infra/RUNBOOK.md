@@ -630,7 +630,103 @@ it accepted a default-deny only as a single policy naming both
 directions, not as the ingress and egress pair we render, which buried
 the three real namespaces under thirty-two.
 
-## 8. Still open
+## 8. Monitoring that was not working (2026-11-26)
+
+Three things closed out, and a pattern found by looking for a fourth.
+
+**`metallb-system` closed (oac-apps #301).** MetalLB ships a NetworkPolicy
+but it selects only the controller pods, leaving the operator's two
+uncovered, which is why the namespace counted as open in both directions.
+Measured with ACS's Network Graph over seven days: ingress 9443 for the
+webhooks, 8080 and 7472 for metrics, egress to the API server and DNS and
+nothing else. The same rule works on both clusters because the API server
+reaches the webhook over host network on the hub and through the
+konnectivity agent on a hosted cluster, and that agent is itself
+hostNetwork. Tested before proposing: the webhook still accepted a good
+IPAddressPool and still rejected a malformed one, and a six-minute soak
+showed no restarts and every LoadBalancer address up. `speaker` is
+hostNetwork, so none of this protects the speakers.
+
+**The hypervisor's `clusters-andalusia` is a permanent exception.** It had
+been recorded as "not measurable while the VM is stopped", which was
+wrong. The VM was started for twenty minutes to settle it: ACS shows the
+virt-launcher deployment and zero flows for it, while the same cluster
+recorded 64 edges elsewhere in thirty minutes. The VM attaches with bridge
+binding on the pod network and the guest is itself an OpenShift node
+running its own OVN - `ovn-k8s-mp0`, `br-int` and nested veths are all
+visible inside it - so one interface carries an entire nested cluster's
+traffic. A default-deny there would have to allow everything a cluster
+needs. No further measurement changes that. The VM holds four H100s while
+it runs, so it was stopped again.
+
+### Monitoring was failing silently in six namespaces
+
+Found while checking that the new `metallb-system` policies would not break
+a metrics scrape. There was no scrape to break.
+
+Operators write **platform-intent** ServiceMonitors - a bearer token file
+and the platform Prometheus's certificate paths - into namespaces that
+carry no `openshift.io/cluster-monitoring` label. The platform Prometheus
+reads only labelled namespaces, and user workload monitoring refuses any
+ServiceMonitor that reads the filesystem, so the monitors are rejected and
+the only sign is an `InvalidConfiguration` event. Everything looks right:
+the ServiceMonitors exist, the Services have endpoints, the namespace looks
+monitored. Only the absence of data gives it away.
+
+| Namespace | What is lost | Status |
+|---|---|---|
+| `metallb-system` | both ServiceMonitors; no MetalLB metrics on any cluster, production included | fixed by oac-apps #302, which labels the namespace |
+| `external-dns-operator` | operator metrics | recorded; we install the operator but do not own its namespace manifest |
+| `openshift-storage` | LVM Storage operator metrics. An `openshift-*` namespace, so this is not only third-party charts | recorded |
+| `openshift-nfd` | Node Feature Discovery operator metrics, on workload0 rather than the hub | recorded |
+| `patch-operator` | operator metrics | moot, the operator is being removed (MOC-issues #831) |
+| `openshift-cluster-observability-operator` | its **PrometheusRule** is loaded by no ruler at all, so the observability operator's own alerts never fire | recorded |
+
+The last one is a different half of the same cause. That rule carries
+`openshift.io/user-monitoring=false`, which deliberately keeps user
+workload monitoring away, and its namespace is unlabelled, so the platform
+Prometheus will not read it either. Checked against all three rulers on the
+cluster.
+
+Verified the fix end to end on the hub rather than reasoning about it: with
+the label applied and all four of #301's policies in place, the platform
+Prometheus brought up all seven MetalLB targets - the controller and six
+speakers - inside two minutes, and `metallb_k8s_client_updates_total`
+returned seven series. A prediction in MOC-issues #834 that this would need
+a `monitoringPorts` allow was wrong and has been struck: MetalLB's own
+policy already permits the named port `metricshttps`, which resolves to
+kube-rbac-proxy's container port 9120 on the controller pod, and the
+speakers are hostNetwork.
+
+### Three checks added, and one corrected
+
+- **T-26** alerts have a destination. The hub's Alertmanager has three
+  receivers, `Default`, `Watchdog` and `Critical`, and all three are
+  **empty**: every alert fires and notifies nobody. It warns until a
+  receiver exists (P9).
+- **T-27** no ServiceMonitor is being rejected. 162 on the hub, 5 rejected,
+  each recorded in `tests/monitoring-accepted.txt`.
+- **T-28** every PrometheusRule is loaded by a ruler and evaluating. 77 on
+  the hub, one accepted in `tests/prometheusrule-accepted.txt`.
+- **T-19 was reassuring us wrongly.** It counted the word "tang" in
+  `clevis luks list`, which prints one `sss` line however many urls it
+  holds, so it could not tell two servers from one server under two names.
+  It now resolves each url: compliant-dev-infra's two pins,
+  `tang.massopen.cloud` and `172.16.1.1`, are the same address at threshold
+  1, so all six nodes now warn that there is no Tang redundancy
+  (MOC-issues #810). That matters for the production build, which is
+  planned on hardware with the same constraints.
+
+### etcd backups
+
+All three runs succeeded on the first attempt in 42 to 47 seconds, so
+MOC-issues #833 did not recur the night after it was found. The truncation
+is intermittent rather than a permanent break, which is the failure a retry
+fixes; oac-apps #300 is still the right change.
+
+---
+
+## 9. Still open
 
 - **TODO:** MOC SSO for andalusia, the last open item on MOC-issues
   #788. moc-keycloak [#71](https://github.com/CCI-MOC/moc-keycloak/pull/71)
@@ -646,10 +742,12 @@ the three real namespaces under thirty-two.
   can be enabled.
 - **TODO:** a more reliable home for the Tang server, and a DNS name for
   it so a later move is only a key copy (MOC-issues #810).
-- **TODO:** MOC-issues #832: `metallb-system` open both ways, and the two
-  HyperShift control-plane namespaces with no egress isolation. verify.sh
-  T-25 fails 3 on each cluster, so the hub reads 72/3 and workload0 49/3.
-  `stackrox` was closed by oac-apps #299.
+- **TODO:** MOC-issues #832, now down to one item. `stackrox` was closed by
+  oac-apps #299 and `metallb-system` by oac-apps #301; the hypervisor's
+  `clusters-andalusia` is a permanent exception (§8). What is left is
+  whether HyperShift should ship egress policies for its own
+  control-plane namespaces, carried on MOC-issues #756. T-25 fails 0 on
+  both clusters, with the remainder recorded as accepted exceptions.
 - **TODO:** NetworkPolicies for the hub's namespaces, for the production
   setup (§3), and for workload0's remaining four (§4).
 - **TODO:** `podPidsLimit` for workload0's pool, oac-apps #276.
@@ -657,7 +755,10 @@ the three real namespaces under thirty-two.
   [../NEW-HUB-RUNBOOK.md](../NEW-HUB-RUNBOOK.md) and fix what is unclear.
 - **TODO:** ACS's scanner hits its memory limit about every 35 minutes on
   the masters; raise the limit or run fewer replicas.
-- **TODO:** u17's iDRAC log has "Correctable memory error rate exceeded
-  for DIMM_B5" (2026-10-17); report it to the hardware owners. The kernel
+- **DONE 2026-11-25:** u17's iDRAC log has "Correctable memory error rate
+  exceeded for DIMM_B5" (2026-10-17). Reported on oac-infra
+  [#48](https://github.com/CCI-MOC/oac-infra/pull/48), where u17 was
+  listed as a production control node; tzumainn replaced it with **u20**
+  in that PR and in ansible-switches #159. The kernel
   logged no corrected errors from 2026-10-22 on. u17 is not part of this
   hub.

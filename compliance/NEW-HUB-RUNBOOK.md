@@ -213,6 +213,13 @@ entry for `<hub>` in `hub-images/inventory.yml`:
   workers' LVM Storage disks are then LUKS2, unlocked only through Tang.
   **Not `tpmv2`:** on hardware with no working TPM it installs
   unencrypted without saying so.
+  **Several urls are not several servers.** `clevis luks list` prints one
+  `sss` line however many Tang urls it holds, so two entries look like
+  redundancy whether or not they are. compliant-dev-infra has two,
+  `tang.massopen.cloud` and `172.16.1.1`, and the name resolves to that
+  address: one server, threshold 1. T-19 resolves each url and warns when
+  they collapse to one address. Give prod distinct hosts, or know that you
+  have a single point of failure for every disk unlock (MOC-issues #810).
 - `cluster_domain_name: <hub>`, `base_domain`, the networks,
   `rendezvous_ip` (one of the control-plane IPs), `api_ip`, `ingress_ip`,
   `fips_enabled: true`.
@@ -596,7 +603,11 @@ Then `verify.sh`, which checks what the steps above set up: FIPS, TLS,
 the scans, ACS, the registry allowlist, SCCs, etcd backups, file
 integrity, LUKS and Tang on every disk, OAuth token timeouts, chrony, the
 API audit profile, USBGuard, default-deny NetworkPolicies, and the
-admission policies on Deny.
+admission policies on Deny. It also checks that the monitoring those rely
+on actually works - that alerts have a destination (T-26), that no
+ServiceMonitor is being rejected (T-27), and that every PrometheusRule is
+loaded by a ruler and evaluating (T-28) - because each of those fails
+silently and leaves the rest looking healthy.
 
 ```
 cd ~/oat/oac-eldritch-things/compliance/tests
@@ -957,6 +968,8 @@ cluster (§7), as andalusia runs on compliant-dev-workload0.
 | A hypervisor NodePool roll stalls: the node stays cordoned, CAPK logging "no matches for kind \"KubevirtMachine\"" | The VM is not live-migratable and its eviction strategy is `External`, so CAPK handles the eviction, and seems to send its update to the infra cluster, where the kind does not exist (MOC-issues #826, fixed) | `evictionStrategy: None` (§8), which is how a GPU VM cluster is built now. On a cluster still set to `External`, delete the VMI by hand, then clear the Machine's failure below |
 | A KubeVirt cluster's console and apps unreachable after its VM was stopped: the LoadBalancer address not announced, its endpoint slice on the hypervisor `ready=false` | The stop left the CAPI Machine `Failed` ("VMI has reached a permanent finalized state"), which never clears; HCCO marks the endpoint not ready. Seen with `evictionStrategy: External`; with `None` the Machine stayed `Running` through a stop (2026-11-25) | Remove the Machine's `status.failureReason` and `failureMessage` on the hub. HCCO marks the endpoint ready within seconds; if the endpoint slice is missing, restart `hosted-cluster-config-operator` in that cluster's namespace |
 | AIDE Failed after a roll, a reinstall or a new operator | Expected writes: the machine-config daemon's logs, `/etc/hosts` on a fresh node, LVM Storage's archive files, the GPU Operator's CRI-O drop-in, `policy.json` and `registries.conf` | Re-initialise the affected nodes, one at a time (4.10) |
+| An operator looks monitored but has no metrics: ServiceMonitors present, Services with endpoints, nothing in Prometheus | The namespace carries no `openshift.io/cluster-monitoring` label, so the platform Prometheus will not read it, and the operator's ServiceMonitor uses a bearer token file, which user workload monitoring refuses. The only sign is an `InvalidConfiguration` event | `oc get events -n <ns> --field-selector reason=InvalidConfiguration`. If the chart owns the namespace, label it as `charts/metallb` now does (oac-apps#302). T-27 catches it; MOC-issues #834 |
+| An alerting rule never fires and never errors | A PrometheusRule in a user namespace is evaluated by **Thanos Ruler**, not by `prometheus-user-workload`, and only Thanos Ruler can see platform metrics such as `kube_cronjob_*` through thanos-querier. A rule needing those, placed where the other evaluates it, is a silent no-op. A namespace with no cluster-monitoring label plus `openshift.io/user-monitoring=false` on the rule is read by nobody at all | Check which ruler holds it: `oc exec thanos-ruler-user-workload-0 -n openshift-user-workload-monitoring -c thanos-ruler -- curl -s localhost:10902/api/v1/rules`. T-28 checks every rule is loaded somewhere and healthy |
 
 ```
 oc patch machine.cluster.x-k8s.io -n clusters-<cluster> <machine> --subresource=status --type=json \
@@ -991,7 +1004,26 @@ oc patch machine.cluster.x-k8s.io -n clusters-<cluster> <machine> --subresource=
   reliable home for the Tang server, and a DNS name for it so a later
   move is only a key copy (MOC-issues #810). Every node needs Tang at
   every boot.
-- **TODO:** a central audit and alert destination (P9).
+- **TODO:** a central audit and alert destination (P9). Concretely, as of
+  2026-11-26 the hub's Alertmanager has three receivers - `Default`,
+  `Watchdog` and `Critical` - and **all three are empty**, so every alert
+  fires and notifies nobody. That includes file integrity (T-16) and the
+  etcd-backup staleness rule added for MOC-issues #833. Alerts are visible
+  in the console and in ACM observability and nowhere else. T-26 checks
+  this, so it turns green on its own once a receiver exists.
+- **TODO:** monitoring that operators ship is collected nowhere on six
+  namespaces, because they write platform-intent ServiceMonitors - bearer
+  token file, platform certificate paths - into namespaces carrying no
+  `openshift.io/cluster-monitoring` label. The platform Prometheus will not
+  read those namespaces and user workload monitoring refuses a
+  ServiceMonitor that reads the filesystem, so the monitors are rejected and
+  nothing says so but an event. Affects `metallb-system` (fixed by
+  oac-apps#302), `external-dns-operator`, `openshift-storage`,
+  `openshift-nfd`, `patch-operator` (moot, being removed) and
+  `openshift-cluster-observability-operator`, whose own PrometheusRule is
+  loaded by no ruler at all. Three of the six are `openshift-*` namespaces,
+  so this is not only our charts. MOC-issues #834; T-27 and T-28 check both
+  halves.
 - **TODO:** the ACS init bundle is still applied by hand for the hub and
   for every hosted cluster (4.11, 6.5); delivering it through the secret
   store is MOC-issues #830, and it can only be tested while onboarding a
