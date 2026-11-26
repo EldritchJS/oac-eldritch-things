@@ -1,0 +1,15 @@
+# ServiceMonitors the Prometheus Operator rejects, accepted as recorded gaps
+# for verify.sh T-27. One per line: <namespace>/<name> <reason>. A rejected
+# ServiceMonitor not listed here FAILs.
+#
+# A rejected ServiceMonitor collects nothing and says so only in an
+# InvalidConfiguration event, so the namespace looks monitored while no data
+# arrives. Only the absence of metrics gives it away, which is why this
+# check exists.
+
+metallb-system/controller-monitor MetalLB's operator writes these for platform monitoring (bearer token file, platform certificate paths), but ships the namespace without openshift.io/cluster-monitoring, so they fall to user workload monitoring, which refuses any ServiceMonitor that reads the filesystem. Rejected on every cluster including production. Fixed by labelling the namespace: oac-apps#302, MOC-issues #834. Remove both lines when that merges
+metallb-system/speaker-monitor as controller-monitor above; same operator, same cause, same fix
+external-dns-operator/external-dns-operator-metrics-monitor same cause as metallb: the operator's ServiceMonitor uses a bearer token file and its namespace has no openshift.io/cluster-monitoring label, so UWM refuses it. Not fixed: we install this operator but do not own its namespace manifest the way charts/metallb owns metallb-system. MOC-issues #834
+openshift-storage/lvms-operator-metrics-monitor same cause; LVM Storage. Note this is an openshift-* namespace, so the pattern is not limited to third-party charts. MOC-issues #834
+patch-operator/patch-operator-controller-manager-metrics-monitor same cause, and moot in the medium term: patch-operator is being removed entirely (MOC-issues #831). Not worth a label fix of its own
+openshift-nfd/nfd-controller-manager-metrics-monitor same cause; Node Feature Discovery, on the hypervisor rather than the hub. Another openshift-* namespace with no cluster-monitoring label. MOC-issues #834

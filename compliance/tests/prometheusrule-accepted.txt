@@ -1,0 +1,12 @@
+# PrometheusRules that no ruler loads, accepted as recorded gaps for
+# verify.sh T-28. One per line: <namespace>/<name> <reason>. A rule loaded by
+# no ruler and not listed here FAILs.
+#
+# A rule nothing evaluates never fires and never errors, so it is invisible
+# in exactly the way an alert must not be. The usual cause is the same one
+# behind T-27: platform-intent monitoring in a namespace that carries no
+# openshift.io/cluster-monitoring label, which puts it out of the platform
+# Prometheus's reach, while a label or selector keeps user workload
+# monitoring away too.
+
+openshift-cluster-observability-operator/observability-operator carries openshift.io/user-monitoring=false, which deliberately excludes it from user workload monitoring, but its namespace has no openshift.io/cluster-monitoring label either, so the platform Prometheus does not read it. Loaded by none of the three rulers on the cluster. The observability operator's own alerts are therefore not evaluated. Same root cause as MOC-issues #834; we do not own this namespace's manifest

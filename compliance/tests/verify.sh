@@ -957,8 +957,17 @@ NODE_PROBE='
 udevadm settle 2>/dev/null
 for d in $(lsblk -rpno NAME,FSTYPE | awk "\$2==\"crypto_LUKS\"{print \$1}"); do
   v=$(cryptsetup luksDump "$d" 2>/dev/null | awk "/^Version:/{print \$2; exit}")
-  t=$(clevis luks list -d "$d" 2>/dev/null | grep -c tang)
+  cl=$(clevis luks list -d "$d" 2>/dev/null)
+  t=$(echo "$cl" | grep -c tang)
   echo "LUKS=$d v=$v tang=$t"
+  thr=$(echo "$cl" | sed -n "s/.*\"t\":\([0-9]*\).*/\1/p" | head -1)
+  echo "TANGTHR=$d ${thr:-none}"
+  for u in $(echo "$cl" | grep -o "http[s]*://[^\"]*"); do
+    h=${u#*://}; h=${h%%/*}; h=${h%%:*}
+    ip=$(getent hosts "$h" 2>/dev/null | awk "{print \$1; exit}")
+    [ -z "$ip" ] && case "$h" in *[!0-9.]*) ;; *) ip="$h" ;; esac
+    echo "TANGURL=$d $u ${ip:-unresolved}"
+  done
 done
 lsblk -rpno NAME,TYPE,FSTYPE,LABEL | awk "(\$2==\"disk\"||\$2==\"part\") && \$3!=\"\" && \$3!=\"crypto_LUKS\" && \$4!=\"boot\" && \$4!=\"EFI-SYSTEM\" {print \"PLAIN=\"\$1\" \"\$3}"
 echo "CHRONYD=$(systemctl is-active chronyd 2>/dev/null)"
@@ -1009,6 +1018,24 @@ run_t19() {
     elif [ -n "$bad_n" ]; then bad "$n  not LUKS2 with Tang: $bad_n"
     elif [ -n "$plain" ]; then bad "$n  unencrypted filesystem(s): $plain"
     else ok "$n  $luks LUKS2 device(s), all bound to Tang; no unencrypted filesystems"; fi
+
+    # Redundancy, not just presence. `clevis luks list` prints one sss line
+    # however many Tang urls it holds, so counting the word "tang" cannot
+    # tell two servers from one name for one server. Resolve each url and
+    # count distinct addresses.
+    local urls nurl addrs naddr thr
+    urls=$(echo "$out" | sed -n 's/^TANGURL=//p')
+    nurl=$(echo "$urls" | awk '{print $2}' | sort -u | grep -c .)
+    addrs=$(echo "$urls" | awk '{print $3}' | grep -v '^unresolved$' | sort -u)
+    naddr=$(echo "$addrs" | grep -c .)
+    thr=$(echo "$out" | sed -n 's/^TANGTHR=//p' | awk '{print $2}' | sort -u | tr '\n' ',' | sed 's/,$//')
+    if [ "$nurl" -gt 0 ]; then
+      if [ "$naddr" -lt 2 ]; then
+        warn "$n  no Tang redundancy: $nurl distinct pin url(s) resolve to one address ($(echo $addrs)), sss threshold ${thr:-?} (MOC-issues #810)"
+      else
+        ok "$n  Tang pins resolve to $naddr distinct addresses ($(echo $addrs | tr '\n' ' ')), sss threshold ${thr:-?}"
+      fi
+    fi
   done
 }
 
@@ -1185,6 +1212,197 @@ EOF
   [ "$nfail" -eq 0 ] && ok "every namespace outside openshift-*/kube-* is default-denied or accepted"
 }
 
+# --------------------------------------------------------------- T-26 ------
+# An alert that fires and reaches nobody is not monitoring (AU-6). T-16's
+# file-integrity rule and the etcd-backup staleness rule (MOC-issues #833)
+# both depend on this, and its absence is why T-16's own message carries a
+# parenthetical about it. Checks the platform Alertmanager's receivers, not
+# whether a notification was actually delivered.
+run_t26() {
+  hdr "T-26  Alerts reach a destination (AU-6)"
+  local raw out total live
+  raw=$(oc get secret alertmanager-main -n openshift-monitoring -o jsonpath='{.data.alertmanager\.yaml}' 2>/dev/null | base64 -d 2>/dev/null)
+  if [ -z "$raw" ]; then
+    if jp configmap cluster-monitoring-config openshift-monitoring '{.data.config\.yaml}' | grep -qE 'alertmanagerMain:' ; then
+      skip "no alertmanager-main secret; alertmanagerMain is configured in cluster-monitoring-config, check it by hand"
+    else
+      bad "no alertmanager-main secret in openshift-monitoring"
+    fi
+    return
+  fi
+  local f; f=$(mktemp); printf '%s' "$raw" > "$f"
+  out=$(python3 - "$f" <<'EOF'
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]).read()) or {}
+rs = d.get("receivers") or []
+live = []
+for r in rs:
+    cfgs = [k for k in r if k != "name" and r.get(k)]
+    if cfgs:
+        live.append("%s(%s)" % (r.get("name", "?"), ",".join(sorted(cfgs))))
+print("TOTAL\t%d" % len(rs))
+print("LIVE\t%s" % " ".join(live))
+EOF
+) || { rm -f "$f"; bad "could not parse alertmanager.yaml"; return; }
+  rm -f "$f"
+  total=$(echo "$out" | awk -F'\t' '$1=="TOTAL"{print $2}')
+  live=$(echo "$out" | awk -F'\t' '$1=="LIVE"{print $2}')
+  if [ -z "$live" ]; then
+    warn "$total receiver(s) defined, all empty: every alert fires and notifies nobody. A central alert destination is P9 (runbook 11)"
+  else
+    ok "alerts have somewhere to go: $live"
+  fi
+}
+
+# --------------------------------------------------------------- T-27 ------
+# A ServiceMonitor the Prometheus Operator rejects collects nothing, and says
+# so only in an event nobody reads: MetalLB's two were refused on every
+# cluster, production included, for an unknown period (MOC-issues #834).
+# Rejected monitors must be listed in monitoring-accepted.txt (WARN, a
+# recorded gap); anything else FAILs. Whether an accepted monitor actually
+# has targets up is deliberately not checked here - that needs a Prometheus
+# API token and a route, which not every cluster exposes.
+MONITORING_ACCEPTED="${MONITORING_ACCEPTED:-./monitoring-accepted.txt}"
+run_t27() {
+  hdr "T-27  ServiceMonitors are accepted by Prometheus (AU-2, SI-4)"
+  local d out nfail=0 nsm
+  d=$(mktemp -d)
+  nsm=$(oc get servicemonitor -A --no-headers 2>/dev/null | grep -c .)
+  if [ "$nsm" = 0 ]; then skip "no ServiceMonitors on this cluster"; rm -rf "$d"; return; fi
+  oc get events -A --field-selector reason=InvalidConfiguration -o json > "$d/ev.json" 2>/dev/null \
+    || { bad "could not list events"; rm -rf "$d"; return; }
+  out=$(python3 - "$d/ev.json" "$MONITORING_ACCEPTED" <<'EOF'
+import json, sys
+items = json.load(open(sys.argv[1]))["items"]
+accepted = {}
+try:
+    for line in open(sys.argv[2]):
+        line = line.strip()
+        if line and not line.startswith("#"):
+            name, _, why = line.partition(" ")
+            accepted[name] = why.strip()
+except FileNotFoundError:
+    pass
+seen = {}
+for e in items:
+    o = e.get("involvedObject") or {}
+    if o.get("kind") != "ServiceMonitor":
+        continue
+    key = "%s/%s" % (o.get("namespace"), o.get("name"))
+    seen[key] = (e.get("message") or "").strip()
+for key in sorted(seen):
+    why = seen[key]
+    if key in accepted:
+        print("WARN\t%s rejected; accepted: %s" % (key, accepted[key]))
+    else:
+        print("FAIL\t%s rejected: %s" % (key, why[:160]))
+print("COUNT\t%d" % len(seen))
+EOF
+) || { bad "could not evaluate ServiceMonitor events"; rm -rf "$d"; return; }
+  rm -rf "$d"
+  local nrej
+  nrej=$(echo "$out" | awk -F'\t' '$1=="COUNT"{print $2}')
+  while IFS=$'\t' read -r verdict msg; do
+    case "$verdict" in
+      FAIL) bad "$msg"; nfail=$((nfail+1)) ;;
+      WARN) warn "$msg" ;;
+    esac
+  done <<< "$(echo "$out" | grep -v '^COUNT')"
+  [ "$nfail" -eq 0 ] && ok "$nsm ServiceMonitor(s); $nrej rejected, none unexplained"
+}
+
+# --------------------------------------------------------------- T-28 ------
+# A PrometheusRule that no ruler loads is a silent no-op. The trap is that a
+# rule in a user namespace is evaluated by Thanos Ruler, not by
+# prometheus-user-workload, and only Thanos Ruler can see platform metrics
+# such as kube_cronjob_* - so a rule placed where the wrong one evaluates it
+# never fires and never errors. Checks every PrometheusRule is loaded
+# somewhere and evaluating without error.
+PROMETHEUSRULE_ACCEPTED="${PROMETHEUSRULE_ACCEPTED:-./prometheusrule-accepted.txt}"
+run_t28() {
+  hdr "T-28  PrometheusRules are loaded and evaluating (AU-6)"
+  local d want got nrule
+  d=$(mktemp -d)
+  oc get prometheusrule -A -o json > "$d/pr.json" 2>/dev/null \
+    || { bad "could not list PrometheusRules"; rm -rf "$d"; return; }
+  nrule=$(python3 -c "import json;print(len(json.load(open('$d/pr.json'))['items']))")
+  if [ "$nrule" = 0 ]; then skip "no PrometheusRules on this cluster"; rm -rf "$d"; return; fi
+  : > "$d/loaded"
+  local src
+  for src in \
+    "openshift-monitoring/prometheus-k8s-0/prometheus/9090" \
+    "openshift-user-workload-monitoring/prometheus-user-workload-0/prometheus/9090" \
+    "openshift-user-workload-monitoring/thanos-ruler-user-workload-0/thanos-ruler/10902"; do
+    local ns pod ctr port
+    IFS=/ read -r ns pod ctr port <<< "$src"
+    oc get pod "$pod" -n "$ns" >/dev/null 2>&1 || continue
+    oc exec "$pod" -n "$ns" -c "$ctr" -- curl -s "http://localhost:$port/api/v1/rules" 2>/dev/null \
+      | python3 -c "
+import json, sys
+try: d = json.load(sys.stdin)
+except Exception: sys.exit(0)
+for g in d.get('data', {}).get('groups', []):
+    health = 'ok'
+    for r in g.get('rules', []):
+        if r.get('health') not in (None, 'ok'):
+            health = r.get('health')
+    print('%s\t%s\t%s' % (g.get('file', ''), g.get('name', ''), health))
+" >> "$d/loaded" 2>/dev/null
+  done
+  if ! grep -q . "$d/loaded"; then
+    warn "could not read loaded rules from any ruler; cannot tell whether the $nrule PrometheusRule(s) evaluate"
+    rm -rf "$d"; return
+  fi
+  got=$(python3 - "$d/pr.json" "$d/loaded" "$PROMETHEUSRULE_ACCEPTED" <<'EOF'
+import json, sys
+items = json.load(open(sys.argv[1]))["items"]
+accepted = {}
+try:
+    for line in open(sys.argv[3]):
+        line = line.strip()
+        if line and not line.startswith("#"):
+            key, _, why = line.partition(" ")
+            accepted[key] = why.strip()
+except FileNotFoundError:
+    pass
+loaded = []
+for line in open(sys.argv[2]):
+    parts = line.rstrip("\n").split("\t")
+    if len(parts) == 3:
+        loaded.append(parts)
+nbad = 0
+for pr in items:
+    ns = pr["metadata"]["namespace"]; name = pr["metadata"]["name"]
+    # The operator writes one rule file per object, named
+    # <namespace>-<name>-<uid>.yaml. Match on the uid: namespace and name can
+    # both contain dashes, so the uid is the only unambiguous part.
+    stem = "%s.yaml" % pr["metadata"]["uid"]
+    hits = [l for l in loaded if l[0].endswith(stem)]
+    key = "%s/%s" % (ns, name)
+    if not hits:
+        if key in accepted:
+            print("WARN\t%s is loaded by no ruler; accepted: %s" % (key, accepted[key]))
+        else:
+            print("FAIL\t%s is loaded by no ruler: it never fires" % key); nbad += 1
+    else:
+        unhealthy = [l for l in hits if l[2] != "ok"]
+        if unhealthy:
+            print("FAIL\t%s/%s loaded but not healthy: %s" % (ns, name, ", ".join("%s=%s" % (l[1], l[2]) for l in unhealthy))); nbad += 1
+print("NBAD\t%d" % nbad)
+EOF
+)
+  rm -rf "$d"
+  local nfail
+  nfail=$(echo "$got" | awk -F'\t' '$1=="NBAD"{print $2}')
+  while IFS=$'\t' read -r verdict msg; do
+    case "$verdict" in
+      FAIL) bad "$msg" ;;
+      WARN) warn "$msg" ;;
+    esac
+  done <<< "$(echo "$got" | grep -v '^NBAD')"
+  [ "${nfail:-1}" -eq 0 ] && ok "all $nrule PrometheusRule(s) loaded by a ruler and evaluating"
+}
+
 # ---------------------------------------------------------------- main -----
 command -v oc >/dev/null || { echo "oc not found" >&2; exit 2; }
 oc whoami >/dev/null 2>&1 || { echo "not logged in (set KUBECONFIG)" >&2; exit 2; }
@@ -1205,7 +1423,7 @@ fi
 
 printf '%sverification%s  —  %s  —  %s\n' "$B" "$N" "$(oc whoami --show-server)" "$(date -u '+%Y-%m-%d %H:%M UTC')"
 
-ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12 t13 t14 t15 t16 t17 t18 t19 t20 t21 t22 t23 t24 t25"
+ALL="t01 t02 t03 t04 t05 t06 t07 t10 t11 t12 t13 t14 t15 t16 t17 t18 t19 t20 t21 t22 t23 t24 t25 t26 t27 t28"
 # No GPUs and no GPU Operator: the GPU tests have nothing to check.
 HAS_GPU=0
 { oc get ns "$GPU_NS" >/dev/null 2>&1 || [ -n "$(oc get nodes -l nvidia.com/gpu.present=true -o name 2>/dev/null)" ]; } && HAS_GPU=1
