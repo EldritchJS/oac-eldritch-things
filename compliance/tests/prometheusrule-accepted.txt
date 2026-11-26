@@ -9,4 +9,4 @@
 # Prometheus's reach, while a label or selector keeps user workload
 # monitoring away too.
 
-openshift-cluster-observability-operator/observability-operator carries openshift.io/user-monitoring=false, which deliberately excludes it from user workload monitoring, but its namespace has no openshift.io/cluster-monitoring label either, so the platform Prometheus does not read it. Loaded by none of the three rulers on the cluster. The observability operator's own alerts are therefore not evaluated. Same root cause as MOC-issues #834; we do not own this namespace's manifest
+openshift-cluster-observability-operator/observability-operator fixed by oac-apps#302, which labels the namespace. The rule carries openshift.io/user-monitoring=false, deliberately excluding it from user workload monitoring, and its namespace was unlabelled, so the platform Prometheus would not read it either: loaded by none of the three rulers on the cluster. The observability operator's own alerts were not being evaluated. MOC-issues #834

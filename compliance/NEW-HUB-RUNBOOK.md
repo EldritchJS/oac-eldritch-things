@@ -1012,18 +1012,20 @@ oc patch machine.cluster.x-k8s.io -n clusters-<cluster> <machine> --subresource=
   in the console and in ACM observability and nowhere else. T-26 checks
   this, so it turns green on its own once a receiver exists.
 - **TODO:** monitoring that operators ship is collected nowhere on six
-  namespaces, because they write platform-intent ServiceMonitors - bearer
+  namespaces until oac-apps#302 merges, because they write platform-intent
+  ServiceMonitors - bearer
   token file, platform certificate paths - into namespaces carrying no
   `openshift.io/cluster-monitoring` label. The platform Prometheus will not
   read those namespaces and user workload monitoring refuses a
   ServiceMonitor that reads the filesystem, so the monitors are rejected and
   nothing says so but an event. Affects `metallb-system` (fixed by
-  oac-apps#302), `external-dns-operator`, `openshift-storage`,
+  `metallb-system`, `external-dns-operator`, `openshift-storage`,
   `openshift-nfd`, `patch-operator` (moot, being removed) and
   `openshift-cluster-observability-operator`, whose own PrometheusRule is
   loaded by no ruler at all. Three of the six are `openshift-*` namespaces,
-  so this is not only our charts. MOC-issues #834; T-27 and T-28 check both
-  halves.
+  so this is not only our charts - but we do own all six through charts, so
+  oac-apps#302 fixes the lot by giving `operator-library.namespace` labels.
+  MOC-issues #834; T-27 and T-28 check both halves.
 - **TODO:** the ACS init bundle is still applied by hand for the hub and
   for every hosted cluster (4.11, 6.5); delivering it through the secret
   store is MOC-issues #830, and it can only be tested while onboarding a

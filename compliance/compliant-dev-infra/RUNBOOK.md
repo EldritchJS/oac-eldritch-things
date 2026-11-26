@@ -676,11 +676,11 @@ monitored. Only the absence of data gives it away.
 | Namespace | What is lost | Status |
 |---|---|---|
 | `metallb-system` | both ServiceMonitors; no MetalLB metrics on any cluster, production included | fixed by oac-apps #302, which labels the namespace |
-| `external-dns-operator` | operator metrics | recorded; we install the operator but do not own its namespace manifest |
-| `openshift-storage` | LVM Storage operator metrics. An `openshift-*` namespace, so this is not only third-party charts | recorded |
-| `openshift-nfd` | Node Feature Discovery operator metrics, on workload0 rather than the hub | recorded |
+| `external-dns-operator` | operator metrics | oac-apps #302 |
+| `openshift-storage` | LVM Storage operator metrics, and `prometheus-lvmo-rules` alerting on `topolvm_*` metrics that exist nowhere as a result | oac-apps #302 |
+| `openshift-nfd` | Node Feature Discovery operator metrics, on workload0 rather than the hub, and its alert rule likewise | oac-apps #302 |
 | `patch-operator` | operator metrics | moot, the operator is being removed (MOC-issues #831) |
-| `openshift-cluster-observability-operator` | its **PrometheusRule** is loaded by no ruler at all, so the observability operator's own alerts never fire | recorded |
+| `openshift-cluster-observability-operator` | its **PrometheusRule** is loaded by no ruler at all, so the observability operator's own alerts never fire | oac-apps #302 | recorded |
 
 The last one is a different half of the same cause. That rule carries
 `openshift.io/user-monitoring=false`, which deliberately keeps user

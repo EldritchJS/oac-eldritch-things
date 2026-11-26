@@ -6,10 +6,19 @@
 # InvalidConfiguration event, so the namespace looks monitored while no data
 # arrives. Only the absence of metrics gives it away, which is why this
 # check exists.
+#
+# All of these have the same cause: the operator writes a ServiceMonitor for
+# platform monitoring (bearer token file, platform certificate paths) into a
+# namespace carrying no openshift.io/cluster-monitoring label, so the
+# platform Prometheus will not read it and user workload monitoring refuses
+# anything that reads the filesystem. We own every one of these namespaces
+# through a chart, so all six are fixed by oac-apps#302, which gives
+# operator-library.namespace the ability to carry labels and sets this one.
+# Remove these lines when that merges. MOC-issues #834.
 
-metallb-system/controller-monitor MetalLB's operator writes these for platform monitoring (bearer token file, platform certificate paths), but ships the namespace without openshift.io/cluster-monitoring, so they fall to user workload monitoring, which refuses any ServiceMonitor that reads the filesystem. Rejected on every cluster including production. Fixed by labelling the namespace: oac-apps#302, MOC-issues #834. Remove both lines when that merges
-metallb-system/speaker-monitor as controller-monitor above; same operator, same cause, same fix
-external-dns-operator/external-dns-operator-metrics-monitor same cause as metallb: the operator's ServiceMonitor uses a bearer token file and its namespace has no openshift.io/cluster-monitoring label, so UWM refuses it. Not fixed: we install this operator but do not own its namespace manifest the way charts/metallb owns metallb-system. MOC-issues #834
-openshift-storage/lvms-operator-metrics-monitor same cause; LVM Storage. Note this is an openshift-* namespace, so the pattern is not limited to third-party charts. MOC-issues #834
-patch-operator/patch-operator-controller-manager-metrics-monitor same cause, and moot in the medium term: patch-operator is being removed entirely (MOC-issues #831). Not worth a label fix of its own
-openshift-nfd/nfd-controller-manager-metrics-monitor same cause; Node Feature Discovery, on the hypervisor rather than the hub. Another openshift-* namespace with no cluster-monitoring label. MOC-issues #834
+metallb-system/controller-monitor fixed by oac-apps#302. No MetalLB metrics on any cluster, production included, until it merges
+metallb-system/speaker-monitor fixed by oac-apps#302. The speaker metrics are how L2 or BGP trouble would show
+external-dns-operator/external-dns-operator-metrics-monitor fixed by oac-apps#302
+openshift-storage/lvms-operator-metrics-monitor fixed by oac-apps#302. Also unblocks prometheus-lvmo-rules, whose topolvm_* metrics exist nowhere today because this monitor is rejected
+openshift-nfd/nfd-controller-manager-metrics-monitor fixed by oac-apps#302. Hypervisor rather than hub; same shape as openshift-storage, with its own alert rule waiting on the same metrics
+patch-operator/patch-operator-controller-manager-metrics-monitor fixed by oac-apps#302, though moot in the medium term: patch-operator is being removed (MOC-issues #831)
