@@ -1186,7 +1186,12 @@ for p in np_items:
             seen.add(t)
 
 for n in sorted(x["metadata"]["name"] for x in ns_items):
-    if re.match(r"^(default|kube-|openshift$|openshift-)", n):
+    # Anchor "default": re.match is not anchored at the end, so a bare
+    # "default" alternative also skipped default-broker and anything else
+    # merely starting with it. The scan rule this mirrors compares the name
+    # exactly (jq .metadata.name != "default"), so T-25 was quieter than the
+    # rule it is meant to check from the other side.
+    if re.match(r"^(default$|kube-|openshift$|openshift-)", n):
         continue
     if (x := next(i for i in ns_items if i["metadata"]["name"] == n))["status"].get("phase") == "Terminating":
         continue
