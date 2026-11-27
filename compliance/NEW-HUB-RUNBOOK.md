@@ -624,7 +624,7 @@ accepted.
 
 | Rule | Status |
 |---|---|
-| `kubeadmin-removed` (also CIS) | **Known gap.** The kubeadmin login is a shared account, so the audit log cannot tell who used it (AC-2, IA-2). Removing it safely needs an SSO cluster-admin group first |
+| `kubeadmin-removed` (also CIS) | **Known gap.** The kubeadmin login is a shared account, so the audit log cannot tell who used it (AC-2, IA-2). Removing it safely needs an SSO cluster-admin group first, and a break-glass path for when SSO is down: §11.4 has the order, §11.2 the credential |
 | `configure-network-policies-namespaces` (also CIS) | **TBD for production.** Policies for about 20 namespaces, many of them ACM, HyperShift and storage; each needs its traffic measured first, and a wrong policy cuts off a hub component. ACS's Network Graph records observed traffic and can generate them |
 | `cluster-wide-proxy-set` | **POA&M.** None planned |
 
@@ -998,7 +998,82 @@ oc patch machine.cluster.x-k8s.io -n clusters-<cluster> <machine> --subresource=
 
 ---
 
-## 11. Still open
+## 11. Break-glass
+
+Two different emergencies (MOC-issues #776). They need different
+mechanisms, but the same rules about who may act and how it is recorded.
+
+### 11.1 Argo CD self-heal is fighting a fix
+
+`selfHeal: true` is set across the apps, so a change made by hand is
+reverted within minutes.
+
+1. Deny sync for the one app: `scripts/pause-app-sync.sh <app>`.
+2. Make the fix.
+3. Commit the same change to git, so desired state matches what is live.
+4. Remove the deny window, and confirm the app syncs clean.
+
+**Step 4 is the one that gets skipped, and the script does not help.** It
+runs `argocd proj windows add default --kind deny --schedule "* * * * *"
+--duration 24h`, and a 24-hour window that starts every minute is a
+permanent block, not a timed one. There is no resume script; only
+`pause-app-sync.sh` exists. Resuming is `argocd proj windows list default`
+and then `argocd proj windows delete default <id>`. A paused app reports
+healthy while quietly accepting drift, which is a worse state than the one
+the pause was for.
+
+### 11.2 SSO is down and kubeadmin is gone
+
+The credential is the admin kubeconfig, in Secrets Manager at
+`cluster/<hub>/kubeadmin` (§4.3). What it is, measured on
+compliant-dev-infra 2026-11-27:
+
+| | |
+|---|---|
+| Kind | client certificate, not a password |
+| Subject | `O = system:masters, CN = system:admin` |
+| Issuer | `admin-kubeconfig-signer` |
+| Expires | **2036-11-15** |
+
+`system:masters` bypasses authorization and a client certificate bypasses
+OAuth, so **this credential cannot be revoked by disabling an SSO account,
+and it does not expire on any useful horizon.** Control over it is custody
+of the file plus detection of its use. Do not write a procedure that
+implies it can be switched off.
+
+### 11.3 Recording, which needs nothing new
+
+`ClusterLogForwarder openshift-logging/audit` already forwards `audit` and
+`hosted-api-audit` to the hub's LokiStack, and every call made with that
+kubeconfig appears as user `system:admin`. So break-glass use is
+queryable after the fact. Required either way: an issue opened before the
+work, or immediately after, naming who acted, what changed and why, with
+the time window so the audit record can be matched to it.
+
+### 11.4 Removing kubeadmin, in the order that matters
+
+Deleting the `kubeadmin` secret cannot be undone, so the SSO path is
+proven first. State on compliant-dev-infra as of 2026-11-27:
+
+| Step | State |
+|---|---|
+| `mocsso` OpenID identity provider | configured |
+| An OpenShift group filled from the claim | `open-accelerator-admins`, 3 members |
+| That group bound to `cluster-admin` | **missing**; only `system:masters` and `system:admin` hold it |
+| `kubeadmin` secret in `kube-system` | still present |
+
+So what is left is one binding, which is what the `cluster-admins` chart
+does (fork branch `cluster-admins-chart`, no PR yet). Name a group that
+exists for this cluster alone rather than reusing
+`open-accelerator-admins`, which spans clusters; the input belongs in
+`moc-keycloak moc_groups.tf`. Then, in order: confirm the group fills at
+login, bind it, have a real person administer the cluster through SSO,
+confirm the admin kubeconfig is in Secrets Manager and restorable, and
+only then delete the secret (MOC-issues #755).
+
+---
+
+## 12. Still open
 
 - **TODO:** disk encryption on the hub is done with Tang, but a more
   reliable home for the Tang server, and a DNS name for it so a later
