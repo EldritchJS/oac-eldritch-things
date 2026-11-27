@@ -745,8 +745,9 @@ are the only hop in the path that is not jumbo-ready.**
 `MOC2-R4PCC02-SW-TORS` (ports swp15s1 and swp16s1, described "Compliant Dev
 Workload0"), and it carries no `mtu` in its host_vars at all. It is NVUE,
 where jumbo is the default. Every explicit `mtu: 9216` in ansible-switches
-is on a Dell OS10 switch (the MOC-CORE-* cores), which default to 1500.
-Reading a missing `mtu` as 1500 is what makes this change look riskier than
+is on a Dell `os9` switch, cores and TORs alike, where it is not. So a
+missing `mtu` means jumbo on an NVUE switch and 1500 on a Dell one, and
+reading it as 1500 everywhere is what makes this change look riskier than
 it is.
 
 Raising a host's MTU did not disturb anything live. The eight `px_*` NFS
