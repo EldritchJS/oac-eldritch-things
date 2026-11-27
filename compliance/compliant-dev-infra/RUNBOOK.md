@@ -766,8 +766,35 @@ before rolling it out anyway:
 The payoff is frame count: at `rsize=wsize=524288`, a 512KB NFS read is
 roughly 350 frames at 1500 and 58 at 9000.
 
-After the revert, nmstate reported `mtu=1500` on both interfaces on both
-nodes and both NNCPs were `SuccessfullyConfigured`.
+**The hub too (VLAN 2317, FlashBlade 10.9.7.10).** Same method on one
+worker: payloads 1472, 4972 and 8972 all clean over five packets each, and
+the RTT is flat across frame sizes (0.182, 0.196, 0.164 ms average), so
+nothing is fragmenting. 39 live `px_*` mounts stayed mounted. A first cold
+run lost one packet of two at 1472 right after the link change, which the
+warm run did not reproduce: neighbour re-resolution, not the path.
+
+**One config oddity on 2317, not blocking.** Three Dell `os9` ports on
+`MOCSEC-R4PAC06-SW-TORS-B` carry no `mtu` at all --- `twentyFiveGigE
+1/6/2`, `1/6/4`, `1/7/2`, described `U23/U25/U27-S1-P1_INFRACTRL{3,2,1}_2`
+--- where every other `os9` port on that VLAN has 9216. The hub measures
+clean, so they are not in its path, and the descriptions on 2317 still name
+"NIST Dev Infra", retired 2026-10-28, so they are probably stale entries.
+
+**This is not only our change.** `charts/portworx` renders the storage
+NNCP on nine clusters and about 34 nodes: both of ours, oac-dev-infra and
+its workload0 and workload1, oac-prod-infra and oac-prod-workload0, and
+bu-ist-demo-infra and its workload0. Two are now measured. The reason to
+probe the rest rather than merge and hope is that a uniformly 1500 path is
+merely slow, while a *partially* jumbo path is the bad case: if the
+FlashBlade advertises MSS for 9000 and one switch mid-path drops anything
+over 1500, both ends negotiate large segments and NFS blackholes instead of
+degrading, because neither endpoint can see the narrow hop. That is the one
+case MSS negotiation does not cover.
+
+After the reverts, nmstate reported `mtu=1500` on both interfaces on all
+five nodes involved and every NNCP was `SuccessfullyConfigured`. Note that
+`nns` lags: it showed `eno2` at 9000 on one hub worker for a while after
+the revert, while the node itself was already back at 1500.
 
 ---
 
