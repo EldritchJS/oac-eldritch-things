@@ -811,9 +811,17 @@ the revert, while the node itself was already back at 1500.
   drops kubeadmin.
 - **TODO:** deliver the ACS secured-cluster credential from the secret
   store instead of by hand (MOC-issues #830), on the next new cluster.
-- **TODO:** oac-apps [#234](https://github.com/CCI-MOC/oac-apps/pull/234)
-  (node labels with ConfigurationPolicies), the last open upstreaming PR
-  (MOC-issues #736).
+- **TODO:** removing patch-operator, MOC-issues #831. oac-apps
+  [#234](https://github.com/CCI-MOC/oac-apps/pull/234) was closed
+  2026-11-25 as a spike that did its job: it converts `node-labels` alone,
+  but five charts use Patch CRs, so patch-operator stays installed on every
+  hub either way, `check-payload` still fails it and T-18 still warns ---
+  the FIPS reason for the change is not served --- while it trades each
+  Patch's narrowly scoped service account for the policy controller's broad
+  one. The mechanism itself worked on jetty. #831 scopes all five charts and
+  makes the least-privilege trade-off one deliberate decision; the
+  `node-labels-policy` branch is the starting point if that is agreed.
+  Upstreaming itself (MOC-issues #736) is closed.
 - **TODO:** u15's CMOS battery, so its BIOS settings persist and its TPM
   can be enabled.
 - **TODO:** a more reliable home for the Tang server, and a DNS name for
