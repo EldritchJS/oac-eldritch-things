@@ -34,7 +34,7 @@ open-cluster-management-hub                 ACM-managed
 open-cluster-management-observability       ACM-managed
 open-cluster-management-policies            ACM-managed
 open-cluster-management-addon-observability ACM-managed
-portworx                                    storage driver, host networking
+portworx                                    storage driver. Half mechanism, half not: 6 of its 12 pods are hostNetwork and so outside NetworkPolicy, but the other 6 are subject to it (counted 2026-11-27), so this is a measurement still owed, not an exception on the mechanism. MOC-issues #756
 compliant-dev-workload0-hypervisor-upgrade  transient, exists only during a NodePool roll
 nvidia-gpu-operator                         vendor DaemonSets, host networking
 openshift-nfd                               vendor operator
