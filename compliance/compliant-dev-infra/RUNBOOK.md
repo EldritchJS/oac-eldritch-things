@@ -726,8 +726,56 @@ fixes; oac-apps #300 is still the right change.
 
 ---
 
-## 9. Still open
+## 9. The storage path is already jumbo-ready (2026-11-27)
 
+oac-apps [#221](https://github.com/CCI-MOC/oac-apps/pull/221) (MOC-issues
+#613) raises the storage interfaces to MTU 9000, and had been open since
+2026-11-03 waiting on a request to try it on dev first. Tested on
+compliant-dev-workload0 against its FlashBlade realm (data VIP 10.9.12.10,
+VLAN 2318) without applying the chart change: one node's `enp163s0np0` and
+`br-storage` raised to 9000 by hand, probed, then reverted, so nothing in
+git or Argo was touched.
+
+With that node at 9000, payloads of 1472, 2972, 4972 and 8972 all reached
+10.9.12.10 with DF set and 0% loss. So **the FlashBlade already accepts
+full 9000-byte frames and the TOR already passes them; the hosts at 1500
+are the only hop in the path that is not jumbo-ready.**
+
+**A missing `mtu` on an NVUE switch does not mean 1500.** The TOR here is
+`MOC2-R4PCC02-SW-TORS` (ports swp15s1 and swp16s1, described "Compliant Dev
+Workload0"), and it carries no `mtu` in its host_vars at all. It is NVUE,
+where jumbo is the default. Every explicit `mtu: 9216` in ansible-switches
+is on a Dell OS10 switch (the MOC-CORE-* cores), which default to 1500.
+Reading a missing `mtu` as 1500 is what makes this change look riskier than
+it is.
+
+Raising a host's MTU did not disturb anything live. The eight `px_*` NFS
+mounts (`xprtsec=tls`, `rsize=wsize=524288`) stayed mounted and stat'd
+fine, and `px-pure-csi-node`'s restart counts did not move. That is the
+expected result over TCP: an established connection keeps its negotiated
+MSS, and a 1500 peer never advertises more than 1460. Two things to know
+before rolling it out anyway:
+
+- `px-pure-csi-node` is **host-network**, so its NFS mounts follow the host
+  `br-storage` MTU rather than a pod netns. Pods already attached to
+  `br-storage` keep 1500 until they restart.
+- Each node has its own NNCP, so every node on a cluster changes at once on
+  sync. Worth a quiet window even on dev.
+
+The payoff is frame count: at `rsize=wsize=524288`, a 512KB NFS read is
+roughly 350 frames at 1500 and 58 at 9000.
+
+After the revert, nmstate reported `mtu=1500` on both interfaces on both
+nodes and both NNCPs were `SuccessfullyConfigured`.
+
+---
+
+## 10. Still open
+
+- **TODO:** oac-apps [#221](https://github.com/CCI-MOC/oac-apps/pull/221)
+  (storage MTU 9000) is approved by one reviewer and carries a change
+  request from 2026-11-03 for a change made on 11-04; the dev test it was
+  waiting on is now done (§9). It needs a re-review, not more work.
 - **TODO:** MOC SSO for andalusia, the last open item on MOC-issues
   #788. moc-keycloak [#71](https://github.com/CCI-MOC/moc-keycloak/pull/71)
   adds its OIDC client; once that is applied and the secret is in Secrets
