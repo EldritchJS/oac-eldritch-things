@@ -625,7 +625,7 @@ accepted.
 | Rule | Status |
 |---|---|
 | `kubeadmin-removed` (also CIS) | **Known gap.** The kubeadmin login is a shared account, so the audit log cannot tell who used it (AC-2, IA-2). Removing it safely needs an SSO cluster-admin group first, and a break-glass path for when SSO is down: §11.4 has the order, §11.2 the credential |
-| `configure-network-policies-namespaces` (also CIS) | **TBD for production.** Policies for about 20 namespaces, many of them ACM, HyperShift and storage; each needs its traffic measured first, and a wrong policy cuts off a hub component. ACS's Network Graph records observed traffic and can generate them |
+| `configure-network-policies-namespaces` (also CIS) | **TBD for production.** Counted on this hub 2026-11-27: of 36 in-scope namespaces, 10 were already closed and 26 were not. Eight hold no pods, so a default-deny costs nothing; two are HyperShift control-plane namespaces that HyperShift reconciles; the rest need their traffic measured, and a wrong egress rule cuts off a hub component. Measure with ACS, not by guessing, and read §12 first: its generator produces **ingress only**, so egress comes from the flow data by hand |
 | `cluster-wide-proxy-set` | **POA&M.** None planned |
 
 Rules that used to fail and are now fixed by the charts are listed in
@@ -1073,7 +1073,70 @@ only then delete the secret (MOC-issues #755).
 
 ---
 
-## 12. Still open
+## 12. Measuring a namespace's traffic with ACS
+
+Before writing a NetworkPolicy for a namespace, measure it. Both halves of
+this were learned the hard way on 2026-11-27 (MOC-issues #756).
+
+Central's API needs no new credential; the admin password is in the cluster:
+
+```sh
+PW=$(oc get secret central-htpasswd -n stackrox -o jsonpath='{.data.password}' | base64 -d)
+H=$(oc get route central -n stackrox -o jsonpath='{.spec.host}')
+curl -sk -u "admin:$PW" "https://$H/v1/clusters"          # cluster ids
+```
+
+**Ingress can often be derived without ACS at all.** Inbound to a namespace
+comes from the API server calling a webhook or aggregated API, from platform
+monitoring scraping it, from the router serving a Route, or from another
+pod. The first three are enumerable from ValidatingWebhookConfigurations,
+APIServices, ServiceMonitors and Routes. Two traps: the ports are **pod**
+ports, because a Service's named targetPort resolves against the container
+port; and **kubelet probes are not subject to NetworkPolicy**, so a
+`livenessProbe` port needs no rule. On this hub's
+`open-cluster-management-agent-addon` the only unexplained inbound turned
+out to be probes on 8000 and 8888, and the answer was to allow nothing.
+
+**The generator fills the gap, for ingress only:**
+
+```sh
+curl -sk -u "admin:$PW" -G "https://$H/v1/networkpolicies/generate/<clusterId>" \
+  --data-urlencode "query=Namespace:<ns>" \
+  --data-urlencode "deleteExisting=NONE"
+```
+
+The YAML is at `.modification.applyYaml`. Read it, do not apply it:
+
+- It emits `policyTypes: [Ingress]` and no egress at all.
+- Its rules carry `from` but **no ports**, so they are broader than needed.
+- **`ingress: - {}` means allow-all**, not "nothing needed". It is ACS
+  saying it saw inbound it could not attribute, which is a prompt to go
+  look, not a policy to ship.
+- It names client pods individually, including labels that move. On
+  `object-storage-proxy` it named Thanos store shards by
+  `store.observatorium.io/shard`, which change on a rescale; the two client
+  namespaces scoped to the right ports is the more durable rule.
+
+**Egress has to come from the flow data:**
+
+```sh
+curl -sk -u "admin:$PW" -G "https://$H/v1/networkgraph/cluster/<clusterId>" \
+  --data-urlencode "since=$(date -u -v-7d +%Y-%m-%dT%H:%M:%SZ)" \
+  --data-urlencode "includePorts=true"
+```
+
+Each node has `outEdges` keyed by the index of the destination node, so a
+namespace's egress is its deployments' outEdges resolved against the node
+list. `INTERNAL_ENTITIES` is an in-cluster destination ACS cannot attribute
+to a deployment; on port 443 that is the API server, which `apiAndDns`
+covers, but **it is not always the API server** --- on
+`object-storage-proxy` the same bucket on 80 and 443 was the FlashBlade, and
+`apiAndDns` would not have covered it. Ignore inbound edges on ephemeral
+high ports; those are artifacts of unattributed flows, not listeners.
+
+---
+
+## 13. Still open
 
 - **TODO:** disk encryption on the hub is done with Tang, but a more
   reliable home for the Tang server, and a DNS name for it so a later

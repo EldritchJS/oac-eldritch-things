@@ -11,30 +11,30 @@
 # namespace whose guardrails values already intend a default-deny but do
 # not produce one; those are MOC-issues #832 and should fail.
 
-andalusia                                   ACM-managed; cluster add-on namespace
+andalusia                                   no pods at all; closed both ways by oac-apps#306. Remove this line when that merges
 assisted-installer                          ingress denied; egress for image pulls, not yet measured
-cert-manager                                operator-managed, traffic not yet measured
-cert-manager-operator                       operator-managed, traffic not yet measured
-clusters                                    HyperShift-managed
-compliant-dev-workload0                     ACM-managed ManagedCluster namespace
-container-object-storage-system             COSI, traffic not yet measured
-hardware-inventory                          assisted-service, traffic not yet measured
-hive                                        ACM-managed
-hypershift                                  HyperShift operator
-klusterlet-andalusia                        ACM-managed
-klusterlet-compliant-dev-workload0          ACM-managed
-local-cluster                               ACM-managed
+cert-manager                                ingress closed by oac-apps#308, allowing webhook 10250 and metrics 9402. T-25 wants both directions, so this still WARNs on Egress until that lands: egress measured 2026-11-27 and recorded on MOC-issues #756. Remove this line when egress merges
+cert-manager-operator                       ingress closed by oac-apps#308, allowing metrics 8443. T-25 wants both directions, so this still WARNs on Egress until that lands: egress measured 2026-11-27 and recorded on MOC-issues #756. Remove this line when egress merges
+clusters                                    no pods at all; closed both ways by oac-apps#306. Remove this line when that merges
+compliant-dev-workload0                     no pods at all; closed both ways by oac-apps#306. Remove this line when that merges
+container-object-storage-system             ingress closed by oac-apps#308, allowing nothing; it has no Service and no declared port. T-25 wants both directions, so this still WARNs on Egress until that lands: egress measured 2026-11-27 and recorded on MOC-issues #756. Remove this line when egress merges
+hardware-inventory                          no pods at all; closed both ways by oac-apps#306. Remove this line when that merges
+hive                                        ingress closed by oac-apps#308, allowing hiveadmission 9443. T-25 wants both directions, so this still WARNs on Egress until that lands: egress measured 2026-11-27 and recorded on MOC-issues #756. Remove this line when egress merges
+hypershift                                  ingress closed by oac-apps#308, allowing webhook 9443 and metrics 9000. T-25 wants both directions, so this still WARNs on Egress until that lands: egress measured 2026-11-27 and recorded on MOC-issues #756. Remove this line when egress merges
+klusterlet-andalusia                        ingress closed by oac-apps#308, allowing nothing; the agents dial the managed cluster outbound. T-25 wants both directions, so this still WARNs on Egress until that lands: egress measured 2026-11-27 and recorded on MOC-issues #756. Remove this line when egress merges
+klusterlet-compliant-dev-workload0          ingress closed by oac-apps#308, allowing nothing; as klusterlet-andalusia. T-25 wants both directions, so this still WARNs on Egress until that lands: egress measured 2026-11-27 and recorded on MOC-issues #756. Remove this line when egress merges
+local-cluster                               no pods at all; closed both ways by oac-apps#306. Remove this line when that merges
 multicluster-engine                         MCE-managed
-object-storage-proxy                        traffic not yet measured
+object-storage-proxy                        ingress closed by oac-apps#308, allowing its eight S3 clients in openshift-logging and open-cluster-management-observability, measured in ACS. T-25 wants both directions, so this still WARNs on Egress until that lands: egress measured 2026-11-27 and recorded on MOC-issues #756. Remove this line when egress merges
 open-cluster-management                     ACM-managed
-open-cluster-management-agent               ACM-managed
-open-cluster-management-agent-addon         ACM-managed
-open-cluster-management-global-set          ACM-managed
-open-cluster-management-hub                 ACM-managed
+open-cluster-management-agent               ingress closed by oac-apps#308, allowing nothing; the klusterlet dials the hub outbound. T-25 wants both directions, so this still WARNs on Egress until that lands: egress measured 2026-11-27 and recorded on MOC-issues #756. Remove this line when egress merges
+open-cluster-management-agent-addon         ingress closed by oac-apps#308, allowing metrics 8443 and 8388; its 8000 and 8888 inbound is kubelet probes, which policy does not govern. T-25 wants both directions, so this still WARNs on Egress until that lands: egress measured 2026-11-27 and recorded on MOC-issues #756. Remove this line when egress merges
+open-cluster-management-global-set          no pods at all; closed both ways by oac-apps#306. Remove this line when that merges
+open-cluster-management-hub                 ingress closed by oac-apps#308, allowing the three webhooks on 9443. T-25 wants both directions, so this still WARNs on Egress until that lands: egress measured 2026-11-27 and recorded on MOC-issues #756. Remove this line when egress merges
 open-cluster-management-observability       ACM-managed
-open-cluster-management-policies            ACM-managed
+open-cluster-management-policies            no pods at all; closed both ways by oac-apps#306. Remove this line when that merges
 open-cluster-management-addon-observability ACM-managed
-portworx                                    storage driver. Half mechanism, half not: 6 of its 12 pods are hostNetwork and so outside NetworkPolicy, but the other 6 are subject to it (counted 2026-11-27), so this is a measurement still owed, not an exception on the mechanism. MOC-issues #756
+portworx                                    ingress closed by oac-apps#308, allowing webhook 9443 and metrics 8999 and 9091. T-25 wants both directions, so this still WARNs on Egress until that lands: egress measured 2026-11-27 and recorded on MOC-issues #756. Remove this line when egress merges
 compliant-dev-workload0-hypervisor-upgrade  transient, exists only during a NodePool roll
 nvidia-gpu-operator                         vendor DaemonSets, host networking
 openshift-nfd                               vendor operator
@@ -48,4 +48,4 @@ openshift-nfd                               vendor operator
 metallb-system                   measured; fix proposed in oac-apps#301 and tested on both clusters. Remove this line when that merges. MetalLB's own policy selects only the controller pods, leaving the operator's two uncovered; the measured need is ingress 9443 (webhooks), 8080 and 7472 (metrics) from the API server, and egress to the API server and DNS. The API server reaches the webhook over host network on the hub and through the konnectivity agent on a hosted cluster, and that agent is itself hostNetwork, so one rule covers both. speaker is hostNetwork, so none of this protects the speakers
 clusters-andalusia               hub: HyperShift control plane. Ingress is closed by its four policies. Egress is open, and measures small - DNS, 443 outbound, 2379/2380 to etcd, 6443 to the other control plane - so a policy is feasible. Not written: HyperShift creates and reconciles these namespaces, and an egress deny here isolates a live hosted control plane, so it belongs with the HyperShift side rather than layered on by us. hypervisor: the KubeVirt VM namespace, open both ways, and it should stay that way. Measured 2026-11-26 with the VM deliberately started for the purpose: ACS shows the virt-launcher deployment but zero flows for it over 15 minutes, while the same cluster recorded 64 edges elsewhere in 30, so the collector is fine and this workload is the exception. The VM attaches with bridge binding on the pod network and the guest is itself an OpenShift node running its own OVN (ovn-k8s-mp0, br-int and nested veths inside the guest), so that single interface carries an entire nested cluster's traffic. A default-deny here would have to allow everything a cluster needs in order not to break andalusia, which is not a restriction worth the name. This is a permanent exception on the mechanism, not a measurement we are waiting on
 clusters-compliant-dev-workload0 HyperShift control plane; ingress closed, egress open and measuring the same as clusters-andalusia, same ownership question
-default-broker                   Submariner's broker namespace, created by ACM; carries submariner.io/broker=true and holds no workloads at all. A default-deny here would cost nothing, which makes it a candidate for the guardrails chart rather than a standing exception - noted on MOC-issues #756. It was invisible to T-25 until 2026-11-26: the exclusion regex was not anchored, so a bare "default" alternative skipped it
+default-broker                              no pods at all; closed both ways by oac-apps#306. Remove this line when that merges. It was invisible to T-25 until 2026-11-26: the exclusion regex was not anchored, so a bare "default" alternative skipped it

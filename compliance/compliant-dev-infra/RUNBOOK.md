@@ -798,7 +798,91 @@ the revert, while the node itself was already back at 1500.
 
 ---
 
-## 10. Still open
+## 10. The namespace policies, counted and measured (2026-11-27)
+
+MOC-issues #756 read as "about 20 namespaces, each needing measurement".
+Counted instead: 118 namespaces exist, 82 are platform and out of scope, 10
+of the remaining 36 already had a default-deny and **26 did not** --- all 26
+carried as accepted exceptions, none unaccounted for. They split three ways,
+and only one of the three is measurement work.
+
+**Eight hold no pods** (`andalusia`, `clusters`,
+`compliant-dev-workload0`, `default-broker`, `hardware-inventory`,
+`local-cluster`, `open-cluster-management-global-set`,
+`open-cluster-management-policies`). ACM and HyperShift keep objects there,
+not workloads, so a deny both ways denies nothing. oac-apps #306. Free today
+is not free forever: if either later schedules a pod into one, the deny
+blocks it quietly.
+
+**Two are an ownership question**, not work: `clusters-andalusia` and
+`clusters-compliant-dev-workload0`, 133 pods between them. Ingress is
+already closed by HyperShift's own policies and an egress deny would isolate
+a live hosted control plane.
+
+**Sixteen needed measurement**, and the ingress half of twelve of them came
+from cluster objects rather than from ACS (oac-apps #308). Three more wait
+on the `routerPorts` chart option (#307), because they serve eleven Routes
+between them and the chart had no way to admit the router.
+
+### What the measuring actually taught us
+
+**A Route's traffic is not always attributed to openshift-ingress.** The
+default IngressController here uses the HostNetwork publishing strategy, so
+its router pods are host-network and OVN-Kubernetes attributes them to the
+host-network policy group; the hosted clusters' router runs on the pod
+network and is attributed to its namespace. A policy naming only
+`openshift-ingress` would have passed review and silently blocked every
+Route on the default router. #307 allows both.
+
+**Kubelet probes are not subject to NetworkPolicy, and that was the whole
+answer once.** ACS's generator returned allow-all for four of
+`open-cluster-management-agent-addon`'s eight pods. The flow data showed the
+unattributed inbound was 8000 to all four and 8888 to cluster-proxy, both
+`livenessProbe` ports on `/healthz`. Nothing to allow. As a by-product, the
+hosted clusters' entry allowing 8888 and 8000 for cluster-proxy looks
+redundant --- worth checking there rather than assuming it carries over.
+
+**Some namespaces are not enumerable at all.** `object-storage-proxy` is the
+FlashBlade's S3 endpoint on a fixed clusterIP with its own DNS name, and its
+clients are ordinary pods: eight of them, LokiStack's ingester and compactor
+plus Thanos receive, compact, rule and three store shards. A default-deny
+without those would have taken out hub log storage and ACM metrics storage
+at once. Only ACS could say so.
+
+**`portworx` is half a mechanism exception, not a whole one.** Six of its
+twelve pods are hostNetwork and outside NetworkPolicy; the other six are
+subject to it.
+
+### Egress, measured but not written
+
+Recorded for all fifteen on MOC-issues #756, from a seven-day window. Three
+namespaces talk to nothing but the API server, so `apiAndDns: true` closes
+them. The rest hold four traps, which is why egress is the half that waits:
+
+- `object-storage-proxy` egresses 80 and 443 to the FlashBlade, which looks
+  like the API server in the data (both land in ACS's `INTERNAL_ENTITIES`)
+  but is not, and `apiAndDns` does not cover it.
+- `open-cluster-management-observability` reaches its own Thanos ports
+  (9094, 9095, 10901, 11211) by a node-IP path as well as same-namespace, so
+  `sameNamespace: true` alone is not enough.
+- The klusterlet and agent namespaces reach 6443 both through `clusters-*`
+  and through an unattributed address, so a namespace selector half-works.
+- External egress is specific: `cert-manager` to Cloudflare and Amazon
+  us-east-1 for ACME and Route 53, `portworx` to Amazon us-west-2 and Google
+  us-west1, `hypershift` and the ACM namespaces to the internet.
+
+### One thing to keep in view
+
+T-25 requires **both** directions, so #308 does not clear those twelve: they
+still warn on Egress. The Compliance Operator's
+`configure-network-policies-namespaces` is more lenient --- it passes on any
+policy existing --- so **the rule will go green while egress is still wide
+open.** The accepted-exceptions file says so per namespace, and this issue
+should not be read as finished when the scan stops failing.
+
+---
+
+## 11. Still open
 
 - **TODO:** oac-apps [#221](https://github.com/CCI-MOC/oac-apps/pull/221)
   (storage MTU 9000) is approved by one reviewer and carries a change
@@ -830,10 +914,16 @@ the revert, while the node itself was already back at 1500.
   oac-apps #299 and `metallb-system` by oac-apps #301; the hypervisor's
   `clusters-andalusia` is a permanent exception (§8). What is left is
   whether HyperShift should ship egress policies for its own
-  control-plane namespaces, carried on MOC-issues #756. T-25 fails 0 on
-  both clusters, with the remainder recorded as accepted exceptions.
-- **TODO:** NetworkPolicies for the hub's namespaces, for the production
-  setup (§3), and for workload0's remaining four (§4).
+  control-plane namespaces, carried on MOC-issues #756 (§10). T-25 fails 0
+  on both clusters, with the remainder recorded as accepted exceptions.
+- **TODO:** NetworkPolicies for the hub's namespaces, counted and measured
+  in §10 and now down to specifics: egress for fifteen namespaces (measured,
+  recorded on MOC-issues #756, four traps noted), ingress for the three that
+  serve Routes once oac-apps #307 merges, and the two HyperShift
+  control-plane namespaces that are an ownership question rather than work.
+  Also for the production setup (§3) and workload0's remaining four (§4).
+  Note T-25 wants both directions, so oac-apps #308 does not clear its
+  twelve: they still warn on Egress.
 - **TODO:** `podPidsLimit` for workload0's pool, oac-apps #276.
 - **TODO:** have someone other than the original builder walk through
   [../NEW-HUB-RUNBOOK.md](../NEW-HUB-RUNBOOK.md) and fix what is unclear.
